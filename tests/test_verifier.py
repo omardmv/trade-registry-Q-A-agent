@@ -153,3 +153,85 @@ def test_unquoted_invented_name_not_detected_by_design():
 def test_all_numbers_in_string_cells_supported():
     rows = [("Уголь марки 2Б, 25 кг",)]
     assert verify_answer("Товар: Уголь марки 2Б, 25 кг", "?", rows).ok
+
+
+# ---- review round: strict counts/years, tolerance, names, signs, ids, templates ----
+
+@pytest.mark.parametrize("answer,question,rows,extra,ok", [
+    ("Заключено 7 сделок.", "?", [(5,)], "", False),
+    ("Заключено 5 сделок.", "?", [(5,)], "", True),
+    ("Участвовало 10 брокеров.", "?", [(4,)], "", False),
+    ("Топ-3 покупателя:\n1. «Alfa» — 100 сум\n2. «Beta» — 50 сум\n3. «Gamma» — 20 сум", "?",
+     [("Alfa", 100), ("Beta", 50), ("Gamma", 20)], "", True),
+    ("Первое 1-е место и 2-й и 3 место и 1-chi o‘rin", "?", [(1,)], "", True),
+    ("В 2024 году заключено 5 сделок.", "Сколько сделок в 2025 году?", [(5,)], "", False),
+    ("В 2024 году заключено 5 сделок.", "Сколько сделок в 2025 году?", [(5,)], "Расчёт: сделки за 2024 год.", True),
+    # tolerance table
+    ("Оборот 1,2 млрд", "?", [(1.234e9,)], "", True),
+    ("Оборот 1 млрд", "?", [(1.4e9,)], "", False),
+    ("Оборот 1 млрд", "?", [(0.6e9,)], "", False),
+    ("Оборот 2 млн", "?", [(2.49e6,)], "", False),
+    ("Доля 7 %", "?", [(6.6,)], "", False),
+    ("Оборот 15 млрд", "?", [(15.49e9,)], "", True),
+    # quoted names
+    ("«Ali»", "?", [("Kalit savdo",)], "", False),
+    ("«Plast Цемент»", "?", [("Plast", "Цемент")], "", False),
+    ("«OOO»", "?", [("OOO",)], "", False),
+    ("«Pudexiz Plast»", "?", [("Pudexiz Plast MChJ",)], "", True),
+    ("«Ташкент»", "?", [("Ташкентская обл.",)], "", False),
+    # signs
+    ("Изменение -17 сум", "?", [(17.0,)], "", False),
+    ("Изменение -17 сум", "?", [(-17.0,)], "", True),
+    ("Изменение −17 сум", "?", [(-17.0,)], "", True),
+    ("Изменение 17 сум", "?", [(-17.0,)], "", False),
+    # ids are set members, not substrings
+    ("ИНН 234567890", "?", [("1234567890123",)], "", False),
+    ("ИНН 234567890", "?", [("234567890",)], "", True),
+    ("ИНН 234567890", "Кто 234567890?", [], "", True),
+    ("ИНН 234567890", "?", [], "ИНН 234567890", True),
+    # numbers inside string cells are not allowed numbers
+    ("Средняя цена 92 сум", "?", [("АИ-92",)], "", False),
+    ("Бензин АИ-92", "?", [("АИ-92",)], "", True),
+])
+def test_review_probes(answer, question, rows, extra, ok):
+    r = verify_answer(answer, question, rows, extra_text=extra)
+    assert r.ok is ok, r.unsupported
+
+
+def test_quote_normalizing_to_empty_reports_original():
+    r = verify_answer("«OOO»", "?", [("OOO",)])
+    assert r.unsupported == ["OOO"]
+
+
+def test_format_number_negative_and_small():
+    assert format_number(-1234.5) == "-1 234,50"
+    assert format_number(-1115) == "-1 115"
+
+
+def test_template_round_trip_property():
+    import random
+    from decimal import Decimal
+    rng = random.Random(7)  # fixed seed
+    explanation = "Расчёт: сделки за 2024 год, 30 kun, с 01.03.2024 по 31.03.2024."
+    for trial in range(30):
+        rows = []
+        for i in range(rng.choice([1, 5, 25])):
+            rows.append((
+                rng.choice(["915688255", "BK007", 'ООО "Ромашка"', "АИ-92", "5\" труба", "12"]),
+                rng.choice([-1234.5, -7, 0, 3.14159, 0.004, 1e-7, 123456789.987, Decimal("-0.5"), Decimal("12345.678")]),
+                rng.choice([dt.date(2025, 6, 15), dt.datetime(2025, 6, 15, 13, 45, 59), None]),
+                rng.choice([True, False, None]),
+                rng.randint(-10**9, 10**12),
+                rng.choice([dt.time(12, 30, 5), "Plast Цемент", None]),
+            ))
+        text = table_answer("ru", ["a", "b", "c", "d", "e", "f"], rows, explanation)
+        r = verify_answer(text, "?", rows, extra_text=explanation)
+        assert r.ok, (r.unsupported, text)
+        assert "13:45" not in text
+
+
+def test_template_has_no_extra_numbers_beyond_ellipsis():
+    rows = [(i,) for i in range(30)]
+    text = table_answer("ru", ["n"], rows)
+    assert text.splitlines()[-1] == "…"
+    assert verify_answer(text, "?", rows).ok

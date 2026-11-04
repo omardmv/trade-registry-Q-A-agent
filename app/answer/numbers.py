@@ -1,5 +1,6 @@
 """Extract and format numbers, IDs, dates and quoted names for answer verification."""
 import datetime as dt
+import math
 import re
 from dataclasses import dataclass
 from decimal import Decimal
@@ -13,7 +14,17 @@ _SCALES = [
 ]
 _SCALE_RE = "|".join(p for p, _ in _SCALES)
 NUMBER_RE = re.compile(
-    rf"(?<![\w.,])(\d{{1,3}}(?:{_SEP}\d{{3}})+|\d+)(?:[.,](\d+))?(?:{_SEP}?({_SCALE_RE})\.?)?", re.I)
+    rf"(?:(?<![\w.,])(?P<sign>[-\u2212]))?(?<![\w.,])(?P<int>\d{{1,3}}(?:{_SEP}\d{{3}})+|\d+)"
+    rf"(?:[.,](?P<dec>\d+))?(?:{_SEP}?(?P<scale>{_SCALE_RE})\.?)?", re.I)
+_PERCENT_AFTER = re.compile(r"\s*%")
+# structural numbers (list markers, ranks, ordinals) are not facts
+_STRUCTURAL_RES = [
+    re.compile(r"^[ \t]*\d{1,2}[.)]\s", re.M),
+    re.compile(r"(?:топ|top)-?\d+", re.I),
+    re.compile(r"\b\d{1,2}-(?:е|й|я|го|му|м|ое|ый)\b", re.I),
+    re.compile(r"\b\d{1,2}-(?:chi|o‘rin|o'rin)", re.I),
+    re.compile(r"\b\d{1,2}\s+(?:место|o‘rin|o'rin)", re.I),
+]
 DATE_RE = re.compile(r"\b\d{2}\.\d{2}\.\d{4}\b|\b\d{4}-\d{2}-\d{2}\b")
 ID_RE = re.compile(r"(?<!\d)\d{9}(?!\d)|\bBK\d{3}\b", re.I)
 QUOTED_RE = re.compile(r"[«“\"]([^»”\"]{2,80})[»”\"]")
@@ -35,18 +46,30 @@ def _scale(word: str | None) -> float:
     return 1.0
 
 
+def strip_structural(text: str) -> str:
+    for rx in _STRUCTURAL_RES:
+        text = rx.sub(" ", text)
+    return text
+
+
 def strip_dates_and_ids(text: str) -> str:
     return ID_RE.sub(" ", DATE_RE.sub(" ", text))
 
 
 def extract_numbers(text: str) -> list[NumberToken]:
     tokens = []
-    for m in NUMBER_RE.finditer(strip_dates_and_ids(text)):
-        integer = re.sub(_SEP, "", m.group(1))
-        decimals = m.group(2) or ""
-        scale = _scale(m.group(3))
+    clean = strip_dates_and_ids(text)
+    for m in NUMBER_RE.finditer(clean):
+        integer = re.sub(_SEP, "", m.group("int"))
+        decimals = m.group("dec") or ""
+        scale = _scale(m.group("scale"))
         value = float(f"{integer}.{decimals}" if decimals else integer) * scale
-        tokens.append(NumberToken(m.group(0).strip(), value, 0.5 * 10 ** (-len(decimals)) * scale))
+        if m.group("sign"):
+            value = -value
+        tol = 0.5 * 10 ** (-len(decimals)) * scale
+        if decimals or m.group("scale") or _PERCENT_AFTER.match(clean, m.end()):
+            tol = min(tol, 0.05 * abs(value))
+        tokens.append(NumberToken(m.group(0).strip(), value, tol))
     return tokens
 
 
@@ -64,9 +87,14 @@ def extract_quoted(text: str) -> list[str]:
 
 def format_number(v) -> str:
     v = float(v)
+    if not math.isfinite(v):
+        return str(v)
     if v.is_integer():
         return f"{int(v):,}".replace(",", " ")
-    return f"{v:,.2f}".replace(",", " ").replace(".", ",")
+    decimals = 2
+    if abs(round(v, 2) - v) > 0.01 * abs(v):  # tiny values: keep >= 3 significant digits
+        decimals = min(20, max(2, 3 - math.floor(math.log10(abs(v)))))
+    return f"{v:,.{decimals}f}".replace(",", " ").replace(".", ",")
 
 
 def format_cell(v) -> str:
@@ -77,7 +105,7 @@ def format_cell(v) -> str:
     if isinstance(v, (int, float, Decimal)):
         return format_number(v)
     if isinstance(v, dt.datetime):
-        return v.strftime("%d.%m.%Y %H:%M:%S")
+        return v.strftime("%d.%m.%Y")
     if isinstance(v, dt.date):
         return v.strftime("%d.%m.%Y")
     if isinstance(v, dt.time):
