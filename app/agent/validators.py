@@ -139,6 +139,11 @@ def validate_sql(sql: str, allowed: set[tuple[str, str]], question: str, db: Dat
                 if unresolved(value, _COLUMN_KIND[_n(col)]):
                     errors.append(f"{_n(col)} = {value!r} was not returned by resolve() in this request")
     if check_ids:
+        if any(True for _ in stmt.find_all(exp.Values)) or any(
+                not _is_top_level(sel) and any(l.is_string for e in sel.expressions for l in e.find_all(exp.Literal))
+                for sel in stmt.find_all(exp.Select)):
+            errors.append("literal values inside subqueries/CTEs are not allowed; "
+                          "filter on the resolved column directly")
         for lit in stmt.find_all(exp.Literal):
             if isinstance(lit.parent, (exp.Limit, exp.Offset, exp.Fetch)):
                 continue
@@ -247,6 +252,21 @@ def _unwrap(node: exp.Expression) -> exp.Expression:
     while isinstance(node, _WRAPPERS) and isinstance(node.this, exp.Expression):
         node = node.this
     return node
+
+
+def _is_top_level(sel: exp.Select) -> bool:
+    """Top-level query or a branch of a top-level UNION/EXCEPT/INTERSECT (optionally parenthesised)."""
+    node = sel
+    while node.parent is not None:
+        parent = node.parent
+        if isinstance(parent, exp.SetOperation):
+            pass
+        elif isinstance(parent, exp.Subquery) and (parent.parent is None or isinstance(parent.parent, exp.SetOperation)):
+            pass
+        else:
+            return False
+        node = parent
+    return True
 
 
 def _folds_case(node: exp.Expression) -> bool:

@@ -121,7 +121,7 @@ ACCEPTED = [
     "SELECT region FROM deals WHERE region IN (SELECT region FROM deals WHERE status = 'done')",
     "SELECT 1 FROM deals WHERE buyer_inn = '975923536'",
     "SELECT 1 FROM participants p JOIN deals d ON p.inn = d.buyer_inn",
-    "SELECT 1 FROM deals WHERE trim(region) = 'samarqand viloyati'",
+    "SELECT 1 FROM deals WHERE trim(region) = 'Samarqand viloyati'",
     "SELECT currency, SUM(amount) FROM deals GROUP BY currency",
     "SELECT SUM(amount) FROM deals WHERE currency = 'UZS'",
     "SELECT name FROM participants ORDER BY name",
@@ -130,7 +130,7 @@ ACCEPTED = [
 
 @pytest.mark.parametrize("sql", ACCEPTED)
 def test_structural_accepted(sql):
-    r = v(sql, allowed={"975923536", "samarqand viloyati"})
+    r = v(sql, allowed={"975923536", "Samarqand viloyati"})
     assert r.ok, r.errors
 
 
@@ -299,4 +299,23 @@ def test_case_folding_on_resolved_rejected(sql, allowed):
 ])
 def test_trim_and_id_null_accepted(sql, allowed):
     r = v(sql, allowed=allowed)
+    assert r.ok, r.errors
+
+
+@pytest.mark.parametrize("sql", [
+    "SELECT COUNT(*) FROM deals WHERE region IN (SELECT 'Ташкент')",
+    "WITH r AS (SELECT 'Ташкент' AS region) SELECT COUNT(*) FROM deals d WHERE d.region IN (SELECT region FROM r)",
+    "SELECT COUNT(*) FROM deals d JOIN (SELECT 'Ташкент' AS rg) x ON d.region = x.rg",
+    "SELECT * FROM (VALUES (1)) t",
+])
+def test_literal_projection_in_subquery_rejected(sql):
+    assert not v(sql).ok
+
+
+@pytest.mark.parametrize("sql", [
+    "SELECT 'all' AS scope, COUNT(*) AS n FROM deals",
+    "SELECT 'buyer' AS role, COUNT(*) AS n FROM deals UNION ALL SELECT 'seller', COUNT(*) FROM deals",
+])
+def test_top_level_labels_accepted(sql):
+    r = v(sql)
     assert r.ok, r.errors
