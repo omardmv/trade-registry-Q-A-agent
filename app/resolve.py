@@ -96,6 +96,17 @@ class Resolver:
             "contract": self._contract,
         }[kind](text, limit)
 
+    def exists(self, kind: str, value: str) -> bool:
+        """Exact existence of an id: kind in inn / broker / contract / deal."""
+        if kind == "inn":
+            return value in self._company_by_inn
+        if kind == "broker":
+            return value.upper() in self._broker_by_code
+        table, column = {"contract": ("contracts", "contract_id"), "deal": ("deals", "deal_id")}[kind]
+        if not re.fullmatch(r"\d{1,12}", value):
+            return False
+        return bool(self._db.query(f"SELECT 1 FROM {table} WHERE {column} = ? LIMIT 1", [int(value)]).rows)
+
     def _company(self, text, limit):
         if re.fullmatch(r"\d{9}", text):
             row = self._company_by_inn.get(text)

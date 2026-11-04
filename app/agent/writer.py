@@ -6,7 +6,7 @@ from typing import Literal
 
 from app import config
 from app.agent.llm import LLM, ToolSpec
-from app.agent.validators import is_grounded, validate_sql
+from app.agent.validators import grounding_status, missing_message, validate_sql
 from app.compiler.spec import (CONTRACT_FORMS, CONTRACT_TYPES, DIMENSIONS, MEASURES, REGISTRY_ENTITIES, ROLES,
                                STATUS_SCOPES, STATUSES, TRADE_TYPES, Spec, SpecError, entity_values, parse_spec)
 from app.compiler.sql import compile_spec
@@ -115,6 +115,7 @@ class WriterResult:
     assumptions: list[str] = field(default_factory=list)
     reason: str = ""
     trace: list[dict] = field(default_factory=list)
+    resolved_names: list[str] = field(default_factory=list)  # display names/values returned by resolve()
 
 
 class Writer:
@@ -125,9 +126,17 @@ class Writer:
         self.system = SYSTEM.format(schema=schema_prompt)
         self.max_tool_calls, self.max_fixes = max_tool_calls, max_fixes
         self.llm_timeout_s = llm_timeout_s
+        self._exists_cache: dict[tuple[str, str], bool] = {}
+
+    def _exists(self, kind: str, value: str) -> bool:
+        key = (kind, str(value))
+        if key not in self._exists_cache:
+            self._exists_cache[key] = self.resolver.exists(kind, str(value))
+        return self._exists_cache[key]
 
     def run(self, question: str, lang: str, deadline: float, previous: dict | None = None) -> WriterResult:
         allowed: set[tuple[str, str]] = set()
+        names: list[str] = []
         trace: list[dict] = []
         calls = fixes = 0
         nudged = False
@@ -173,7 +182,7 @@ class Writer:
                     outcome = (self._compile(tc.args, allowed, question, deadline) if tc.name == "compile_query"
                                else self._sql(tc.args, allowed, question, deadline))
                     if isinstance(outcome, WriterResult):
-                        outcome.trace = trace
+                        outcome.trace, outcome.resolved_names = trace, names
                         return outcome
                     fixes += 1
                     trace[-1]["error"] = outcome
@@ -182,7 +191,7 @@ class Writer:
                     results.append((tc.name, {"error": outcome}))
                     continue
                 try:
-                    payload = self._tool(tc.name, tc.args, allowed, question, deadline)
+                    payload = self._tool(tc.name, tc.args, allowed, question, deadline, names)
                 except (KeyError, ValueError, TypeError) as e:
                     payload = {"error": f"bad arguments: {e}"}
                 results.append((tc.name, payload))
@@ -204,7 +213,12 @@ class Writer:
             spec = parse_spec(args.get("spec") or {})
         except (SpecError, KeyError, ValueError, TypeError) as e:
             return str(e)
-        missing = sorted(v for k, v in entity_values(spec) if not is_grounded(v, k, allowed, question))
+        statuses = {(k, v): grounding_status(v, k, allowed, question, self._exists)
+                    for k, v in entity_values(spec)}
+        absent = sorted(v for (k, v), st in statuses.items() if st == "missing")
+        if absent:
+            return "; ".join(missing_message(v) for v in absent)
+        missing = sorted(v for (k, v), st in statuses.items() if st != "ok")
         if missing:
             return f"values {missing} were not returned by resolve() in this request; call resolve() first"
         try:
@@ -218,7 +232,7 @@ class Writer:
                             [str(a) for a in args.get("assumptions") or []])
 
     def _sql(self, args, allowed, question, deadline) -> WriterResult | str:
-        v = validate_sql(str(args.get("sql", "")), allowed, question, self.db)
+        v = validate_sql(str(args.get("sql", "")), allowed, question, self.db, exists=self._exists)
         if not v.ok:
             return "; ".join(v.errors)
         try:
@@ -229,10 +243,15 @@ class Writer:
         return WriterResult("ok", "sql", v.sql, result, None, splits, [],
                             [str(a) for a in args.get("assumptions") or []])
 
-    def _tool(self, name, args, allowed, question, deadline) -> dict:
+    def _tool(self, name, args, allowed, question, deadline, names=None) -> dict:
         if name == "resolve":
             cands = self.resolver.resolve(args["kind"], str(args["text"]))
             allowed.update((_KIND.get(c.kind, c.kind), c.id) for c in cands)
+            if names is not None:
+                for c in cands:
+                    for text in (c.id, c.name, *c.extra.values()):
+                        if isinstance(text, str) and text and not text.isdigit() and text not in names:
+                            names.append(text)
             return {"candidates": [_json(asdict(c)) for c in cands]}
         if name == "get_examples":
             exs = self.examples.search(str(args.get("question") or question))

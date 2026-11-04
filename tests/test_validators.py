@@ -26,7 +26,7 @@ def test_rejects_non_select_and_multiple_statements():
 
 
 def test_trailing_semicolon_and_comment_is_one_statement():
-    r = v("SELECT 1; -- x")
+    r = v("SELECT COUNT(*) FROM deals; -- x")
     assert r.ok, r.errors
 
 
@@ -66,7 +66,7 @@ def test_explain_catches_bad_column(db):
 
 
 def test_returned_sql_regenerated_without_semicolon_or_comment():
-    r = v("SELECT 1; -- x")
+    r = v("SELECT COUNT(*) FROM deals; -- x")
     assert r.ok, r.errors
     assert ";" not in r.sql and "--" not in r.sql
 
@@ -119,9 +119,9 @@ def test_review_probes_rejected(sql):
 
 ACCEPTED = [
     "SELECT region FROM deals WHERE region IN (SELECT region FROM deals WHERE status = 'done')",
-    "SELECT 1 FROM deals WHERE buyer_inn = '975923536'",
-    "SELECT 1 FROM participants p JOIN deals d ON p.inn = d.buyer_inn",
-    "SELECT 1 FROM deals WHERE trim(region) = 'Samarqand viloyati'",
+    "SELECT COUNT(*) FROM deals WHERE buyer_inn = '975923536'",
+    "SELECT COUNT(*) FROM participants p JOIN deals d ON p.inn = d.buyer_inn",
+    "SELECT COUNT(*) FROM deals WHERE trim(region) = 'Samarqand viloyati'",
     "SELECT currency, SUM(amount) FROM deals GROUP BY currency",
     "SELECT SUM(amount) FROM deals WHERE currency = 'UZS'",
     "SELECT name FROM participants ORDER BY name",
@@ -140,7 +140,7 @@ def test_huge_limit_clamped():
 
 
 def test_round_trip_filter_qualify_cast_explain(db):
-    sql = ("SELECT deal_id, COUNT(*) FILTER (WHERE amount_uzs > 0) OVER () AS n, DATE '2025-01-01'::DATE AS d "
+    sql = ("SELECT deal_id, COUNT(*) FILTER (WHERE amount_uzs > 0) OVER () AS n, deal_date::DATE AS d "
            "FROM deals QUALIFY ROW_NUMBER() OVER (ORDER BY deal_id) = 1")
     r = v(sql, db=db)
     assert r.ok, r.errors
@@ -181,7 +181,7 @@ ACCEPTED_2 = [
     "WITH t AS (SELECT buyer_inn, SUM(amount_uzs) AS total FROM deals GROUP BY buyer_inn) "
     "SELECT * FROM t WHERE total > 0",
     "SELECT SUM(CASE WHEN region = 'Samarqand viloyati' THEN 1 END) FROM deals",
-    "SELECT 1 FROM deals WHERE region = ('Samarqand viloyati')",
+    "SELECT COUNT(*) FROM deals WHERE region = ('Samarqand viloyati')",
     "SELECT currency, SUM(amount) FROM deals GROUP BY 1",
     "SELECT currency, SUM(amount) FROM deals GROUP BY ALL",
     "SELECT SUM(amount) FROM deals WHERE year = 2025 AND currency = 'UZS'",
@@ -410,4 +410,45 @@ def test_star_replace_and_struct_smuggling_rejected(sql):
 
 def test_plain_star_with_question_id_accepted():
     r = v("SELECT * FROM contracts WHERE contract_id = 102267", question="контракт 102267")
+    assert r.ok, r.errors
+
+
+# --- final review: fabricated rows from literals ---
+@pytest.mark.parametrize("sql", [
+    "SELECT 'ООО Пахтакор' AS buyer_name, 15000.5 AS volume_t",
+    "SELECT 15000.5 AS volume_t FROM deals LIMIT 1",
+    "SELECT 'ООО Пахтакор' AS buyer_name, COUNT(*) FROM deals",
+    "SELECT CASE WHEN is_cancelled THEN 'Отменён' ELSE 'valid' END AS s, COUNT(*) FROM deals GROUP BY 1",
+    "SELECT (SELECT 15000.5) AS x, COUNT(*) FROM deals",
+    "SELECT COUNT(*) FROM deals UNION ALL SELECT 42",
+    "WITH t AS (SELECT 15000.5 AS x) SELECT x FROM t",
+    "SELECT MAX('ООО Пахтакор') FROM deals",
+])
+def test_literal_fabrication_rejected(sql):
+    assert not v(sql).ok
+
+
+@pytest.mark.parametrize("sql", [
+    "SELECT 'buyer' AS role, COUNT(*) FROM deals",
+    "SELECT CASE WHEN is_cancelled THEN 'cancelled' ELSE 'valid' END AS s, COUNT(*) FROM deals GROUP BY 1",
+    "SELECT 'by_volume_t' AS ranking, SUM(volume_tonnes) FROM deals UNION ALL "
+    "SELECT 'by_total_uzs', SUM(amount_uzs) FROM deals",
+    "SELECT COUNT(*) FILTER (WHERE currency = 'UZS') FROM deals",
+])
+def test_label_literals_accepted(sql):
+    r = v(sql)
+    assert r.ok, r.errors
+
+
+# --- final review: re-aggregating per-currency sums ---
+def test_reaggregated_currency_sums_rejected():
+    sql = "SELECT SUM(s) FROM (SELECT currency, SUM(amount) AS s FROM deals GROUP BY currency) t"
+    r = v(sql)
+    assert not r.ok and any("currency" in e for e in r.errors)
+
+
+def test_reaggregated_currency_sums_scoped_outer_ok():
+    sql = ("SELECT currency, SUM(s) FROM (SELECT currency, SUM(amount) AS s FROM deals GROUP BY currency) t "
+           "GROUP BY currency")
+    r = v(sql)
     assert r.ok, r.errors

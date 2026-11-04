@@ -27,20 +27,34 @@ _NAME_KINDS = {"product", "product_family", "region"}
 _ID_SHAPE = {"inn": r"\d{9}", "broker": r"BK\d{3}", "contract": r"\d{6}", "deal": r"\d{6}"}
 
 
-def is_grounded(value: str, kind: str, allowed: set[tuple[str, str]], question: str) -> bool:
-    """allowed holds (kind, value) pairs from resolve(). Names need the exact pair; ids may also appear as
-    whole tokens of the right shape in the question."""
+def grounding_status(value: str, kind: str, allowed: set[tuple[str, str]], question: str,
+                     exists=None) -> str:
+    """'ok' | 'ungrounded' | 'missing'. allowed holds (kind, value) pairs from resolve(). Names need the exact
+    pair; ids may also appear as whole tokens of the right shape in the question, but then must exist
+    (exists(kind, value) -> bool, when given)."""
     value = str(value)
     if value.strip() == "":
-        return False
+        return "ungrounded"
     if (kind, value) in allowed:
-        return True
+        return "ok"
     if kind in _NAME_KINDS:
-        return False
+        return "ungrounded"
     shape = _ID_SHAPE[kind]
     if not re.fullmatch(shape, value, re.I):
-        return False
-    return re.search(rf"(?<![\w]){re.escape(value)}(?![\w])", question, re.I) is not None
+        return "ungrounded"
+    if re.search(rf"(?<![\w]){re.escape(value)}(?![\w])", question, re.I) is None:
+        return "ungrounded"
+    if exists is not None and not exists(kind, value.upper() if kind == "broker" else value):
+        return "missing"
+    return "ok"
+
+
+def is_grounded(value: str, kind: str, allowed: set[tuple[str, str]], question: str, exists=None) -> bool:
+    return grounding_status(value, kind, allowed, question, exists) == "ok"
+
+
+def missing_message(value: str) -> str:
+    return f"{value} does not exist in the data; call declare_unanswerable"
 
 
 _COLUMN_KIND = {"product_canonical": "product", "product_family": "product_family", "region": "region",
@@ -57,7 +71,7 @@ class Validation:
 
 
 def validate_sql(sql: str, allowed: set[tuple[str, str]], question: str, db: Database | None = None,
-                 check_ids: bool = True, row_limit: int = 1000) -> Validation:
+                 check_ids: bool = True, row_limit: int = 1000, exists=None) -> Validation:
     sql = sql.strip().rstrip(";").strip()
     try:
         statements = [s for s in sqlglot.parse(sql, read="duckdb") if s is not None and not isinstance(s, exp.Semicolon)]
@@ -103,8 +117,11 @@ def validate_sql(sql: str, allowed: set[tuple[str, str]], question: str, db: Dat
         errors.append(_WHOLE_ROW_ERR)
     table_names = KNOWN_TABLES | ctes | {t.alias_or_name.lower() for t in stmt.find_all(exp.Table)}
 
-    def unresolved(value: str, kind: str) -> bool:
-        return not is_grounded(value, kind, allowed, question)
+    def ground_error(value: str, kind: str, template: str) -> str | None:
+        status = grounding_status(value, kind, allowed, question, exists)
+        if status == "missing":
+            return missing_message(value)
+        return template if status != "ok" else None
 
     for col in stmt.find_all(exp.Column):
         if isinstance(col.this, exp.Star):
@@ -139,8 +156,10 @@ def validate_sql(sql: str, allowed: set[tuple[str, str]], question: str, db: Dat
             errors.append(f"compare {_n(col)} only with = / IN to values from resolve()")
         elif check_ids:
             for value in literals:
-                if unresolved(value, _COLUMN_KIND[_n(col)]):
-                    errors.append(f"{_n(col)} = {value!r} was not returned by resolve() in this request")
+                err = ground_error(value, _COLUMN_KIND[_n(col)],
+                                   f"{_n(col)} = {value!r} was not returned by resolve() in this request")
+                if err:
+                    errors.append(err)
     for join in stmt.find_all(exp.Join):
         for ident in join.args.get("using") or []:
             name = ident.name.lower()
@@ -170,15 +189,18 @@ def validate_sql(sql: str, allowed: set[tuple[str, str]], question: str, db: Dat
                 inner = _unwrap(_strip_alias(item))
                 if not (isinstance(inner, exp.Column) and inner.name.lower() in RESOLVED_COLUMNS):
                     errors.append(f"inside subqueries/CTEs, {name} must be a plain copy of an id column")
+        errors.extend(_literal_row_errors(stmt))
         if any(not isinstance(src.this, (exp.Table, exp.Subquery))
                for src in stmt.find_all(exp.From, exp.Join) if src.this is not None):
             errors.append("only tables, CTEs and subqueries may be used as data sources")
         for lit in stmt.find_all(exp.Literal):
             if isinstance(lit.parent, (exp.Limit, exp.Offset, exp.Fetch)):
                 continue
-            if _ID_LITERAL.fullmatch(str(lit.this)) and unresolved(
-                    str(lit.this), "broker" if str(lit.this).startswith("BK") else "inn"):
-                errors.append(f"ID {str(lit.this)!r} was not returned by resolve() in this request")
+            if _ID_LITERAL.fullmatch(str(lit.this)):
+                err = ground_error(str(lit.this), "broker" if str(lit.this).startswith("BK") else "inn",
+                                   f"ID {str(lit.this)!r} was not returned by resolve() in this request")
+                if err:
+                    errors.append(err)
 
     money: set[str] = set()
     for agg in stmt.find_all(exp.AggFunc):
@@ -203,6 +225,52 @@ def validate_sql(sql: str, allowed: set[tuple[str, str]], question: str, db: Dat
     return Validation(not errors, sql, errors)
 
 
+_LABEL = re.compile(r"[a-z_]+")
+_PREDICATES = (exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE, exp.Like, exp.ILike, exp.In, exp.Between, exp.Is)
+
+
+def _from_of(sel: exp.Select):
+    return sel.args.get("from_") or sel.args.get("from")
+
+
+def _emitted_string(lit: exp.Literal, item: exp.Expression) -> bool:
+    """True if a string literal can end up as an output value (not only inside a comparison)."""
+    node: exp.Expression = lit
+    while node is not item and node.parent is not None:
+        parent = node.parent
+        if isinstance(parent, _PREDICATES) or isinstance(parent, exp.Where):
+            return False
+        if isinstance(parent, exp.If) and parent.this is node:  # CASE WHEN <condition>
+            return False
+        node = parent
+    return True
+
+
+def _literal_row_errors(stmt: exp.Expression) -> list[str]:
+    """Free SQL must not invent result rows/values from literals."""
+    errors: list[str] = []
+    for sel in stmt.find_all(exp.Select):
+        if _from_of(sel) is None:
+            errors.append("every SELECT needs a FROM over a table, CTE or subquery; literal rows are not allowed")
+            continue
+        top = _is_top_level(sel)
+        for item in sel.expressions:
+            inner = _strip_alias(item)
+            if not top:
+                if isinstance(item, exp.Alias) and isinstance(inner, exp.Literal) and not inner.is_string:
+                    errors.append("numeric literals as columns of subqueries/CTEs are not allowed")
+                continue
+            has_data = item.find(exp.Column) is not None or item.find(exp.Star) is not None or any(
+                isinstance(a, exp.Count) or a.find(exp.Column) is not None for a in item.find_all(exp.AggFunc))
+            if not has_data and not (isinstance(inner, exp.Literal) and inner.is_string):
+                errors.append("a result column must come from table columns or aggregates, not from literals")
+            for lit in item.find_all(exp.Literal):
+                if lit.is_string and _emitted_string(lit, item) and not _LABEL.fullmatch(str(lit.this)):
+                    errors.append("string literals in the SELECT list may only be lowercase labels "
+                                  "(letters and underscores); names and values must come from the data")
+    return errors
+
+
 def _limit_ok(limit: exp.Expression | None, row_limit: int) -> bool:
     if limit is None:
         return False
@@ -217,13 +285,23 @@ def _n(col: exp.Column) -> str:
 def _alias_bases(stmt: exp.Expression) -> dict[str, set[str]]:
     """alias (lowercase) -> lowercase base column names it is computed from (transitively)."""
     direct: dict[str, set[str]] = {}
+    agg_aliases: set[str] = set()
     for al in stmt.find_all(exp.Alias):
         expr = al.this
-        if expr is None or expr.find(exp.AggFunc) is not None:
+        if expr is None:
             continue
         cols = {c.name.lower() for c in expr.find_all(exp.Column)}
+        if expr.find(exp.AggFunc) is not None:
+            agg_aliases.add(al.alias.lower())  # an aggregate alias carries only its money columns
+            continue
         if cols:
             direct.setdefault(al.alias.lower(), set()).update(cols)
+    for al in stmt.find_all(exp.Alias):
+        if al.alias.lower() in agg_aliases and al.this is not None and al.this.find(exp.AggFunc) is not None:
+            cols = {c.name.lower() for c in al.this.find_all(exp.Column)}
+            keep = (cols & MONEY_COLUMNS) | (cols & agg_aliases)
+            if keep:
+                direct.setdefault(al.alias.lower(), set()).update(keep)
     result = {k: set(v) for k, v in direct.items()}
     changed = True
     while changed:

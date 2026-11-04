@@ -233,3 +233,63 @@ def test_contract_id_that_is_a_year_rejected(parts):
                                call("declare_unanswerable", reason="x")])
     res = writer.run("Сколько сделок в 2025 году?", "ru", deadline())
     assert res.status == "unanswerable" and "resolve" in _err(llm)
+
+
+# --- final review: ids grounded only by the question must exist ---
+def _bk_spec(code):
+    return {"kind": "deals_aggregate", "measures": ["deal_count"], "filters": {"brokers": [code]}}
+
+
+def test_nonexistent_broker_in_question_rejected(parts):
+    writer, llm = make(parts, [call("compile_query", spec=_bk_spec("BK999"), assumptions=[]),
+                               call("declare_unanswerable", reason="no such broker")])
+    res = writer.run("Сколько сделок заключил брокер BK999?", "ru", deadline())
+    assert res.status == "unanswerable"
+    err = llm.chat.sent[1][1][0][1]["error"]
+    assert "BK999 does not exist in the data; call declare_unanswerable" in err
+
+
+def test_nonexistent_inn_in_question_rejected(parts):
+    spec = {"kind": "deals_aggregate", "measures": ["deal_count"], "filters": {"seller_inns": ["999999999"]}}
+    writer, llm = make(parts, [call("compile_query", spec=spec, assumptions=[]),
+                               call("declare_unanswerable", reason="no such inn")])
+    res = writer.run("Сколько продал ИНН 999999999?", "ru", deadline())
+    assert res.status == "unanswerable"
+    assert "999999999 does not exist in the data" in llm.chat.sent[1][1][0][1]["error"]
+
+
+def test_existing_broker_from_question_accepted(parts):
+    writer, _ = make(parts, [call("compile_query", spec=_bk_spec("BK001"), assumptions=[])])
+    res = writer.run("Сколько сделок заключил брокер BK001?", "ru", deadline())
+    assert res.status == "ok"
+
+
+def test_existing_contract_from_question_accepted_and_missing_rejected(parts):
+    db = parts[0]
+    cid = db.query("SELECT MIN(contract_id) FROM contracts").rows[0][0]
+    spec = {"kind": "contract_lookup", "contract_id": cid}
+    writer, _ = make(parts, [call("compile_query", spec=spec, assumptions=[])])
+    assert writer.run(f"Что за контракт {cid}?", "ru", deadline()).status == "ok"
+    bad = {"kind": "contract_lookup", "contract_id": 999999}
+    writer, llm = make(parts, [call("compile_query", spec=bad, assumptions=[]),
+                               call("declare_unanswerable", reason="x")])
+    assert writer.run("Что за контракт 999999?", "ru", deadline()).status == "unanswerable"
+    assert "does not exist" in llm.chat.sent[1][1][0][1]["error"]
+
+
+def test_free_sql_nonexistent_inn_literal_rejected(parts):
+    sql = "SELECT COUNT(*) FROM deals WHERE seller_inn = '999999999'"
+    writer, llm = make(parts, [call("submit_sql", sql=sql, splits=[], assumptions=[]),
+                               call("declare_unanswerable", reason="x")])
+    res = writer.run("Сколько продал ИНН 999999999?", "ru", deadline())
+    assert res.status == "unanswerable"
+    assert "999999999 does not exist in the data; call declare_unanswerable" in llm.chat.sent[1][1][0][1]["error"]
+
+
+def test_resolved_names_exposed(parts):
+    writer, _ = make(parts, [call("resolve", kind="company", text="Pudexiz Plast"),
+                             call("resolve", kind="product", text="хлопок"),
+                             call("compile_query", spec=COUNT_SPEC, assumptions=[])])
+    res = writer.run("Сколько продала Pudexiz Plast в 2025?", "ru", deadline())
+    assert any("Pudexiz" in n for n in res.resolved_names)
+    assert any("хлоп" in n.lower() for n in res.resolved_names)
