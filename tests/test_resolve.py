@@ -66,3 +66,11 @@ def test_product_substring_is_not_a_match(resolver):
 
 def test_product_whole_token_still_matches(resolver):
     assert any(c.id == "Сжиженный газ" for c in resolver.resolve("product", "газ"))
+
+
+def test_short_word_one_letter_edit_is_not_a_match(resolver):
+    paxta = {c.id for c in resolver.resolve("product", "paxta")}
+    assert "Пиломатериалы" not in paxta
+    taxta = {c.id for c in resolver.resolve("product", "taxta")}
+    assert "Пиломатериалы" in taxta
+    assert "Хлопок-сырец" not in taxta and "Хлопок" not in taxta

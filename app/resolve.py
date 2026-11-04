@@ -10,6 +10,8 @@ from app.text import normalize_name, normalize_text
 
 Kind = Literal["company", "broker", "product", "region", "contract"]
 _CUTOFF = 75.0
+_SHORT_LEN = 6  # one-letter edits between short words are different words
+_SHORT_CUTOFF = 90.0
 
 
 def _fuzzy(q, keys, limit):
@@ -22,7 +24,8 @@ def _fuzzy(q, keys, limit):
     q_tokens = q.split()
     out = []
     for key, score, i in process.extract(q, keys, scorer=fuzz.WRatio, limit=None, score_cutoff=_CUTOFF):
-        if fuzz.ratio(q, key) >= _CUTOFF or set(q_tokens) <= set(key.split()):
+        cutoff = _SHORT_CUTOFF if min(len(q), len(key)) <= _SHORT_LEN else _CUTOFF
+        if fuzz.ratio(q, key) >= cutoff or set(q_tokens) <= set(key.split()):
             out.append((key, score, i))
             if limit is not None and len(out) >= limit:
                 break
