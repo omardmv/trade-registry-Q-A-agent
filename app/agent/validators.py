@@ -267,7 +267,8 @@ def _literal_row_errors(stmt: exp.Expression) -> list[str]:
             for lit in item.find_all(exp.Literal):
                 if lit.is_string and _emitted_string(lit, item) and not _LABEL.fullmatch(str(lit.this)):
                     errors.append("string literals in the SELECT list may only be lowercase labels "
-                                  "(letters and underscores); names and values must come from the data")
+                                  "(letters and underscores); names and values must come from the data; "
+                                  "for months use year, month or date_trunc('month', deal_date)")
     return errors
 
 

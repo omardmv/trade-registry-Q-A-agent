@@ -364,3 +364,11 @@ def test_glued_code_supported_by_hyphenated_cell():
 def test_glued_latin_code_unsupported():
     v = verify_answer("Товар Agromir3 продан.", "Сколько?", [("Agromir 2", 5.0)])
     assert not v.ok
+
+
+def test_tok_match_stricter_prefix():
+    v = verify_answer("Это хлопковое сырьё.", "Q?", [("x", 1.0)], known_names={normalize_name("Хлопок")})
+    assert v.ok, v.unsupported
+    v = verify_answer("Продано 5 т хлопка-сырца.", "Q?", [("Хлопок-сырец", 5.0)],
+                      known_names={normalize_name("Хлопок-сырец")})
+    assert v.ok, v.unsupported

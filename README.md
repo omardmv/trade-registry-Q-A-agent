@@ -32,7 +32,8 @@ uv run pytest
 GEMINI_API_KEY=... uv run python -m eval.run --workers 2
 ```
 
-`eval.run` reports SQL correctness, answer correctness, correct refusals, hallucinations (target 0; includes answer numbers/IDs found neither in the gold rows nor in the returned rows) and
+`eval.run` reports SQL correctness, answer correctness, correct refusals, hallucinations (target 0), `hallucinations_vs_gold` (answer numbers/IDs found neither in the gold rows nor in the
+returned rows; this catches verifier bypasses) and `answered_wrong` (answers that do not match the gold values) and
 latency (limit 90 s), and writes `eval/results/run-*.json`.
 
 ## First live run
@@ -43,7 +44,8 @@ The tests run offline. Before relying on the service, check it against the real 
 2. Start the server and send one question to `/ask`, for example
    `curl -s localhost:8000/ask -H 'content-type: application/json' -d '{"question":"Сколько сделок было в 2025 году?"}'`.
 3. Confirm that the model named in `GEMINI_MODEL` is available for your key (a 404 / "model not found" error
-   means it is not); change `GEMINI_MODEL` if needed.
+   means it is not); change `GEMINI_MODEL` if needed. `GEMINI_THINKING_BUDGET` must be supported by that model;
+   set it to `0` to disable thinking.
 4. Then run the full evaluation (`eval.run`); it exits non-zero on any hallucination.
 
 ## Settings
@@ -57,3 +59,8 @@ The tests run offline. Before relying on the service, check it against the real 
 | `UZEX_LLM_TIMEOUT_S` | `15` | per-call LLM timeout |
 | `UZEX_DATA_DIR` | `data` | directory with the source CSV files |
 | `UZEX_DB_PATH` | `build/uzex.duckdb` | path of the built DuckDB file |
+
+## Known limitation
+
+The verifier checks numbers, IDs, dates, quoted names and names that exist in the registry. An invented company
+or product name that is neither in the registry nor in quotes cannot be detected.

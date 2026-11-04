@@ -129,8 +129,12 @@ class Writer:
         self._exists_cache: dict[tuple[str, str], bool] = {}
 
     def _exists(self, kind: str, value: str) -> bool:
+        if kind in ("inn", "broker"):  # in-memory dicts, nothing to cache
+            return self.resolver.exists(kind, str(value))
         key = (kind, str(value))
         if key not in self._exists_cache:
+            if len(self._exists_cache) >= 1024:
+                self._exists_cache.pop(next(iter(self._exists_cache)))
             self._exists_cache[key] = self.resolver.exists(kind, str(value))
         return self._exists_cache[key]
 

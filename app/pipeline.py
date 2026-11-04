@@ -57,9 +57,9 @@ def _is_no_data(result, compiled: bool) -> bool:
 
 class Pipeline:
     def __init__(self, writer, llm, deadline_s: float = 75.0, llm_timeout_s: float = config.LLM_TIMEOUT_S,
-                 known_names: frozenset[str] | set[str] | None = None):
+                 known_names: frozenset[str] | set[str] | None = None, alias_groups=None):
         self.writer, self.llm = writer, llm
-        self.known_names = known_names
+        self.known_names, self.alias_groups = known_names, alias_groups
         self.deadline_s, self.llm_timeout_s = deadline_s, llm_timeout_s
 
     def ask(self, question: str, previous: dict | None = None) -> AskResult:
@@ -86,7 +86,7 @@ class Pipeline:
         kept = []
         for a in assumptions:
             try:
-                check = verify_answer(a, question, shown, extra_text=extra, known_names=self.known_names)
+                check = verify_answer(a, question, shown, extra_text=extra, known_names=self.known_names, alias_groups=self.alias_groups)
             except Exception:
                 log.exception("assumption check crashed")
                 check = None
@@ -136,7 +136,7 @@ class Pipeline:
                 log.exception("composer failed")
                 break
             check = verify_answer(text, question, shown, extra_text=context, row_count=count,
-                                  known_names=self.known_names)
+                                  known_names=self.known_names, alias_groups=self.alias_groups)
             if check.ok and text:
                 answer = "\n\n".join(p for p in (text, explanation, tail) if p)
                 return AskResult(answer, answered=True, source="llm", verified=True, **base)
@@ -160,4 +160,4 @@ def build_pipeline() -> Pipeline:
     writer = Writer(llm, db, resolver, ExampleStore.from_yaml(config.EXAMPLES_PATH),
                     render_schema_prompt(load_semantic()), config.MAX_TOOL_CALLS, config.MAX_FIX_RETRIES,
                     config.LLM_TIMEOUT_S)
-    return Pipeline(writer, llm, config.DEADLINE_S, config.LLM_TIMEOUT_S, resolver.known_names())
+    return Pipeline(writer, llm, config.DEADLINE_S, config.LLM_TIMEOUT_S, resolver.known_names(), resolver.alias_groups())

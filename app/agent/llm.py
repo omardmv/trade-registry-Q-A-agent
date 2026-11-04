@@ -59,12 +59,18 @@ def is_transient(exc: BaseException) -> bool:
 
 
 def call_with_retry(fn: Callable[[], T], deadline: float, timeout_s: float) -> T:
-    """Call fn; on a transient error retry once, but only if a full timeout_s still fits before deadline."""
+    """Call fn; on a transient error retry once, but only if a full timeout_s still fits before deadline
+    (HTTP 429: after a 1 s pause, which must fit too)."""
     try:
         return fn()
     except Exception as e:
-        if not is_transient(e) or deadline - time.monotonic() < timeout_s:
+        if not is_transient(e):
             raise
+        rate_limited = getattr(e, "code", None) == 429
+        if deadline - time.monotonic() < timeout_s + (1.0 if rate_limited else 0.0):
+            raise
+        if rate_limited:
+            time.sleep(1.0)
     return fn()
 
 

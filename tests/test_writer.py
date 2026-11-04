@@ -338,3 +338,20 @@ def test_second_transient_error_fails(parts):
     chat = FlakyChat(2)
     res = _flaky_writer(parts, chat, 1.0).run("Q?", "ru", deadline())
     assert res.status == "failed" and chat.calls == 2
+
+
+def test_exists_cache_bounded_and_not_used_for_inn_broker(parts):
+    writer, _ = make(parts, [])
+    calls = []
+    real = writer.resolver.exists
+    writer.resolver.exists = lambda k, v: (calls.append((k, v)), real(k, v))[1]
+    for _ in range(2):
+        assert writer._exists("inn", "975923536") and writer._exists("broker", "BK001")
+    assert len(calls) == 4  # in-memory dicts, no cache
+    cid = parts[0].query("SELECT MIN(contract_id) FROM contracts").rows[0][0]
+    calls.clear()
+    assert writer._exists("contract", str(cid)) and writer._exists("contract", str(cid))
+    assert len(calls) == 1
+    for i in range(1100):
+        writer._exists("deal", str(100000 + i))
+    assert len(writer._exists_cache) <= 1024

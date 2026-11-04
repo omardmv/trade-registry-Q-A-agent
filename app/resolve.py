@@ -105,6 +105,20 @@ class Resolver:
             raw += [region, region_ru]
         return frozenset(n for n in (normalize_name(t) for t in raw if t) if n)
 
+    def alias_groups(self) -> list[frozenset[str]]:
+        """Groups of normalized names that denote the same region or product (incl. translations/synonyms)."""
+        groups = []
+        for region, region_ru, synonyms in self._regions:
+            groups.append([region, region_ru, *synonyms.split(";")])
+        for product_name, canonical, family, synonyms in self._product_rows:
+            groups.append([product_name, canonical, family, *synonyms.split(";")])
+        out = []
+        for g in groups:
+            names = frozenset(n for n in (normalize_name(t) for t in g if t and t.strip()) if n)
+            if names:
+                out.append(names)
+        return out
+
     def exists(self, kind: str, value: str) -> bool:
         """Exact existence of an id: kind in inn / broker / contract / deal."""
         if kind == "inn":

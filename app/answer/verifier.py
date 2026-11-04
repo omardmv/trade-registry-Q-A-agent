@@ -55,15 +55,30 @@ def _tok_match(g: str, w: str) -> bool:
     """Name token g matches answer token w: equal, or alphabetic words of 5+ chars differing only in the ending."""
     if g == w:
         return True
-    if len(g) < 5 or not g.isalpha() or not w.isalpha() or abs(len(g) - len(w)) > 3:
+    if len(g) < 5 or not g.isalpha() or not w.isalpha() or abs(len(g) - len(w)) > 2:
         return False
-    n = max(3, len(g) - 3)
+    n = max(4, len(g) - 2)
     return w[:n] == g[:n]
 
 
 def _find_name(name: list[str], tokens: list[str]) -> bool:
     k = len(name)
     return any(all(_tok_match(g, w) for g, w in zip(name, tokens[i:i + k])) for i in range(len(tokens) - k + 1))
+
+
+def _expand_aliases(cells, alias_groups) -> list[str]:
+    """Names of every alias group that one of the (row cell) texts equals."""
+    if not alias_groups:
+        return []
+    index: dict[str, list[frozenset[str]]] = {}
+    for g in alias_groups:
+        for member in g:
+            index.setdefault(member, []).append(g)
+    out: list[str] = []
+    for c in cells:
+        for g in index.get(normalize_name(c), ()):
+            out += g
+    return out
 
 
 def _unsupported_known_names(answer: str, supports: list[str], known_names) -> list[str]:
@@ -85,7 +100,7 @@ def _spaced(norm: str) -> str:
 
 
 def verify_answer(answer: str, question: str, rows: list[tuple], extra_text: str = "",
-                  row_count: int | None = None, known_names=None) -> Verification:
+                  row_count: int | None = None, known_names=None, alias_groups=None) -> Verification:
     numbers: list[float] = [] if row_count is None else [float(row_count)]
     month_years: set[tuple[int, int]] = set()
     dates: set[str] = set(_ALWAYS_DATES)
@@ -125,7 +140,8 @@ def verify_answer(answer: str, question: str, rows: list[tuple], extra_text: str
 
     unsupported: list[str] = []
     if known_names:
-        unsupported += _unsupported_known_names(answer, [*cells, question, extra_text], known_names)
+        unsupported += _unsupported_known_names(
+            answer, [*cells, question, extra_text, *_expand_aliases(cells, alias_groups)], known_names)
     for d in extract_dates(answer):
         if d not in dates:
             unsupported.append(d)

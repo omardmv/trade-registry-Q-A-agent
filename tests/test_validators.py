@@ -452,3 +452,8 @@ def test_reaggregated_currency_sums_scoped_outer_ok():
            "GROUP BY currency")
     r = v(sql)
     assert r.ok, r.errors
+
+
+def test_literal_rule_error_has_month_hint():
+    r = v("SELECT 'Jan-2025' AS m, COUNT(*) FROM deals")
+    assert any("date_trunc('month', deal_date)" in e for e in r.errors)

@@ -214,3 +214,37 @@ def test_call_with_retry_not_when_no_time_or_not_transient():
     with pytest.raises(TimeoutError):  # at most one retry
         call_with_retry(twice, time.monotonic() + 10, 1.0)
     assert len(calls) == 2
+
+
+def test_429_waits_one_second_only_if_it_fits(monkeypatch):
+    import app.agent.llm as m
+    slept = []
+    monkeypatch.setattr(m.time, "sleep", lambda s: slept.append(s))
+
+    def make():
+        calls = []
+
+        def fn():
+            calls.append(1)
+            if len(calls) == 1:
+                raise errors.ClientError(429, {})
+            return "ok"
+        return fn, calls
+
+    fn, calls = make()
+    assert call_with_retry(fn, time.monotonic() + 10, 2.0) == "ok" and slept == [1.0] and len(calls) == 2
+    slept.clear()
+    fn, calls = make()
+    with pytest.raises(errors.ClientError):  # 2.0 + 1 s does not fit in 2.5 s
+        call_with_retry(fn, time.monotonic() + 2.5, 2.0)
+    assert slept == [] and len(calls) == 1
+    slept.clear()
+
+    def srv():
+        calls.append(1)
+        if len(calls) == 1:
+            raise errors.ServerError(503, {})
+        return "ok"
+
+    calls.clear()
+    assert call_with_retry(srv, time.monotonic() + 10, 2.0) == "ok" and slept == []

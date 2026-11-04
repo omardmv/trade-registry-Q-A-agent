@@ -74,3 +74,17 @@ def test_short_word_one_letter_edit_is_not_a_match(resolver):
     taxta = {c.id for c in resolver.resolve("product", "taxta")}
     assert "Пиломатериалы" in taxta
     assert "Хлопок-сырец" not in taxta and "Хлопок" not in taxta
+
+
+# --- translated aliases count as supported by the known-name check ---
+def test_region_aliases_supported_by_translated_cells(db):
+    from app.answer.verifier import verify_answer
+    r = Resolver(db)
+    known, groups = r.known_names(), r.alias_groups()
+    answer = "г. Ташкент — 22 790; Наманганская область — 13 459"
+    rows = [("Toshkent shahri", 22790), ("Namangan viloyati", 13459)]
+    v = verify_answer(answer, "Сделки по регионам?", rows, known_names=known, alias_groups=groups)
+    assert v.ok, v.unsupported
+    v = verify_answer(answer, "Сделки по регионам?", [("Buxoro viloyati", 22790), ("Buxoro viloyati", 13459)],
+                      known_names=known, alias_groups=groups)
+    assert not v.ok and any("namangan" in u.lower() for u in v.unsupported)
