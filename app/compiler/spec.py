@@ -153,6 +153,19 @@ def _outside(what: str) -> SpecError:
                      f"01.01.2022–31.10.2026); call declare_unanswerable")
 
 
+def _fmt(d: dt.date) -> str:
+    return d.strftime("%d.%m.%Y")
+
+
+def _opt_str(d: dict, key: str) -> str | None:
+    v = d.get(key)
+    if v is None or v == "":
+        return None
+    if not isinstance(v, str):
+        raise SpecError(f"{key} must be a string, got {v!r}")
+    return v
+
+
 def _check_year(year: int | None) -> None:
     if year is not None and not 2022 <= year <= 2026:
         raise _outside(f"year {year}")
@@ -164,7 +177,7 @@ def _parse_filters(d: dict) -> Filters:
     f = Filters(
         year=_opt_int(d, "year"), month_from=_opt_int(d, "month_from"), month_to=_opt_int(d, "month_to"),
         date_from=_opt_date(d, "date_from"), date_to=_opt_date(d, "date_to"),
-        products=_str_list(d, "products"), product_family=d.get("product_family") or None,
+        products=_str_list(d, "products"), product_family=_opt_str(d, "product_family"),
         regions=_str_list(d, "regions"),
         buyer_inns=_str_list(d, "buyer_inns"), seller_inns=_str_list(d, "seller_inns"),
         participant_inns=_str_list(d, "participant_inns"),
@@ -200,9 +213,15 @@ def _parse_filters(d: dict) -> Filters:
     if f.year == 2026 and f.month_to is not None and f.month_to > 10:
         raise SpecError("data ends 30.10.2026: set month_to to 10 and add an assumption that the "
                         "period is covered only up to 30.10.2026")
-    for d_ in (f.date_from, f.date_to):
-        if d_ is not None and not DATA_START <= d_ <= DATA_END:
-            raise _outside(d_.isoformat())
+    if has_dates:
+        lo = f.date_from or dt.date.min
+        hi = f.date_to or dt.date.max
+        if hi < DATA_START or lo > DATA_END:
+            raise _outside(f"{f.date_from or '...'}..{f.date_to or '...'}")
+        if lo < DATA_START or hi > DATA_END:
+            raise SpecError(f"data covers {_fmt(DATA_START)}–{_fmt(DATA_END)}: clamp date_from/date_to "
+                            "to that range and add an assumption that the period is covered only "
+                            "within it")
     for inn in f.buyer_inns + f.seller_inns + f.participant_inns:
         if not re.fullmatch(r"\d{9}", inn):
             raise SpecError(f"INN must be 9 digits, got {inn!r}")
@@ -254,6 +273,12 @@ def parse_spec(d: dict) -> Spec:
         spec = UsdRate(_opt_date(d, "date"), _opt_int(d, "year"), _opt_int(d, "month"))
         if spec.date is not None and not RATES_START <= spec.date <= RATES_END:
             raise _outside(spec.date.isoformat())
+        if spec.date is not None and (spec.year is not None or spec.month is not None):
+            raise SpecError("use either date or year/month")
+        if spec.month is not None and spec.year is None:
+            raise SpecError("a month needs a year")
+        if spec.month is not None and not 1 <= spec.month <= 12:
+            raise SpecError(f"month {spec.month} must be 1..12")
         _check_year(spec.year)
         if spec.year == 2026 and spec.month is not None and spec.month > 10:
             raise _outside(f"{spec.month:02d}.2026")
@@ -272,7 +297,7 @@ def parse_spec(d: dict) -> Spec:
                     raise SpecError(f"{name} is only allowed when entity is participants, not {entity}")
         if entity != "contracts" and year is not None:
             raise SpecError(f"registered_year is only allowed when entity is contracts, not {entity}")
-        return RegistryCount(entity, role, vat, d.get("region") or None, year)
+        return RegistryCount(entity, role, vat, _opt_str(d, "region"), year)
     raise SpecError(f"unknown kind {kind!r}; use deals_aggregate, deal_lookup, contract_lookup, "
                     "usd_rate or registry_count")
 

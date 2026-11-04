@@ -31,7 +31,7 @@ def test_grouped_default_top_is_3():
     ({"measures": ["deal_count"], "filters": {"buyer_inns": ["12345"]}}, "INN"),
     ({"measures": ["deal_count"], "filters": {"brokers": ["X1"]}}, "broker"),
     ({"measures": ["deal_count"], "filters": {"statuses": ["Done"]}}, "status"),
-    ({"measures": ["deal_count"], "filters": {"date_from": "2021-12-01"}}, "outside"),
+    ({"measures": ["deal_count"], "filters": {"date_from": "2021-12-01"}}, "clamp date_from/date_to"),
 ])
 def test_invalid_aggregate(bad, message):
     with pytest.raises(SpecError, match=message):
@@ -62,7 +62,11 @@ def _agg(filters):
 @pytest.mark.parametrize("spec, message", [
     (_agg({"year": 2026, "month_from": 9, "month_to": 12}), "data ends 30.10.2026"),
     (_agg({"year": 2026, "month_to": 11, "month_from": 10}), "data ends 30.10.2026"),
-    (_agg({"date_from": "2025-05-01", "date_to": "2026-11-15"}), "outside"),
+    (_agg({"date_from": "2025-05-01", "date_to": "2026-11-15"}), "clamp date_from/date_to"),
+    (_agg({"date_from": "2021-01-01", "date_to": "2021-12-31"}), "outside"),
+    (_agg({"date_from": "2026-11-01"}), "outside"),
+    (_agg({"date_to": "2021-12-31"}), "outside"),
+    (_agg({"date_from": "2022-01-01", "date_to": "2022-03-31"}), "data covers 03.01.2022–30.10.2026"),
     (_agg({"date_from": "2025-06-01", "date_to": "2025-05-01"}), "date_from must be <= date_to"),
     (_agg({"month_from": 3, "month_to": 5}), "needs a year"),
     (_agg({"month_from": 3}), "needs a year"),
@@ -122,3 +126,31 @@ def test_opt_int_accepts_integral():
     assert parse_spec(_agg({"year": "2025"})).filters.year == 2025
     assert parse_spec(_agg({"year": 2025.0})).filters.year == 2025
     assert parse_spec(_agg({"year": 2025})).filters.year == 2025
+
+
+@pytest.mark.parametrize("spec, message", [
+    ({"year": 2025, "month": 13}, "1..12"),
+    ({"year": 2025, "month": 0}, "1..12"),
+    ({"month": 5, "date": "2025-05-01"}, "use either date or year/month"),
+    ({"month": 5}, "a month needs a year"),
+    ({"date": "2025-05-01", "year": 2025}, "use either date or year/month"),
+    ({"date": "2025-05-01", "year": 2025, "month": 5}, "use either date or year/month"),
+])
+def test_usd_rate_rules(spec, message):
+    with pytest.raises(SpecError, match=message):
+        parse_spec({"kind": "usd_rate", **spec})
+
+
+def test_usd_rate_valid_month():
+    assert parse_spec({"kind": "usd_rate", "year": 2025, "month": 5}) == UsdRate(year=2025, month=5)
+
+
+@pytest.mark.parametrize("spec", [
+    _agg({"product_family": 5}),
+    _agg({"product_family": ["a"]}),
+    {"kind": "registry_count", "entity": "participants", "region": 5},
+    {"kind": "registry_count", "entity": "participants", "region": ["x"]},
+])
+def test_string_fields(spec):
+    with pytest.raises(SpecError, match="must be a string"):
+        parse_spec(spec)
