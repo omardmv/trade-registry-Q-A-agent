@@ -151,6 +151,16 @@ def validate_sql(sql: str, allowed: set[tuple[str, str]], question: str, db: Dat
                 not _is_top_level(sel) and _builds_string(sel) for sel in stmt.find_all(exp.Select)):
             errors.append("literal values inside subqueries/CTEs are not allowed; "
                           "filter on the resolved column directly")
+        for sel in stmt.find_all(exp.Select):
+            if _is_top_level(sel):
+                continue
+            for item in sel.expressions:
+                name = item.alias_or_name.lower()
+                if name not in RESOLVED_COLUMNS:
+                    continue
+                inner = _unwrap(_strip_alias(item))
+                if not (isinstance(inner, exp.Column) and inner.name.lower() in RESOLVED_COLUMNS):
+                    errors.append(f"inside subqueries/CTEs, {name} must be a plain copy of an id column")
         if any(not isinstance(src.this, (exp.Table, exp.Subquery))
                for src in stmt.find_all(exp.From, exp.Join) if src.this is not None):
             errors.append("only tables, CTEs and subqueries may be used as data sources")

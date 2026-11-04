@@ -369,3 +369,27 @@ def test_untraced_id_comparisons_rejected(sql):
 def test_traced_id_comparisons_accepted(sql):
     r = v(sql)
     assert r.ok, r.errors
+
+
+@pytest.mark.parametrize("sql", [
+    "SELECT COUNT(*) FROM deals d JOIN (SELECT 100005 AS contract_id) x ON d.contract_id = x.contract_id",
+    "WITH k AS (SELECT 100005 AS contract_id) SELECT COUNT(*) FROM deals d "
+    "WHERE d.contract_id IN (SELECT contract_id FROM k)",
+    "WITH k AS (SELECT 100005 AS contract_id) SELECT COUNT(*) FROM deals d JOIN k ON d.contract_id = k.contract_id",
+    "SELECT COUNT(*) FROM deals WHERE contract_id IN "
+    "(SELECT contract_id FROM (SELECT 100005 AS contract_id) z)",
+    "SELECT COUNT(*) FROM deals d JOIN (SELECT contract_id FROM (SELECT 100005 AS contract_id) z) x "
+    "USING (contract_id)",
+    "WITH a AS (SELECT 100005 AS c), b AS (SELECT c AS contract_id FROM a) "
+    "SELECT COUNT(*) FROM deals d JOIN b ON d.contract_id = b.contract_id",
+    "WITH k AS (SELECT concat(97592353, 6) AS seller_inn) SELECT COUNT(*) FROM deals "
+    "WHERE seller_inn IN (SELECT seller_inn FROM k)",
+    "WITH k AS (SELECT 100000 + 5 AS deal_id) SELECT COUNT(*) FROM deals d JOIN k ON d.deal_id = k.deal_id",
+])
+def test_rename_to_id_bypass_rejected(sql):
+    assert not v(sql, question="Сколько сделок?").ok
+
+
+def test_vat_payer_subquery_accepted():
+    r = v("SELECT COUNT(*) AS n FROM deals WHERE buyer_inn IN (SELECT inn AS i FROM participants WHERE vat_payer)")
+    assert r.ok, r.errors
