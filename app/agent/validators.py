@@ -140,10 +140,12 @@ def validate_sql(sql: str, allowed: set[tuple[str, str]], question: str, db: Dat
                     errors.append(f"{_n(col)} = {value!r} was not returned by resolve() in this request")
     if check_ids:
         if any(True for _ in stmt.find_all(exp.Values)) or any(
-                not _is_top_level(sel) and any(l.is_string for e in sel.expressions for l in e.find_all(exp.Literal))
-                for sel in stmt.find_all(exp.Select)):
+                not _is_top_level(sel) and _builds_string(sel) for sel in stmt.find_all(exp.Select)):
             errors.append("literal values inside subqueries/CTEs are not allowed; "
                           "filter on the resolved column directly")
+        if any(not isinstance(src.this, (exp.Table, exp.Subquery))
+               for src in stmt.find_all(exp.From, exp.Join) if src.this is not None):
+            errors.append("only tables, CTEs and subqueries may be used as data sources")
         for lit in stmt.find_all(exp.Literal):
             if isinstance(lit.parent, (exp.Limit, exp.Offset, exp.Fetch)):
                 continue
@@ -252,6 +254,26 @@ def _unwrap(node: exp.Expression) -> exp.Expression:
     while isinstance(node, _WRAPPERS) and isinstance(node.this, exp.Expression):
         node = node.this
     return node
+
+
+_STRING_TYPES = {exp.DataType.Type.VARCHAR, exp.DataType.Type.TEXT, exp.DataType.Type.CHAR,
+                 exp.DataType.Type.NVARCHAR}
+
+
+def _builds_string(sel: exp.Select) -> bool:
+    """String literal, chr() or a cast to a string type inside a select item."""
+    for item in sel.expressions:
+        for n in item.find_all(exp.Literal, exp.Chr, exp.Cast, exp.Anonymous):
+            if isinstance(n, exp.Literal) and n.is_string:
+                return True
+            if isinstance(n, exp.Chr):
+                return True
+            if isinstance(n, exp.Anonymous) and n.name.lower() == "chr":
+                return True
+            if isinstance(n, exp.Cast) and isinstance(n.args.get("to"), exp.DataType) \
+                    and n.args["to"].this in _STRING_TYPES:
+                return True
+    return False
 
 
 def _is_top_level(sel: exp.Select) -> bool:

@@ -319,3 +319,28 @@ def test_literal_projection_in_subquery_rejected(sql):
 def test_top_level_labels_accepted(sql):
     r = v(sql)
     assert r.ok, r.errors
+
+
+@pytest.mark.parametrize("sql", [
+    "SELECT COUNT(*) FROM deals WHERE region IN (SELECT * FROM unnest(['Ташкент']))",
+    "SELECT COUNT(*) FROM deals d, unnest(['Ташкент']) AS u WHERE d.region = u.unnest",
+    "SELECT COUNT(*) FROM deals WHERE region IN (SELECT * FROM unnest(string_split('Ташкент,X', ',')))",
+    "SELECT COUNT(*) FROM deals WHERE region IN (SELECT chr(84) || chr(111))",
+    "SELECT COUNT(*) FROM deals WHERE region IN (SELECT CAST(123 AS VARCHAR))",
+    "SELECT COUNT(*) FROM deals WHERE region IN (SELECT 123::VARCHAR)",
+    "SELECT COUNT(*) FROM deals WHERE region IN (SELECT concat('a', 'b'))",
+    "SELECT COUNT(*) FROM deals WHERE region IN (SELECT {'a': 'Ташкент'}.a)",
+    "SELECT COUNT(*) FROM deals WHERE region IN (SELECT ['Ташкент'][1])",
+    "SELECT COUNT(*) FROM deals WHERE region IN (SELECT MAP(['k'], ['Ташкент'])['k'])",
+    "SELECT COUNT(*) FROM deals d JOIN (VALUES ('Ташкент')) x(rg) ON d.region = x.rg",
+])
+def test_non_table_sources_and_string_building_rejected(sql):
+    assert not v(sql).ok
+
+
+def test_tables_and_ctes_still_joinable():
+    sql = ("WITH c AS (SELECT contract_id, contract_form FROM contracts) "
+           "SELECT COUNT(*) AS n FROM deals d JOIN c ON d.contract_id = c.contract_id "
+           "JOIN (SELECT deal_id FROM deals) s ON s.deal_id = d.deal_id")
+    r = v(sql)
+    assert r.ok, r.errors

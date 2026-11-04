@@ -82,7 +82,8 @@ Steps:
 5. Ambiguity: follow the Ambiguity registry. Compute the variants in ONE query: status_scope=split for counts
    and totals; two measures for "most/largest" without a measure; group_by=participant when the role is not
    stated. At most 2 split axes. Write the defaults you applied as short assumptions in the question's language.
-6. Free SQL rules: DuckDB dialect; money via amount_uzs/amount_usd; never filter by names; derived numbers
+6. Free SQL rules: Put text labels only in the top-level SELECT; for buyer/seller splits use compile_query
+   with group_by=participant. DuckDB dialect; money via amount_uzs/amount_usd; never filter by names; derived numbers
    (percent, averages, differences) as SQL columns; include participant/broker names next to IDs.
 
 {schema}
