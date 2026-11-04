@@ -55,6 +55,8 @@ _DISTINCT_RE = re.compile(r"сколько\s+(?:\w+\s+)?(?:разных|разл
 _SHARE_RE = re.compile(r"(?<!\w)(?:дол[яиюей]|процент\w*|foiz\w*|ulush\w*|фоиз\w*|улуш\w*)(?!\w)|%",
                        re.IGNORECASE)
 _PERCENT_MEASURES = {"share_pct", "cancelled_pct", "avg_price_change_pct"}
+_SHARE_BASIS_RE = {"amount_uzs": re.compile(r"оборот|сумм|summa|qiymat|pul(?!\w)", re.IGNORECASE),
+                   "volume_t": re.compile(r"объ[её]м|тонн|hajm|tonna", re.IGNORECASE)}
 _NEGATION_RE = re.compile(r"(?<!\w)(?:кроме|без|не|bundan\s+tashqari|tashqari|emas)(?!\w)", re.IGNORECASE)
 _EACH_RE = re.compile(r"по\s+кажд\w*|по\s+всем|har\s+bir", re.IGNORECASE)
 _MIN_MAX_MEASURES = {"min_unit_price_uzs", "max_unit_price_uzs"}
@@ -183,8 +185,8 @@ def _covered(v: _Value, spec: Spec, strings: dict[str, set[str]], question: str,
     if isinstance(spec, DealsAggregate):
         if spec.group_by in dims:
             return True
-        if v.field == "unit" and any(m in _UNIT_MEASURES for m in spec.measures):
-            return True
+        if v.field == "unit" and (any(m in _UNIT_MEASURES for m in spec.measures) or spec.share_of is not None):
+            return True  # the unit names the output (or the share basis, checked below)
         if v.field in ("category", "industry") and not _CATEGORY_WORD_RE.search(question) and (
                 value in strings.get("product_family", set()) or spec.group_by == "product_family"):
             return True
@@ -236,6 +238,11 @@ def missing_condition_error(question: str, spec: Spec, index: list[_Value], igno
     if _DISTINCT_RE.search(q) and not any(m in DISTINCT_MEASURES for m in spec.measures):
         return ("the question asks how many distinct items: use a distinct_* measure "
                 f"({', '.join(DISTINCT_MEASURES)}) without group_by")
+    if _SHARE_RE.search(q) and spec.share_of is not None and spec.share_of.basis == "deals":
+        for basis, rx in _SHARE_BASIS_RE.items():
+            if rx.search(q):
+                return (f"the question asks for a share of money / volume, not of the deal count: set "
+                        f"share_of.basis=\"{basis}\"")
     if _SHARE_RE.search(q) and not (any(m in _PERCENT_MEASURES for m in spec.measures) or spec.compare_periods):
         return ("the question asks for a share / percentage: use share_pct with share_of {field, value} "
                 "(or cancelled_pct for the cancelled share); if the share is of something share_of cannot "

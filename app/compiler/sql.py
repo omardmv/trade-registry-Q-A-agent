@@ -174,8 +174,19 @@ def _filter_clause(conds: list[str]) -> str:
     return f" FILTER (WHERE {' AND '.join(conds)})" if conds else ""
 
 
+_SHARE_BASIS_COL = {"amount_uzs": "d.amount_uzs", "volume_t": "d.volume_tonnes"}
+# percent measures: a change between periods is a difference in percentage points
+PERCENT_POINT_MEASURES = ("share_pct", "cancelled_pct", "avg_price_change_pct")
+
+
 def _expr(measure: str, valid: bool, s: DealsAggregate | None = None) -> str:
     expr = MEASURE_SQL[measure][0]
+    if measure == "share_pct" and s is not None and s.share_of is not None and s.share_of.basis != "deals":
+        # money / tonnes shares are over deals that took place, unless a status filter defines the rows
+        col = _SHARE_BASIS_COL[s.share_of.basis]
+        conds = [] if s.filters.statuses else ["NOT d.is_cancelled"]
+        num = _filter_clause([_share_condition(s)] + conds)
+        return f"ROUND(100.0 * SUM({col}){num} / NULLIF(SUM({col}){_filter_clause(conds)}, 0), 2)"
     status = [] if measure in SCOPE_FREE or not valid else ["NOT d.is_cancelled"]
     return expr.format(f=_filter_clause(status), n=_filter_clause(["d.volume_tonnes IS NOT NULL"] + status),
                        l=_filter_clause(["d.delivery_late_days > 0"] + status),
@@ -363,9 +374,16 @@ def _compare_periods_sql(s: DealsAggregate, scope: str, valid_filter: bool, dims
             branch += " GROUP BY d.unit"
         branches.append(f"({branch})")
     aliases = [a for _, a in pairs]
+    points = {MEASURE_SQL[m][1] for m in PERCENT_POINT_MEASURES}
     window = "PARTITION BY unit ORDER BY period_no" if unit else "ORDER BY period_no"
-    change = [f"ROUND(100.0 * ({a} / NULLIF(LAG({a}) OVER ({window}), 0) - 1), 2) AS "
-              f"{'change_pct' if len(aliases) == 1 else a + '_change_pct'}" for a in aliases]
+    change = []
+    for a in aliases:
+        if a in points:      # a share changes by percentage points, not by a percent of itself
+            name = "change_pp" if len(aliases) == 1 else f"{a}_change_pp"
+            change.append(f"ROUND({a} - LAG({a}) OVER ({window}), 2) AS {name}")
+        else:
+            name = "change_pct" if len(aliases) == 1 else f"{a}_change_pct"
+            change.append(f"ROUND(100.0 * ({a} / NULLIF(LAG({a}) OVER ({window}), 0) - 1), 2) AS {name}")
     head = ["year", "month_from", "month_to"] + (["unit"] if unit else []) + aliases + change
     order = "period_no, unit" if unit else "period_no"
     return f"SELECT {', '.join(head)} FROM ({' UNION ALL '.join(branches)}) p ORDER BY {order}"
@@ -382,6 +400,10 @@ def _ranked_select(cols: list[str], from_sql: str, group: list[str], s: DealsAgg
     direction = "ASC" if s.order == "asc" else "DESC"
     tie = ", ".join(group)           # group keys break ties deterministically
     base = f"SELECT {', '.join(cols)} {from_sql} GROUP BY {', '.join(group)}"
+    if valid_filter and measure not in SCOPE_FREE:
+        # valid view without a WHERE (a scope-free measure needs the cancelled rows): a group whose deals were all
+        # cancelled has no valid value and must not enter the ranking (it would win an ascending one)
+        base += " HAVING COUNT(*) FILTER (WHERE NOT d.is_cancelled) > 0"
     if per_unit:
         # volumes of different units are not comparable: rank within each unit
         rank_expr = _expr(measure, (split or valid_filter) and measure not in SCOPE_FREE, s)

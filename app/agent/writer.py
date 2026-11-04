@@ -11,7 +11,7 @@ from app.agent.llm import LLM, ToolSpec, call_with_retry
 from app.agent.validators import grounding_status, missing_message, validate_sql
 from app.catalog import load_catalog, render_catalog
 from app.compiler.spec import (CONTRACT_FORMS, CONTRACT_TYPES, DIMENSIONS, FILTER_KEYS, KINDS, MEASURES, ORDERS,
-                               PERIOD_KEYS, REGISTRY_ENTITIES, ROLES, SHARE_FIELDS, STATUS_SCOPES, STATUSES,
+                               PERIOD_KEYS, REGISTRY_ENTITIES, ROLES, SHARE_BASES, SHARE_FIELDS, STATUS_SCOPES, STATUSES,
                                TRADE_TYPES, USD_EXTREMES, DealsAggregate, Spec, SpecError, UsdRate, check_catalog,
                                entity_values, parse_spec)
 from app.compiler.sql import SCOPE_FREE, compile_spec
@@ -45,7 +45,8 @@ SPEC_SCHEMA = {"type": "OBJECT", "properties": {
     "status_scope": _enum(STATUS_SCOPES),
     "order": {**_enum(ORDERS), "description": "ranking direction; asc = least / cheapest / fewest"},
     "share_of": {"type": "OBJECT", "description": "condition for share_pct (numerator)", "properties": {
-        "field": _enum(SHARE_FIELDS), "value": S, "values": _arr(S)}},
+        "field": _enum(SHARE_FIELDS), "value": S, "values": _arr(S),
+        "basis": {**_enum(SHARE_BASES), "description": "deals (default) | amount_uzs | volume_t"}}},
     "compare_periods": {**_arr({"type": "OBJECT", "properties": {k: I for k in PERIOD_KEYS}}),
                         "description": "exactly two periods to compare (ungrouped deals_aggregate)"},
     "deal_id": I, "contract_id": I, "inn": S, "broker_code": S, "date": _DATE,

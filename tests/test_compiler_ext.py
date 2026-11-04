@@ -357,3 +357,50 @@ def test_broker_side_needs_brokers_filter():
     from app.compiler.spec import SpecError
     with pytest.raises(SpecError, match="brokers"):
         parse_spec(agg(["deal_count"], group_by="broker_side"))
+
+
+# ---------- review fixes ----------
+
+@pytest.mark.parametrize("basis,col", [("amount_uzs", "amount_uzs"), ("volume_t", "volume_tonnes")])
+def test_share_pct_by_amount_and_volume(db, basis, col):
+    _, res = run(db, agg(["share_pct"], share_of={"field": "contract_type", "value": "Экспортный", "basis": basis},
+                         filters={"year": 2024}))
+    want = scalar(db, f"""SELECT ROUND(100.0 * SUM({col}) FILTER (WHERE contract_type='Экспортный')
+                           / SUM({col}), 2) FROM deals WHERE year=2024 AND NOT is_cancelled""")
+    assert res.rows[0][0] == want
+
+
+def test_share_basis_validated():
+    from app.compiler.spec import SpecError
+    with pytest.raises(SpecError, match="basis"):
+        parse_spec(agg(["share_pct"], share_of={"field": "contract_type", "value": "Экспортный", "basis": "lots"}))
+
+
+def test_asc_ranking_with_scope_free_measure_skips_groups_without_valid_deals(db):
+    _, res = run(db, agg(["deal_count", "cancelled_pct"], group_by="buyer", top=5, order="asc",
+                         filters={"year": 2024}))
+    by_deals = [r for r in res.rows if r[0] == "by_deals"]
+    counts = [r[res.columns.index("deals")] for r in by_deals]
+    assert counts and min(counts) > 0
+    want = rows(db, """SELECT buyer_inn, COUNT(*) FILTER (WHERE NOT is_cancelled) n FROM deals WHERE year=2024
+                       GROUP BY 1 HAVING n > 0 ORDER BY n ASC, 1 LIMIT 5""")
+    assert [r[res.columns.index("buyer_inn")] for r in by_deals] == [w[0] for w in want]
+
+
+def test_compare_periods_unequal_length_rejected():
+    from app.compiler.spec import SpecError
+    with pytest.raises(SpecError, match="same length"):
+        parse_spec(agg(["deal_count"], compare_periods=[{"year": 2024}, {"year": 2025, "month_from": 1,
+                                                                          "month_to": 3}]))
+
+
+def test_compare_periods_percent_measure_change_in_points(db):
+    _, res = run(db, agg(["cancelled_pct"], compare_periods=[{"year": 2023}, {"year": 2024}]))
+    assert res.columns[-1] == "change_pp"
+    assert res.rows[1][-1] == pytest.approx(res.rows[1][-2] - res.rows[0][-2])
+
+
+def test_active_on_outside_data_rejected():
+    from app.compiler.spec import SpecError
+    with pytest.raises(SpecError, match="outside"):
+        parse_spec({"kind": "registry_count", "entity": "contracts", "active_on": "2030-01-01"})

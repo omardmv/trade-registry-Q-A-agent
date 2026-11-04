@@ -181,3 +181,20 @@ def test_named_value_requires_that_value(index):
     # two values of a single-valued field named: setting one of them is a valid reading
     q2 = "Сколько сделок по хлопку-сырцу (спот) в форме «Форвард»?"
     assert err(index, q2, {**AGG, "filters": {"products": ["Хлопок-сырец"], "contract_form": "Форвард"}}) is None
+
+
+@pytest.mark.parametrize("q", ["Какая доля экспорта в обороте 2024 года?", "eksportning summadagi ulushi necha foiz?",
+                               "Какой процент объёма в тоннах приходится на форварды?"])
+def test_share_of_money_or_volume_needs_basis(index, q):
+    spec = {**AGG, "measures": ["share_pct"], "share_of": {"field": "contract_type", "value": "Экспортный"}}
+    if "форвард" in q:
+        spec["share_of"] = {"field": "contract_form", "value": "Форвард"}
+    assert "basis" in err(index, q, spec)
+    basis = "volume_t" if "тонн" in q else "amount_uzs"
+    assert err(index, q, {**spec, "share_of": {**spec["share_of"], "basis": basis}}) is None
+
+
+def test_share_on_registry_rejected(index):
+    assert "declare_unanswerable" in err(index, "Какой процент компаний-продавцов не платит НДС?",
+                                         {"kind": "registry_count", "entity": "participants", "role": "Продавец",
+                                          "vat_payer": False})

@@ -186,8 +186,9 @@ def test_share_rendered():
 
 def test_compare_periods_rendered():
     text = _explain({"kind": "deals_aggregate", "measures": ["deal_count"],
-                     "compare_periods": [{"year": 2023}, {"year": 2024, "month_from": 1, "month_to": 3}]}, "ru")
-    assert "сравнение периодов: за 2023 год и за 01.2024–03.2024" in text
+                     "compare_periods": [{"year": 2023, "month_from": 1, "month_to": 3},
+                                         {"year": 2024, "month_from": 1, "month_to": 3}]}, "ru")
+    assert "сравнение периодов: за 01.2023–03.2023 и за 01.2024–03.2024" in text
     assert "изменение в % к первому периоду" in text
     assert "за весь период" not in text
 
@@ -237,3 +238,34 @@ def test_broker_side_rendered():
     text = _explain({"kind": "deals_aggregate", "measures": ["deal_count"], "group_by": "broker_side",
                      "filters": {"brokers": ["BK045"]}}, "ru")
     assert "отдельно как брокер продавца и как брокер покупателя" in text
+
+
+def test_grouped_share_with_count_is_not_contradictory():
+    text = _explain({"kind": "deals_aggregate", "measures": ["deal_count", "share_pct"], "group_by": "region",
+                     "share_of": {"field": "contract_type", "value": "Экспортный"}}, "ru")
+    assert "без аннулированных сделок" not in text
+    assert "остальные показатели — без аннулированных" in text
+
+
+def test_share_basis_rendered():
+    text = _explain({"kind": "deals_aggregate", "measures": ["share_pct"],
+                     "share_of": {"field": "contract_type", "value": "Экспортный", "basis": "amount_uzs"}}, "ru")
+    assert "доля суммы (в сумах)" in text and "без аннулированных" in text
+
+
+def test_median_mean_say_tonne_kg_only():
+    for m in ("median_price_uzs_per_kg", "mean_deal_price_uzs_per_t"):
+        assert "только сделки в тоннах и килограммах" in _explain(
+            {"kind": "deals_aggregate", "measures": [m], "status_scope": "valid"}, "ru")
+
+
+def test_compare_periods_partial_2026_flagged():
+    text = _explain({"kind": "deals_aggregate", "measures": ["deal_count"],
+                     "compare_periods": [{"year": 2025}, {"year": 2026}]}, "ru")
+    assert "(данные до 30.10.2026)" in text
+
+
+def test_compare_periods_percent_change_in_points():
+    text = _explain({"kind": "deals_aggregate", "measures": ["cancelled_pct"],
+                     "compare_periods": [{"year": 2023}, {"year": 2024}]}, "ru")
+    assert "в процентных пунктах" in text

@@ -123,7 +123,7 @@ rules:
   - "Брокер «как брокер продавца и как брокер покупателя» (отдельно по сторонам) — group_by=broker_side с filters.brokers=[код]; только одна сторона — filters.seller_brokers или filters.buyer_brokers; «участвовал в сделках» без стороны — filters.brokers."
   - "«Сколько разных / различных / уникальных X», «nechta turli X» — мера distinct_* (distinct_buyers, distinct_sellers, distinct_products, distinct_regions, distinct_*_brokers) без group_by."
   - "«Наименьший / меньше всего / самый дешёвый / eng kam / eng arzon» — рейтинг с order=asc (NULL всегда в конце)."
-  - "«Доля / процент X от всех сделок» — share_pct с share_of {field, value}: знаменатель — все сделки выборки, включая аннулированные, если не задан фильтр statuses; доля аннулированных — cancelled_pct."
+  - "«Доля / процент X от всех сделок» — share_pct с share_of {field, value}: знаменатель — все сделки выборки, включая аннулированные, если не задан фильтр statuses; доля аннулированных — cancelled_pct. Доля в сумме / обороте — share_of.basis=amount_uzs, в объёме / тоннах — basis=volume_t (обе — по сделкам без аннулированных). Для долей изменение между периодами — в процентных пунктах (change_pp)."
   - "«Изменение в % / рост / падение по сравнению с прошлым годом» — compare_periods из двух периодов (без year в filters); change_pct — изменение второго периода к первому, %."
   - "Регион покупателя/продавца по месту регистрации компании (participants.region) — filters.buyer_regions / seller_regions (значения из resolve(region)); filters.regions — регион склада."
   - "Вид деятельности компании (Кластер, Транспортная компания ...) — registry_count.activity для числа компаний, filters.buyer_activities / seller_activities для сделок."

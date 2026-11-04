@@ -26,6 +26,7 @@ DIMENSIONS = ("buyer", "seller", "participant", "seller_broker", "buyer_broker",
 TIME_DIMENSIONS = ("month", "year", "quarter", "hour")
 ORDERS = ("desc", "asc")
 SHARE_FIELDS = ("contract_form", "contract_type", "trade_type", "status")
+SHARE_BASES = ("deals", "amount_uzs", "volume_t")
 # Filters whose values are validated against the database's distinct values (see app/catalog.py):
 # filter key -> catalog field.
 CATALOG_FILTERS = {"categories": "category", "industries": "industry", "product_groups": "product_group",
@@ -85,6 +86,7 @@ class ShareOf:
     """Numerator condition of share_pct: deals whose `field` is one of `values`."""
     field: str
     values: tuple[str, ...]
+    basis: str = "deals"   # deals: share of deal count; amount_uzs / volume_t: share of money / tonnes
 
 
 @dataclass(frozen=True)
@@ -344,7 +346,7 @@ def _parse_filters(d: dict) -> Filters:
 def _parse_share_of(v) -> ShareOf:
     if not isinstance(v, dict):
         raise SpecError(f"share_of must be an object {{field, value}} or {{field, values}}, got {v!r}")
-    _reject_unknown(v, ("field", "value", "values"), "share_of")
+    _reject_unknown(v, ("field", "value", "values", "basis"), "share_of")
     fld = v.get("field")
     if fld == "statuses":
         fld = "status"
@@ -356,7 +358,9 @@ def _parse_share_of(v) -> ShareOf:
                "status": STATUSES}[fld]
     for x in values:
         _enum(x, allowed, f"share_of value for {fld}")
-    return ShareOf(fld, tuple(dict.fromkeys(values)))
+    basis = v.get("basis") or "deals"
+    _enum(basis, SHARE_BASES, "share_of.basis")
+    return ShareOf(fld, tuple(dict.fromkeys(values)), basis)
 
 
 def _parse_period(v) -> Period:
@@ -412,6 +416,10 @@ def _parse_aggregate(d: dict) -> DealsAggregate:
             raise SpecError("with compare_periods put the periods only in compare_periods, not in filters")
         if periods[0] == periods[1]:
             raise SpecError("compare_periods needs two different periods")
+        lengths = [12 if p.month_from is None else p.month_to - p.month_from + 1 for p in periods]
+        if lengths[0] != lengths[1]:
+            raise SpecError("compare_periods must have the same length (e.g. two years, or the same months of "
+                            "two years)")
     if group_by == "broker_side":
         if not f.brokers or f.seller_brokers or f.buyer_brokers:
             raise SpecError("group_by=broker_side needs filters.brokers (the broker codes to split by side) and "
@@ -479,6 +487,8 @@ def parse_spec(d: dict) -> Spec:
         form = _opt_enum(d, "contract_form", CONTRACT_FORMS)
         seller_inn = _opt_str(d, "seller_inn")
         active_on = _opt_date(d, "active_on")
+        if active_on is not None and not DATA_START <= active_on <= DATA_END:
+            raise _outside(active_on.isoformat())
         if entity != "participants":
             for name, val in (("role", role), ("vat_payer", vat), ("activity", activity)):
                 if val is not None:

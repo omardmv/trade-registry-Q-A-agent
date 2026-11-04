@@ -1,6 +1,6 @@
 """One-line, deterministic description of what a compiled query computed."""
 from app.compiler.spec import DATA_END, DealsAggregate, Filters, RegistryCount, Spec, UsdRate
-from app.compiler.sql import SCOPE_FREE
+from app.compiler.sql import PERCENT_POINT_MEASURES, SCOPE_FREE
 
 _T = {
     "ru": {
@@ -36,12 +36,17 @@ _T = {
         "order_asc": "по возрастанию (наименьшие значения)",
         "share": "доля сделок, где {c}, — от всех сделок выборки, включая аннулированные, если состояние не задано",
         "share_field_status": "состояние: {v}",
+        "share_amount_uzs": "доля суммы (в сумах) сделок, где {c}, — от суммы всех сделок выборки без аннулированных",
+        "share_volume_t": "доля объёма (в тоннах) сделок, где {c}, — от объёма всех сделок выборки без аннулированных",
+        "share_others_valid": "остальные показатели — без аннулированных",
+        "compare_points": "доли — изменение в процентных пунктах",
         "compare": "сравнение периодов: {p1} и {p2}; изменение в % к первому периоду",
         "price_both": "средняя цена двумя способами: взвешенная (сумма ÷ объём, сум за кг) и простое среднее цен "
                       "отдельных сделок (сум за тонну); только товары в тоннах и килограммах",
         "m_avg_price_uzs_per_kg": "средняя цена взвешенная по объёму (сумма ÷ объём), сум за кг",
-        "m_mean_deal_price_uzs_per_t": "простое среднее цен отдельных сделок, сум за тонну",
-        "m_median_price_uzs_per_kg": "медиана цен отдельных сделок, сум за кг",
+        "m_mean_deal_price_uzs_per_t": "простое среднее цен отдельных сделок, сум за тонну "
+                                       "(только сделки в тоннах и килограммах)",
+        "m_median_price_uzs_per_kg": "медиана цен отдельных сделок, сум за кг (только сделки в тоннах и килограммах)",
         "m_min_unit_price_uzs": "цена сделки за единицу измерения в сумах, по единицам измерения",
         "m_max_unit_price_uzs": "цена сделки за единицу измерения в сумах, по единицам измерения",
         "m_avg_price_change_pct": "среднее отклонение цены сделки от стартовой, %",
@@ -100,12 +105,20 @@ _T = {
         "share": "{c} bo‘lgan bitimlar ulushi — tanlovdagi barcha bitimlardan, holat berilmagan bo‘lsa bekor "
                  "qilinganlar ham",
         "share_field_status": "holati: {v}",
+        "share_amount_uzs": "{c} bo‘lgan bitimlar summasining (so‘mda) ulushi — tanlovdagi bekor qilinmagan "
+                            "bitimlar summasidan",
+        "share_volume_t": "{c} bo‘lgan bitimlar hajmining (tonnada) ulushi — tanlovdagi bekor qilinmagan "
+                          "bitimlar hajmidan",
+        "share_others_valid": "qolgan ko‘rsatkichlar — bekor qilinganlarsiz",
+        "compare_points": "ulushlar — o‘zgarish foiz punktlarida",
         "compare": "davrlar taqqoslanadi: {p1} va {p2}; birinchi davrga nisbatan o‘zgarish, %",
         "price_both": "o‘rtacha narx ikki usulda: hajm bo‘yicha tortilgan (summa ÷ hajm, 1 kg uchun so‘m) va alohida "
                       "bitimlar narxlarining oddiy o‘rtachasi (1 tonna uchun so‘m); faqat tonna va kilogrammdagi tovarlar",
         "m_avg_price_uzs_per_kg": "hajm bo‘yicha tortilgan o‘rtacha narx (summa ÷ hajm), 1 kg uchun so‘m",
-        "m_mean_deal_price_uzs_per_t": "alohida bitimlar narxlarining oddiy o‘rtachasi, 1 tonna uchun so‘m",
-        "m_median_price_uzs_per_kg": "alohida bitimlar narxlarining medianasi, 1 kg uchun so‘m",
+        "m_mean_deal_price_uzs_per_t": "alohida bitimlar narxlarining oddiy o‘rtachasi, 1 tonna uchun so‘m "
+                                       "(faqat tonna va kilogrammdagi bitimlar)",
+        "m_median_price_uzs_per_kg": "alohida bitimlar narxlarining medianasi, 1 kg uchun so‘m "
+                                     "(faqat tonna va kilogrammdagi bitimlar)",
         "m_min_unit_price_uzs": "o‘lchov birligi uchun bitim narxi so‘mda, birliklar bo‘yicha",
         "m_max_unit_price_uzs": "o‘lchov birligi uchun bitim narxi so‘mda, birliklar bo‘yicha",
         "m_avg_price_change_pct": "bitim narxining boshlang‘ich narxdan o‘rtacha farqi, %",
@@ -224,7 +237,8 @@ def _measure_phrases(spec: DealsAggregate, t: dict) -> list[str]:
             out.append(phrase)
     if spec.share_of is not None:
         key = _SHARE_KEYS[spec.share_of.field]
-        out.append(t["share"].format(c=t[key].format(v=", ".join(spec.share_of.values))))
+        tpl = t["share"] if spec.share_of.basis == "deals" else t[f"share_{spec.share_of.basis}"]
+        out.append(tpl.format(c=t[key].format(v=", ".join(spec.share_of.values))))
     return out
 
 
@@ -245,6 +259,11 @@ def explain(spec: Spec, notes: list[str], lang: str) -> str:
         p1, p2 = (_period_text(Filters(year=p.year, month_from=p.month_from, month_to=p.month_to), t)
                   for p in spec.compare_periods)
         parts = [t["deals"], t["compare"].format(p1=p1, p2=p2)]
+        if any(_past_data_end(Filters(year=p.year, month_from=p.month_from, month_to=p.month_to))
+               for p in spec.compare_periods):
+            parts[-1] += t["data_until"]
+        if any(m in PERCENT_POINT_MEASURES for m in spec.measures):
+            parts.append(t["compare_points"])
     else:
         parts = [f"{t['deals']} {_period(f, t)}"]
     for key, attr in _LIST_PHRASES:
@@ -267,6 +286,8 @@ def explain(spec: Spec, notes: list[str], lang: str) -> str:
             continue
         elif scope_free_only and note in _STATUS_NOTES:
             continue
+        elif note == "excluded_cancelled" and spec.share_of is not None and spec.share_of.basis == "deals":
+            parts.append(t["share_others_valid"])  # the share itself counts every deal (stated above)
         elif note == "all_statuses" and f.statuses:
             continue  # the status filter phrase already describes the scope
         elif note == "volume_by_unit" and not any(m in ("volume", "delivered_volume", "undelivered_volume")
