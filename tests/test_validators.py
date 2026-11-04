@@ -393,3 +393,21 @@ def test_rename_to_id_bypass_rejected(sql):
 def test_vat_payer_subquery_accepted():
     r = v("SELECT COUNT(*) AS n FROM deals WHERE buyer_inn IN (SELECT inn AS i FROM participants WHERE vat_payer)")
     assert r.ok, r.errors
+
+
+@pytest.mark.parametrize("sql", [
+    "SELECT COUNT(*) FROM deals WHERE contract_id IN "
+    "(SELECT contract_id FROM (SELECT * REPLACE (100005 AS contract_id) FROM contracts) z)",
+    "SELECT COUNT(*) FROM deals d JOIN (SELECT * REPLACE (100005 AS contract_id) FROM contracts LIMIT 1) x "
+    "ON d.contract_id = x.contract_id",
+    "SELECT COUNT(*) FROM deals d JOIN (SELECT struct_pack(contract_id := 100005) AS s) x "
+    "ON d.contract_id = x.s.contract_id",
+    "SELECT * RENAME (deal_id AS contract_id) FROM deals",
+])
+def test_star_replace_and_struct_smuggling_rejected(sql):
+    assert not v(sql, question="Сколько сделок?").ok
+
+
+def test_plain_star_with_question_id_accepted():
+    r = v("SELECT * FROM contracts WHERE contract_id = 102267", question="контракт 102267")
+    assert r.ok, r.errors

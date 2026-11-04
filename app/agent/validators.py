@@ -151,9 +151,18 @@ def validate_sql(sql: str, allowed: set[tuple[str, str]], question: str, db: Dat
                 not _is_top_level(sel) and _builds_string(sel) for sel in stmt.find_all(exp.Select)):
             errors.append("literal values inside subqueries/CTEs are not allowed; "
                           "filter on the resolved column directly")
+        if any(st.args.get("replace") or st.args.get("rename") for st in stmt.find_all(exp.Star)):
+            errors.append("* REPLACE / RENAME is not allowed")
+        for col in stmt.find_all(exp.Column):
+            if (col.args.get("db") or col.args.get("catalog")) and _n(col) in RESOLVED_COLUMNS:
+                errors.append(f"compare {_n(col)} only to resolved values or to another id column")
         for sel in stmt.find_all(exp.Select):
             if _is_top_level(sel):
                 continue
+            if any(isinstance(n, exp.Struct) or (isinstance(n, exp.Anonymous) and n.name.lower() in
+                                                 {"struct_pack", "row", "struct"})
+                   for item in sel.expressions for n in item.find_all(exp.Struct, exp.Anonymous)):
+                errors.append("struct construction inside subqueries/CTEs is not allowed")
             for item in sel.expressions:
                 name = item.alias_or_name.lower()
                 if name not in RESOLVED_COLUMNS:
