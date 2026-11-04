@@ -112,7 +112,22 @@ Each layer closes a different hole:
 
 The hard deadline is 75 s, under the 90 s requirement. Each Gemini call is capped at 15 s, and a call only
 starts if a full 15 s still fits before its deadline, so the worst case stays near 75 s. In practice most
-answers take 3–5 s.
+answers take 3–5 s. A fallback to the second LLM provider (below) counts against the same deadline: it only
+starts if a full 15 s still fits.
+
+### LLM providers and fallback
+
+Gemini is the primary model; an OpenAI model (`OPENAI_MODEL`) is the fallback. If a Gemini call fails because
+of the provider (no credits, bad key, rate limit, server error, connection error, or a blocked/empty reply),
+the same step is sent to OpenAI, also in the middle of a planning conversation: the conversation so far
+(tool calls and their results) is replayed to OpenAI, which continues from there. A timeout does not switch
+providers; the normal retry and the deadline decide. After a "no credits" / bad-key / forbidden error
+(HTTP 402, 401, 403) the failing provider is skipped for 5 minutes, so new questions go straight to the other
+one. Errors in our own code are never treated as a provider failure.
+
+`LLM_PROVIDERS` sets the order (`gemini,openai` = Gemini first). With only one key set, that provider is used
+alone; with no key, the first request fails with a clear error. Each answer's `providers_used` shows which
+provider wrote each reply (it also appears in the evaluation output).
 
 ## Project layout
 
@@ -120,7 +135,7 @@ answers take 3–5 s.
 app/
   ingest/     CSV → DuckDB build, product dictionary
   compiler/   structured form, SQL templates, explanation sentence
-  agent/      Gemini wrapper, query planner, free-SQL checker
+  agent/      Gemini and OpenAI wrappers with fallback, query planner, free-SQL checker
   answer/     answer writer, answer checker, fixed replies
   resolve.py  name lookup
   pipeline.py the full question → answer flow
@@ -137,8 +152,11 @@ tests/                unit tests (offline) and live tests
 ```bash
 uv sync
 uv run python -m app.ingest.build
-GEMINI_API_KEY=... uv run uvicorn app.api:app --port 8000
+GEMINI_API_KEY=... OPENAI_API_KEY=... uv run uvicorn app.api:app --port 8000
 ```
+
+Keys can also go into a `.env` file in the project root (`KEY=value` lines; not committed). Variables already
+set in the environment win.
 
 Open http://localhost:8000 or call the API:
 
@@ -150,7 +168,7 @@ curl -s localhost:8000/ask -H 'Content-Type: application/json' -d '{"question": 
 
 ```bash
 docker build -t uzex-qa .
-docker run -p 8000:8000 -e GEMINI_API_KEY=... uzex-qa
+docker run -p 8000:8000 -e GEMINI_API_KEY=... -e OPENAI_API_KEY=... uzex-qa
 ```
 
 ## Tests and evaluation
@@ -168,21 +186,26 @@ latency (limit 90 s), and writes `eval/results/run-*.json`.
 
 The tests run offline. Before relying on the service, check it against the real model:
 
-1. `GEMINI_API_KEY=... uv run pytest -m live` (the live round-trip tests).
+1. `GEMINI_API_KEY=... OPENAI_API_KEY=... uv run pytest -m live` (the live round-trip tests; a provider
+   without a key is skipped).
 2. Start the server and send one question to `/ask`, for example
    `curl -s localhost:8000/ask -H 'content-type: application/json' -d '{"question":"Сколько сделок было в 2025 году?"}'`.
 3. Confirm that the model named in `GEMINI_MODEL` is available for your key (a 404 / "model not found" error
    means it is not); change `GEMINI_MODEL` if needed. `GEMINI_THINKING_BUDGET` must be supported by that model;
-   set it to `0` to disable thinking.
+   set it to `0` to disable thinking. Do the same for `OPENAI_MODEL`: the default name must be verified for
+   your OpenAI account.
 4. Then run the full evaluation (`eval.run`); it exits non-zero on any hallucination.
 
 ## Settings
 
 | Env | Default | Meaning |
 |---|---|---|
-| `GEMINI_API_KEY` | none | required |
+| `GEMINI_API_KEY` | none | Gemini key (at least one of the two keys is required) |
 | `GEMINI_MODEL` | `gemini-3.5-flash` | model for planning and answer writing |
 | `GEMINI_THINKING_BUDGET` | `1024` | thinking tokens per Gemini call |
+| `OPENAI_API_KEY` | none | OpenAI key for the fallback model |
+| `OPENAI_MODEL` | `gpt-5.4-mini` | fallback model; verify the name is available for your account |
+| `LLM_PROVIDERS` | `gemini,openai` | provider order: primary first, then fallback |
 | `UZEX_DEADLINE_S` | `75` | hard deadline per question |
 | `UZEX_LLM_TIMEOUT_S` | `15` | per-call LLM timeout |
 | `UZEX_DATA_DIR` | `data` | directory with the source CSV files |
