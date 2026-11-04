@@ -61,6 +61,10 @@ def build(data_dir: Path, dict_dir: Path, db_path: Path) -> None:
             LEFT JOIN regions r ON r.region_ru = c."Регион"
             LEFT JOIN products p ON p.product_name = c."Наименование продукта" """)
 
+        con.execute(f"""CREATE TEMP TABLE p_raw AS
+            SELECT "ИНН" AS inn, "Регион" AS region, "Вид деятельности" AS activity
+            FROM {_csv(data_dir / 'participants.csv')}""")
+
         deals_glob = data_dir / "deals_*.csv"
         raw_count = con.execute(f"SELECT COUNT(*) FROM {_csv(deals_glob)}").fetchone()[0]
         con.execute(f"""CREATE TABLE deals AS
@@ -86,9 +90,26 @@ def build(data_dir: Path, dict_dir: Path, db_path: Path) -> None:
                    CASE c.currency WHEN 'UZS' THEN b.amount ELSE b.amount * r.rate END AS amount_uzs,
                    CASE c.currency WHEN 'USD' THEN b.amount ELSE b.amount / r.rate END AS amount_usd,
                    b.status = 'Аннулирован(Не оплачен)' AS is_cancelled,
-                   c.product_canonical, c.product_family
+                   c.product_canonical, c.product_family,
+                   c.product_name, c.category, c.industry, c.product_group, c.delivery_basis, c.packaging,
+                   c.hs_code, c.payment_term_days, c.delivery_term_days,
+                   quarter(b.deal_date) AS quarter, hour(b.deal_time) AS deal_hour,
+                   b.payment_date - b.deal_date AS days_to_payment,
+                   b.delivery_date - b.payment_date AS days_to_delivery,
+                   -- late payment: paid after the term, or still unpaid when the term ended before 30.10.2026
+                   COALESCE(b.payment_date > b.deal_date + c.payment_term_days,
+                            b.deal_date + c.payment_term_days < DATE '2026-10-30') AS payment_late,
+                   -- days past the delivery term (0 = on time); NULL while not delivered
+                   CASE WHEN b.delivery_date IS NOT NULL
+                        THEN GREATEST(b.delivery_date - (b.payment_date + c.delivery_term_days), 0) END
+                        AS delivery_late_days,
+                   100 * (b.amount / (b.quantity * b.lot) / NULLIF(b.start_price, 0) - 1) AS price_vs_start_pct,
+                   pb.region AS buyer_region, ps.region AS seller_region,
+                   pb.activity AS buyer_activity, ps.activity AS seller_activity
             FROM b JOIN contracts c ON c.contract_id = b.contract_id
                    JOIN usd_rates r ON r.rate_date = b.deal_date
+                   LEFT JOIN p_raw pb ON pb.inn = b.buyer_inn
+                   LEFT JOIN p_raw ps ON ps.inn = b.seller_inn
             ORDER BY b.deal_id""")
 
         con.execute(f"""CREATE TABLE participants AS
@@ -132,6 +153,12 @@ def _check(con, raw_count: int) -> None:
         "contracts without region mapping": "SELECT COUNT(*) FROM contracts WHERE region IS NULL",
         "contracts without canonical product": "SELECT COUNT(*) FROM contracts WHERE product_canonical IS NULL",
         "usd_rates with NULL": "SELECT COUNT(*) FROM usd_rates WHERE rate IS NULL OR rate_date IS NULL",
+        "deals without contract attributes": """SELECT COUNT(*) FROM deals WHERE category IS NULL
+            OR industry IS NULL OR product_group IS NULL OR delivery_basis IS NULL OR packaging IS NULL
+            OR hs_code IS NULL OR payment_term_days IS NULL OR delivery_term_days IS NULL""",
+        "deals whose buyer/seller is not in participants": """SELECT COUNT(*) FROM deals
+            WHERE buyer_region IS NULL OR seller_region IS NULL OR buyer_activity IS NULL OR seller_activity IS NULL""",
+        "deals without start price": "SELECT COUNT(*) FROM deals WHERE price_vs_start_pct IS NULL",
     }
     for label, sql in checks.items():
         bad = scalar(sql)
