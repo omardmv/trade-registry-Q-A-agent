@@ -53,3 +53,72 @@ def test_entity_values():
                     "filters": {"products": ["Карбамид"], "regions": ["Samarqand viloyati"],
                                 "buyer_inns": ["915688255"], "brokers": ["BK001"]}})
     assert entity_values(s) == {"Карбамид", "Samarqand viloyati", "915688255", "BK001"}
+
+
+def _agg(filters):
+    return {"kind": "deals_aggregate", "measures": ["deal_count"], "filters": filters}
+
+
+@pytest.mark.parametrize("spec, message", [
+    (_agg({"year": 2026, "month_from": 9, "month_to": 12}), "data ends 30.10.2026"),
+    (_agg({"year": 2026, "month_to": 11, "month_from": 10}), "data ends 30.10.2026"),
+    (_agg({"date_from": "2025-05-01", "date_to": "2026-11-15"}), "outside"),
+    (_agg({"date_from": "2025-06-01", "date_to": "2025-05-01"}), "date_from must be <= date_to"),
+    (_agg({"month_from": 3, "month_to": 5}), "needs a year"),
+    (_agg({"month_from": 3}), "needs a year"),
+    (_agg({"year": 2025, "date_from": "2025-01-01"}), "not both"),
+    (_agg({"month_from": 3, "year": 2025, "date_to": "2025-04-01"}), "not both"),
+])
+def test_period_rules(spec, message):
+    with pytest.raises(SpecError, match=message):
+        parse_spec(spec)
+
+
+@pytest.mark.parametrize("value", ["yes", "maybe", 1, 0, "", [], {}, "1"])
+def test_vat_payer_invalid(value):
+    with pytest.raises(SpecError, match="vat_payer"):
+        parse_spec({"kind": "registry_count", "entity": "participants", "vat_payer": value})
+
+
+def test_vat_payer_valid():
+    assert parse_spec({"kind": "registry_count", "entity": "participants", "vat_payer": "False"}).vat_payer is False
+    assert parse_spec({"kind": "registry_count", "entity": "participants", "vat_payer": "TRUE"}).vat_payer is True
+    assert parse_spec({"kind": "registry_count", "entity": "participants", "vat_payer": True}).vat_payer is True
+
+
+@pytest.mark.parametrize("spec, message", [
+    ({"entity": "brokers", "role": "Покупатель"}, "role.*brokers"),
+    ({"entity": "contracts", "vat_payer": True}, "vat_payer.*contracts"),
+    ({"entity": "brokers", "registered_year": 2024}, "registered_year.*brokers"),
+    ({"entity": "participants", "registered_year": 2024}, "registered_year.*participants"),
+])
+def test_registry_field_entity_rules(spec, message):
+    with pytest.raises(SpecError, match=message):
+        parse_spec({"kind": "registry_count", **spec})
+
+
+@pytest.mark.parametrize("spec", [
+    ["deals_aggregate"],
+    "deal_lookup",
+    None,
+    {"kind": "deals_aggregate", "measures": ["deal_count"], "filters": "2025"},
+    {"kind": "deals_aggregate", "measures": ["deal_count"], "filters": ["year"]},
+    {"kind": "deals_aggregate", "measures": ["deal_count"], "filters": {"products": 5}},
+    {"kind": "deals_aggregate", "measures": ["deal_count"], "filters": {"regions": {"a": 1}}},
+    {"kind": "deals_aggregate", "measures": 7},
+])
+def test_malformed_shapes_raise_spec_error(spec):
+    with pytest.raises(SpecError):
+        parse_spec(spec)
+
+
+@pytest.mark.parametrize("value", [True, 3.9, "3.9", "abc", [1]])
+def test_opt_int_rejects(value):
+    with pytest.raises(SpecError, match="integer"):
+        parse_spec(_agg({"year": value}))
+
+
+def test_opt_int_accepts_integral():
+    assert parse_spec(_agg({"year": "2025"})).filters.year == 2025
+    assert parse_spec(_agg({"year": 2025.0})).filters.year == 2025
+    assert parse_spec(_agg({"year": 2025})).filters.year == 2025

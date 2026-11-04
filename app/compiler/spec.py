@@ -91,10 +91,29 @@ def _opt_int(d: dict, key: str) -> int | None:
     v = d.get(key)
     if v is None or v == "":
         return None
-    try:
-        return int(v)
-    except (TypeError, ValueError):
+    if isinstance(v, bool):
         raise SpecError(f"{key} must be an integer, got {v!r}")
+    if isinstance(v, int):
+        return v
+    if isinstance(v, float) and v.is_integer():
+        return int(v)
+    if isinstance(v, str):
+        try:
+            return int(v.strip())
+        except ValueError:
+            pass
+    raise SpecError(f"{key} must be an integer, got {v!r}")
+
+
+def _opt_bool(d: dict, key: str) -> bool | None:
+    v = d.get(key)
+    if v is None:
+        return None
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, str) and v.strip().lower() in ("true", "false"):
+        return v.strip().lower() == "true"
+    raise SpecError(f"{key} must be true or false, got {v!r}")
 
 
 def _opt_date(d: dict, key: str) -> dt.date | None:
@@ -108,9 +127,13 @@ def _opt_date(d: dict, key: str) -> dt.date | None:
 
 
 def _str_list(d: dict, key: str) -> list[str]:
-    v = d.get(key) or []
+    v = d.get(key)
+    if v is None:
+        return []
     if isinstance(v, str):
         v = [v]
+    if not isinstance(v, (list, tuple)):
+        raise SpecError(f"{key} must be a list of strings, got {v!r}")
     return [str(x).strip() for x in v if str(x).strip()]
 
 
@@ -136,6 +159,8 @@ def _check_year(year: int | None) -> None:
 
 
 def _parse_filters(d: dict) -> Filters:
+    if not isinstance(d, dict):
+        raise SpecError(f"filters must be an object, got {d!r}")
     f = Filters(
         year=_opt_int(d, "year"), month_from=_opt_int(d, "month_from"), month_to=_opt_int(d, "month_to"),
         date_from=_opt_date(d, "date_from"), date_to=_opt_date(d, "date_to"),
@@ -153,6 +178,14 @@ def _parse_filters(d: dict) -> Filters:
         statuses=[_enum(s, STATUSES, "status") for s in _str_list(d, "statuses")],
     )
     _check_year(f.year)
+    has_month = f.month_from is not None or f.month_to is not None
+    has_dates = f.date_from is not None or f.date_to is not None
+    if (f.year is not None or has_month) and has_dates:
+        raise SpecError("use either year/month or date_from/date_to, not both")
+    if has_month and f.year is None:
+        raise SpecError("a month filter needs a year; for a cross-year range use date_from/date_to")
+    if f.date_from is not None and f.date_to is not None and f.date_from > f.date_to:
+        raise SpecError("date_from must be <= date_to")
     if f.month_from is None and f.month_to is not None:
         f.month_from = f.month_to
     if f.month_to is None and f.month_from is not None:
@@ -164,6 +197,9 @@ def _parse_filters(d: dict) -> Filters:
         raise SpecError("month_from must be <= month_to")
     if f.year == 2026 and f.month_from is not None and f.month_from > 10:
         raise _outside(f"{f.month_from:02d}.2026")
+    if f.year == 2026 and f.month_to is not None and f.month_to > 10:
+        raise SpecError("data ends 30.10.2026: set month_to to 10 and add an assumption that the "
+                        "period is covered only up to 30.10.2026")
     for d_ in (f.date_from, f.date_to):
         if d_ is not None and not DATA_START <= d_ <= DATA_END:
             raise _outside(d_.isoformat())
@@ -194,10 +230,13 @@ def _parse_aggregate(d: dict) -> DealsAggregate:
         raise SpecError("top must be 1..20")
     scope = d.get("status_scope") or "split"
     _enum(scope, STATUS_SCOPES, "status_scope")
-    return DealsAggregate(measures, _parse_filters(d.get("filters") or {}), group_by, top, scope)
+    filters = d.get("filters")
+    return DealsAggregate(measures, _parse_filters({} if filters is None else filters), group_by, top, scope)
 
 
 def parse_spec(d: dict) -> Spec:
+    if not isinstance(d, dict):
+        raise SpecError(f"spec must be an object, got {type(d).__name__}")
     kind = d.get("kind")
     if kind == "deals_aggregate":
         return _parse_aggregate(d)
@@ -224,10 +263,16 @@ def parse_spec(d: dict) -> Spec:
     if kind == "registry_count":
         entity = _enum(d.get("entity"), REGISTRY_ENTITIES, "entity")
         role = _opt_enum(d, "role", ROLES)
-        vat = d.get("vat_payer")
+        vat = _opt_bool(d, "vat_payer")
         year = _opt_int(d, "registered_year")
         _check_year(year)
-        return RegistryCount(entity, role, None if vat is None else bool(vat), d.get("region") or None, year)
+        if entity != "participants":
+            for name, val in (("role", role), ("vat_payer", vat)):
+                if val is not None:
+                    raise SpecError(f"{name} is only allowed when entity is participants, not {entity}")
+        if entity != "contracts" and year is not None:
+            raise SpecError(f"registered_year is only allowed when entity is contracts, not {entity}")
+        return RegistryCount(entity, role, vat, d.get("region") or None, year)
     raise SpecError(f"unknown kind {kind!r}; use deals_aggregate, deal_lookup, contract_lookup, "
                     "usd_rate or registry_count")
 
