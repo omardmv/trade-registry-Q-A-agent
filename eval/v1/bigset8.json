@@ -1,0 +1,782 @@
+[
+  {
+    "id": "i001",
+    "lang": "ru",
+    "kind": "exact",
+    "question": "Подскажите, пожалуйста, какой код ТН ВЭД указан в карточке контракта №100003?",
+    "gold_sql": "SELECT \"Код ТН ВЭД\" FROM contracts WHERE \"Номер контракта\"='100003'",
+    "gold": [
+      [
+        "280421"
+      ]
+    ],
+    "note": "Простой лукап по карточке контракта."
+  },
+  {
+    "id": "i002",
+    "lang": "uz",
+    "kind": "exact",
+    "question": "100004-sonli shartnoma bo'yicha to'lovdan keyin tovarni necha kun ichida yetkazib berish kerak (Срок поставки)?",
+    "gold_sql": "SELECT \"Срок поставки\" FROM contracts WHERE \"Номер контракта\"='100004'",
+    "gold": [
+      [
+        "20"
+      ]
+    ],
+    "note": "Срок поставки для контракта 100004 (подшипник)."
+  },
+  {
+    "id": "i003",
+    "lang": "ru",
+    "kind": "exact",
+    "question": "Какой базис поставки указан в контракте №100005?",
+    "gold_sql": "SELECT \"Базис поставки\" FROM contracts WHERE \"Номер контракта\"='100005'",
+    "gold": [
+      [
+        "EXW"
+      ]
+    ],
+    "note": "Контракт 100005 — битум нефтяной."
+  },
+  {
+    "id": "i004",
+    "lang": "uz",
+    "kind": "exact",
+    "question": "100006-son shartnomada mahsulot qanday qadoqlanishi (upakovka turi) ko'rsatilgan?",
+    "gold_sql": "SELECT \"Упаковка\" FROM contracts WHERE \"Номер контракта\"='100006'",
+    "gold": [
+      [
+        "на поддонах"
+      ]
+    ],
+    "note": "Контракт 100006 — кирпич керамический М-100."
+  },
+  {
+    "id": "i005",
+    "lang": "ru",
+    "kind": "exact",
+    "question": "По контракту №100007 (кабель силовой) — сколько процентов составляет сумма залога и за сколько дней покупатель должен оплатить сделку?",
+    "gold_sql": "SELECT \"Сумма залога\", \"Срок оплаты\" FROM contracts WHERE \"Номер контракта\"='100007'",
+    "gold": [
+      [
+        "10 %",
+        "10"
+      ]
+    ],
+    "note": "Многочастный вопрос — оба значения в одной строке карточки контракта."
+  },
+  {
+    "id": "i006",
+    "lang": "uz",
+    "kind": "exact",
+    "question": "100008-сон шартнома қачон рўйхатдан ўтган ва у қайси санагача амал қилади?",
+    "gold_sql": "SELECT \"Дата регистрации\", \"Действует до\" FROM contracts WHERE \"Номер контракта\"='100008'",
+    "gold": [
+      [
+        "03.01.2022",
+        "24.05.2022"
+      ]
+    ],
+    "note": "Контракт 100008 — портландцемент ЦЕМ I 42,5 Н."
+  },
+  {
+    "id": "i007",
+    "lang": "ru",
+    "kind": "exact",
+    "question": "Какой курс доллара (сум за 1 USD) был установлен 15 июля 2025 года?",
+    "gold_sql": "SELECT uzs_per_usd FROM usd_rates WHERE rate_date = DATE '2025-07-15'",
+    "gold": [
+      [
+        12434.3
+      ]
+    ],
+    "note": "Прямой лукап курса на дату."
+  },
+  {
+    "id": "i008",
+    "lang": "uz",
+    "kind": "exact",
+    "question": "BK112 kodli brokerning rasmiy nomi qanday va u qaysi hududda ro'yxatdan o'tgan?",
+    "gold_sql": "SELECT \"Наименование\", \"Регион\" FROM brokers WHERE \"Код брокера\"='BK112'",
+    "gold": [
+      [
+        "QUMI BROKER MCHJ",
+        "Toshkent shahri"
+      ]
+    ],
+    "note": "Лукап брокера по коду."
+  },
+  {
+    "id": "i009",
+    "lang": "uz",
+    "kind": "exact",
+    "question": "ИНН раками 962079415 бўлган компания қандай номланади, у қайси ҳудудда рўйхатдан ўтган ва сотувчими ёки харидорми?",
+    "gold_sql": "SELECT \"Наименование\", \"Регион\", \"Роль\" FROM participants WHERE \"ИНН\"='962079415'",
+    "gold": [
+      [
+        "KIMO‘ TRADE MCHJ",
+        "Qoraqalpog‘iston Respublikasi",
+        "Покупатель"
+      ]
+    ],
+    "note": "Лукап участника по ИНН."
+  },
+  {
+    "id": "i010",
+    "lang": "uz",
+    "kind": "exact",
+    "question": "\"Chotal Invest\" XK kompaniyasining STIR (INN) raqami nima va u savdolarda sotuvchi sifatida yoki xaridor sifatida qatnashadi?",
+    "gold_sql": "SELECT \"ИНН\", \"Роль\", \"Регион\" FROM participants WHERE \"Наименование\" LIKE '%Chotal Invest%'",
+    "gold": [
+      [
+        "934614042",
+        "Покупатель",
+        "Toshkent viloyati"
+      ]
+    ],
+    "note": "Обратный лукап по названию компании."
+  },
+  {
+    "id": "i011",
+    "lang": "ru",
+    "kind": "exact",
+    "question": "Сколько контрактов (не сделок) зарегистрировано на продавца с ИНН 931612820?",
+    "gold_sql": "SELECT COUNT(*) FROM contracts WHERE \"ИНН продавца\"='931612820'",
+    "gold": [
+      [
+        22
+      ]
+    ],
+    "note": "Количество карточек контрактов у конкретного продавца (FAQEN OIL MCHJ)."
+  },
+  {
+    "id": "i012",
+    "lang": "uz",
+    "kind": "exact",
+    "question": "Navoiy viloyatida nechta brokerlik kontorasi ro'yxatdan o'tgan?",
+    "gold_sql": "SELECT COUNT(*) FROM brokers WHERE \"Регион\"='Navoiy viloyati'",
+    "gold": [
+      [
+        5
+      ]
+    ],
+    "note": "Количество брокеров в регионе."
+  },
+  {
+    "id": "i013",
+    "lang": "ru",
+    "kind": "loose",
+    "question": "скок всего штук кирпича керамического продали за все время, не считая аннулированные сделки",
+    "gold_sql": "SELECT SUM(volume_units) FROM deals_enriched WHERE product_base LIKE '%кирпич%' AND status != 'Аннулирован(Не оплачен)'",
+    "gold": [
+      [
+        116999000.0
+      ]
+    ],
+    "note": "Кирпич измеряется в штуках, не в тоннах."
+  },
+  {
+    "id": "i014",
+    "lang": "uz",
+    "kind": "loose",
+    "question": "izvest (известь) butun davr davomida jami necha tonna sotilgan, bekor qilinganlarsiz?",
+    "gold_sql": "SELECT SUM(volume_units) FROM deals_enriched WHERE product_base LIKE '%известь%' AND status != 'Аннулирован(Не оплачен)'",
+    "gold": [
+      [
+        70160.0
+      ]
+    ],
+    "note": "Известь негашеная + строительная, тонны."
+  },
+  {
+    "id": "i015",
+    "lang": "ru",
+    "kind": "loose",
+    "question": "когда портландцемент продавался дешевле всего и по какой цене за тонну (без аннулированных)?",
+    "gold_sql": "SELECT deal_date, price_per_unit FROM deals_enriched WHERE product_base LIKE '%портландцемент%' AND status != 'Аннулирован(Не оплачен)' ORDER BY price_per_unit ASC LIMIT 1",
+    "gold": [
+      [
+        "2022-09-07",
+        469079.0
+      ]
+    ],
+    "note": "Минимальная цена, а не средняя."
+  },
+  {
+    "id": "i016",
+    "lang": "uz",
+    "kind": "loose",
+    "question": "2024 yilda alyuminiy profil (barcha yozilishi) jami necha kilogramm sotilgan, bekor qilinganlarsiz?",
+    "gold_sql": "SELECT SUM(volume_units) FROM deals_enriched WHERE (product_base LIKE '%профиль алюминиевый%' OR product_base LIKE '%алюминиевый профиль%') AND extract(year from deal_date)=2024 AND status != 'Аннулирован(Не оплачен)'",
+    "gold": [
+      [
+        643234.0
+      ]
+    ],
+    "note": "Единица измерения — килограмм, не тонна."
+  },
+  {
+    "id": "i017",
+    "lang": "ru",
+    "kind": "loose",
+    "question": "какая доля сделок (в процентах) заключена в форме «Спот» от всех сделок в базе?",
+    "gold_sql": "SELECT ROUND(100.0*SUM(CASE WHEN contract_form='Спот' THEN 1 ELSE 0 END)/COUNT(*),2) FROM deals",
+    "gold": [
+      [
+        91.34
+      ]
+    ],
+    "note": "Доля считается от всех сделок (включая аннулированные) — это не денежный показатель."
+  },
+  {
+    "id": "i018",
+    "lang": "uz",
+    "kind": "loose",
+    "question": "Qoraqalpog'iston Respublikasida nechta xil mahsulot turi (product_base) bo'yicha savdo qilingan?",
+    "gold_sql": "SELECT COUNT(DISTINCT product_base) FROM deals_enriched WHERE region='Qoraqalpog‘iston Respublikasi'",
+    "gold": [
+      [
+        20
+      ]
+    ],
+    "note": "Количество уникальных наименований товаров в регионе."
+  },
+  {
+    "id": "i019",
+    "lang": "ru",
+    "kind": "loose",
+    "question": "какая в среднем цена за кубометр у газообразного аргона (без учёта аннулированных сделок)?",
+    "gold_sql": "SELECT AVG(price_per_unit) FROM deals_enriched WHERE product_base LIKE '%аргон%' AND status != 'Аннулирован(Не оплачен)'",
+    "gold": [
+      [
+        29051.34
+      ]
+    ],
+    "note": "Средняя цена за единицу измерения."
+  },
+  {
+    "id": "i020",
+    "lang": "uz",
+    "kind": "loose",
+    "question": "qaysi tovar toifasi (категория товара) bo'yicha eng kam bitim qilingan va nechta bitim bo'lgan?",
+    "gold_sql": "SELECT product_category, COUNT(*) c FROM deals_enriched GROUP BY 1 ORDER BY c ASC LIMIT 1",
+    "gold": [
+      [
+        "Промышленные товары",
+        7748
+      ]
+    ],
+    "note": "Ранжирование категорий по количеству сделок (по возрастанию)."
+  },
+  {
+    "id": "i021",
+    "lang": "uz",
+    "kind": "loose",
+    "question": "буғдой бўйича энг кам савдо қилинган ҳудуд қайси ва у ерда нечта битим бўлган (бекор қилинганларсиз)?",
+    "gold_sql": "SELECT region, COUNT(*) c FROM deals_enriched WHERE product_base LIKE '%пшеница%' AND status != 'Аннулирован(Не оплачен)' GROUP BY 1 ORDER BY c ASC LIMIT 1",
+    "gold": [
+      [
+        "Samarqand viloyati",
+        398
+      ]
+    ],
+    "note": "Регион с наименьшим числом сделок по пшенице (не наибольшим)."
+  },
+  {
+    "id": "i022",
+    "lang": "uz",
+    "kind": "loose",
+    "question": "qaysi o'lchov birligida (unit) eng kam bitim qilingan va nechta bitim bo'lgan?",
+    "gold_sql": "SELECT unit, COUNT(*) c FROM deals GROUP BY 1 ORDER BY c ASC LIMIT 1",
+    "gold": [
+      [
+        "метр",
+        3863
+      ]
+    ],
+    "note": "Единица измерения с наименьшим числом сделок — 'метр'."
+  },
+  {
+    "id": "i023",
+    "lang": "ru",
+    "kind": "loose",
+    "question": "в среднем на сколько дней задерживается поставка у тех сделок, где поставка пришла позже установленного срока?",
+    "gold_sql": "SELECT AVG(delivery_date - paid_date) FROM deals_enriched WHERE delivered_late",
+    "gold": [
+      [
+        26.76
+      ]
+    ],
+    "note": "Используется готовый признак delivered_late."
+  },
+  {
+    "id": "i024",
+    "lang": "uz",
+    "kind": "loose",
+    "question": "2026-yilda nechta yangi shartnoma (kontrakt) ro'yxatdan o'tgan?",
+    "gold_sql": "SELECT COUNT(*) FROM contracts WHERE strptime(\"Дата регистрации\",'%d.%m.%Y') >= DATE '2026-01-01'",
+    "gold": [
+      [
+        1694
+      ]
+    ],
+    "note": "Речь про дату регистрации контракта, а не про сделки."
+  },
+  {
+    "id": "i025",
+    "lang": "ru",
+    "kind": "loose",
+    "question": "сколько разных брокеров выступали брокером продавца в сделках по хлопку-сырцу (все формы)?",
+    "gold_sql": "SELECT COUNT(DISTINCT seller_broker) FROM deals_enriched WHERE product_base LIKE '%хлопок%сырец%'",
+    "gold": [
+      [
+        75
+      ]
+    ],
+    "note": "distinct seller_broker по всем формам хлопка-сырца."
+  },
+  {
+    "id": "i026",
+    "lang": "uz",
+    "kind": "loose",
+    "question": "2023 yilda dollar kursi o'rtacha qancha bo'lgan (yil bo'yicha o'rtacha qiymat)?",
+    "gold_sql": "SELECT AVG(uzs_per_usd) FROM usd_rates WHERE rate_date>=DATE '2023-01-01' AND rate_date<DATE '2024-01-01'",
+    "gold": [
+      [
+        11371.35
+      ]
+    ],
+    "note": "Средний курс за календарный год, а не курс на конкретный день."
+  },
+  {
+    "id": "i027",
+    "lang": "ru",
+    "kind": "loose",
+    "question": "когда в 2026 году доллар был дешевле всего (минимальный курс за год) и сколько он стоил?",
+    "gold_sql": "SELECT rate_date, uzs_per_usd FROM usd_rates WHERE rate_date>=DATE '2026-01-01' AND rate_date<DATE '2026-11-01' ORDER BY uzs_per_usd ASC LIMIT 1",
+    "gold": [
+      [
+        "2026-02-01",
+        12420.71
+      ]
+    ],
+    "note": "2026 год в данных есть только по 30.10.2026."
+  },
+  {
+    "id": "i028",
+    "lang": "uz",
+    "kind": "loose",
+    "question": "неча компания «Транспортная компания» турига киради (иштирокчилар рўйхатида)?",
+    "gold_sql": "SELECT COUNT(*) FROM participants WHERE \"Вид деятельности\"='Транспортная компания'",
+    "gold": [
+      [
+        2108
+      ]
+    ],
+    "note": "Справочник участников, поле «Вид деятельности»."
+  },
+  {
+    "id": "i029",
+    "lang": "ru",
+    "kind": "loose",
+    "question": "сравните экспорт в долларах — в 2023 и в 2026 году — в каком году экспортировали на бОльшую сумму?",
+    "gold_sql": "SELECT extract(year from deal_date) y, SUM(amount) s FROM deals_enriched WHERE contract_type='Экспортный' AND extract(year from deal_date) IN (2023,2026) AND status != 'Аннулирован(Не оплачен)' GROUP BY 1 ORDER BY 1",
+    "gold": [
+      [
+        2023,
+        193408881.75
+      ],
+      [
+        2026,
+        233504387.36
+      ]
+    ],
+    "note": "Экспортные сделки в валюте контракта — это доллары (не сумы); 2026 год в данных неполный (по 30.10)."
+  },
+  {
+    "id": "i030",
+    "lang": "uz",
+    "kind": "loose",
+    "question": "qaysi broker xaridor brokeri sifatida eng ko'p bitimda qatnashgan (nechta bitim)?",
+    "gold_sql": "SELECT buyer_broker, COUNT(*) c FROM deals_enriched WHERE buyer_broker IS NOT NULL GROUP BY 1 ORDER BY c DESC LIMIT 1",
+    "gold": [
+      [
+        "BK017",
+        13447
+      ]
+    ],
+    "note": "Ранжирование брокеров покупателя по числу сделок."
+  },
+  {
+    "id": "i031",
+    "lang": "ru",
+    "kind": "loose",
+    "question": "какая отрасль промышленности дала наибольший оборот в сумах за весь период (без аннулированных)?",
+    "gold_sql": "SELECT industry, SUM(amount_uzs) s FROM deals_enriched WHERE status != 'Аннулирован(Не оплачен)' GROUP BY 1 ORDER BY s DESC LIMIT 1",
+    "gold": [
+      [
+        "Сельское хозяйство",
+        103545504551568.56
+      ]
+    ],
+    "note": "Используется amount_uzs (экспорт переведён в сумы по курсу на дату сделки)."
+  },
+  {
+    "id": "i032",
+    "lang": "uz",
+    "kind": "loose",
+    "question": "kimyo mahsulotlari (Химическая продукция) kategoriyasi bo'yicha jami savdo summasi (so'mda) qancha bo'lgan, bekor qilinganlarsiz?",
+    "gold_sql": "SELECT SUM(amount_uzs) FROM deals_enriched WHERE product_category='Химическая продукция' AND status != 'Аннулирован(Не оплачен)'",
+    "gold": [
+      [
+        7129933876748.0
+      ]
+    ],
+    "note": "Денежная сумма по категории товара."
+  },
+  {
+    "id": "i033",
+    "lang": "ru",
+    "kind": "trap",
+    "question": "сколько тонн дизельного топлива (оба варианта написания — «дизельное топливо» и «топливо дизельное») продали в 2026 году?",
+    "gold_sql": "SELECT SUM(CASE WHEN unit='тонна' THEN volume_units WHEN unit='килограмм' THEN volume_units/1000.0 ELSE 0 END) FROM deals_enriched WHERE (product_base LIKE '%дизельное топливо%' OR product_base LIKE '%топливо дизельное%') AND extract(year from deal_date)=2026 AND status != 'Аннулирован(Не оплачен)'",
+    "gold": [
+      [
+        165844.52
+      ]
+    ],
+    "note": "Ловушка: часть сделок по дизелю записана в тоннах, часть — в килограммах; килограммы нужно перевести в тонны и сложить оба варианта написания товара."
+  },
+  {
+    "id": "i034",
+    "lang": "uz",
+    "kind": "trap",
+    "question": "2024-yilda ammiachnaya selitra (barcha yozilishi: 'аммиачная селитра' va 'селитра аммиачная') jami necha tonna sotilgan (bekor qilinganlarsiz)?",
+    "gold_sql": "SELECT SUM(volume_units) FROM deals_enriched WHERE (product_base LIKE '%аммиачная селитра%' OR product_base LIKE '%селитра аммиачная%') AND extract(year from deal_date)=2024 AND status != 'Аннулирован(Не оплачен)'",
+    "gold": [
+      [
+        157505.0
+      ]
+    ],
+    "note": "Ловушка: один товар записан продавцами двумя разными словопорядками."
+  },
+  {
+    "id": "i035",
+    "lang": "ru",
+    "kind": "trap",
+    "question": "сколько всего сделок по карбамиду (включая вариант «мочевина (карбамид)») было в 2025 году?",
+    "gold_sql": "SELECT COUNT(*) FROM deals_enriched WHERE (product_base LIKE '%карбамид%' OR product_base LIKE '%мочевина%') AND extract(year from deal_date)=2025",
+    "gold": [
+      [
+        2565
+      ]
+    ],
+    "note": "Ловушка на объединение написаний; счётчик сделок — аннулированные не исключаются по умолчанию."
+  },
+  {
+    "id": "i036",
+    "lang": "uz",
+    "kind": "trap",
+    "question": "2022-yilda faqat oziq-ovqatlik (продовольственная) bug'doy nechi tonna sotilgan — oddiy bug'doy va 3/4-klass bug'doyni bu hisobga qo'shmang, bekor qilinganlarsiz?",
+    "gold_sql": "SELECT SUM(volume_units) FROM deals_enriched WHERE product_base LIKE '%пшеница продовольственная%' AND extract(year from deal_date)=2022 AND status != 'Аннулирован(Не оплачен)'",
+    "gold": [
+      [
+        513979.0
+      ]
+    ],
+    "note": "Ловушка: нужно взять только подмножество с словом «продовольственная», а не весь «пшеница»."
+  },
+  {
+    "id": "i037",
+    "lang": "ru",
+    "kind": "trap",
+    "question": "сколько всего составила сумма сделок (в сумах) по портландцементу за весь период, если считать вместе с аннулированными сделками?",
+    "gold_sql": "SELECT SUM(amount_uzs) FROM deals_enriched WHERE product_base LIKE '%портландцемент%'",
+    "gold": [
+      [
+        4333213190022.0
+      ]
+    ],
+    "note": "Ловушка: явно указано включить аннулированные — это меняет стандартное правило исключения."
+  },
+  {
+    "id": "i038",
+    "lang": "uz",
+    "kind": "trap",
+    "question": "2024-yilda armatura po'lat bo'yicha jami necha tonna sotilgan — bekor qilingan bitimlarni ham qo'shib hisoblang?",
+    "gold_sql": "SELECT SUM(volume_units) FROM deals_enriched WHERE product_base LIKE '%арматура%' AND extract(year from deal_date)=2024",
+    "gold": [
+      [
+        91960.0
+      ]
+    ],
+    "note": "Ловушка: явно включить аннулированные сделки в объём."
+  },
+  {
+    "id": "i039",
+    "lang": "uz",
+    "kind": "trap",
+    "question": "хлопок-сырец бўйича фақат тўлиқ ижро этилган (ҳолати айнан «Исполнен», қисман ижро этилганларсиз) нечта битим бўлган?",
+    "gold_sql": "SELECT COUNT(*) FROM deals_enriched WHERE (product_base LIKE '%хлопок%сырец%') AND status='Исполнен'",
+    "gold": [
+      [
+        113784
+      ]
+    ],
+    "note": "Ловушка: «Исполнен(Частично)» не считается, хотя обычно его включают в «выполненные»."
+  },
+  {
+    "id": "i040",
+    "lang": "uz",
+    "kind": "trap",
+    "question": "белгиланган тўлов муддатидан кечикиб тўланган битимлар умуман нечта бўлган?",
+    "gold_sql": "SELECT COUNT(*) FROM deals_enriched WHERE paid_late",
+    "gold": [
+      [
+        0
+      ]
+    ],
+    "note": "Ловушка: в этих данных ни одна сделка не оплачена с опозданием — правильный ответ 0, а не придуманное число."
+  },
+  {
+    "id": "i041",
+    "lang": "ru",
+    "kind": "trap",
+    "question": "сколько всего бензина (всех марок) продали за весь период, без аннулированных сделок?",
+    "gold_sql": "SELECT unit, SUM(volume_units) FROM deals_enriched WHERE product_base LIKE '%бензин%' AND status != 'Аннулирован(Не оплачен)' GROUP BY 1",
+    "gold": [
+      [
+        "тонна",
+        332740.0
+      ],
+      [
+        "литр",
+        440718000.0
+      ]
+    ],
+    "note": "Ловушка: бензин продаётся и в тоннах, и в литрах — единицы нельзя складывать вместе, нужно показать раздельно."
+  },
+  {
+    "id": "i042",
+    "lang": "uz",
+    "kind": "trap",
+    "question": "2024-yilda paxta (barcha shakllarda birgalikda — спот, форвард, фьючерс) necha tonna sotilgan (tonnada, kilogrammda emas, bekor qilinganlarsiz)?",
+    "gold_sql": "SELECT SUM(volume_units)/1000.0 FROM deals_enriched WHERE (product_base LIKE '%хлопок%сырец%') AND extract(year from deal_date)=2024 AND status != 'Аннулирован(Не оплачен)'",
+    "gold": [
+      [
+        1672494.96
+      ]
+    ],
+    "note": "Ловушка: хлопок-сырец в базе записан в килограммах, нужно перевести в тонны."
+  },
+  {
+    "id": "i043",
+    "lang": "ru",
+    "kind": "trap",
+    "question": "сколько действующих контрактов на профиль алюминиевый (любой словопорядок в названии) зарегистрировано со складом в Ферганской области?",
+    "gold_sql": "SELECT COUNT(*) FROM contracts WHERE \"Регион\"='Ферганская область' AND (\"Наименование продукта\" ILIKE '%проф%алюмин%' OR \"Наименование продукта\" ILIKE '%алюмин%проф%')",
+    "gold": [
+      [
+        14
+      ]
+    ],
+    "note": "Ловушка: регион в contracts.csv записан по-русски («Ферганская область»), а не как в deals («Farg‘ona viloyati»)."
+  },
+  {
+    "id": "i044",
+    "lang": "uz",
+    "kind": "trap",
+    "question": "oq shakar (сахар белый) bitimlarining necha foizi hali «Ждёт оплату» yoki «Оплачен» holatida — ya'ni tovar hali yetkazib berilmagan?",
+    "gold_sql": "SELECT ROUND(100.0*SUM(CASE WHEN status IN ('Ждёт оплату','Оплачен') THEN 1 ELSE 0 END)/COUNT(*),2) FROM deals_enriched WHERE product_base='сахар белый'",
+    "gold": [
+      [
+        1.11
+      ]
+    ],
+    "note": "Ловушка: нужно объединить именно два статуса, не один; знаменатель — все сделки по товару."
+  },
+  {
+    "id": "i045",
+    "lang": "ru",
+    "kind": "no_data",
+    "question": "сколько тонн мёда было продано на бирже за весь период?",
+    "gold_sql": "SELECT COUNT(*) FROM deals_enriched WHERE (product_base LIKE '%мёд%' OR product_base LIKE '%мед%') AND product_base NOT LIKE '%медн%'",
+    "gold": [
+      [
+        0
+      ]
+    ],
+    "note": "Товар «мёд» отсутствует в реестре (0 — не выдуманное число, а реальный результат пустого поиска)."
+  },
+  {
+    "id": "i046",
+    "lang": "uz",
+    "kind": "no_data",
+    "question": "ipak-xomashyo (ipak qurti ipagi) savdosi UZEXda bo'lganmi, jami necha tonna sotilgan?",
+    "gold_sql": "SELECT COUNT(*) FROM deals_enriched WHERE product_base LIKE '%шелк%' OR product_base LIKE '%шёлк%' OR product_base LIKE '%ipak%'",
+    "gold": [
+      [
+        0
+      ]
+    ],
+    "note": "Шёлк-сырец в номенклатуре товаров отсутствует."
+  },
+  {
+    "id": "i047",
+    "lang": "uz",
+    "kind": "no_data",
+    "question": "чой (чай) савдоси тўғрисида маълумот борми, жами қанча тонна сотилган?",
+    "gold_sql": "SELECT COUNT(*) FROM deals_enriched WHERE product_base LIKE '%чай%'",
+    "gold": [
+      [
+        0
+      ]
+    ],
+    "note": "Чай в номенклатуре товаров отсутствует."
+  },
+  {
+    "id": "i048",
+    "lang": "ru",
+    "kind": "no_data",
+    "question": "сколько кубометров природного (магистрального, не сжиженного) газа было продано в 2024 году?",
+    "gold_sql": "SELECT COUNT(*) FROM deals_enriched WHERE product_base LIKE '%природный газ%'",
+    "gold": [
+      [
+        0
+      ]
+    ],
+    "note": "В данных есть только сжиженный газ (пропан-бутан), трубопроводного природного газа нет."
+  },
+  {
+    "id": "i049",
+    "lang": "uz",
+    "kind": "no_data",
+    "question": "teri-xomashyo (кожа, шкуры) savdosi bo'yicha jami nechta bitim bo'lgan?",
+    "gold_sql": "SELECT COUNT(*) FROM deals_enriched WHERE product_base LIKE '%кожа%' OR product_base LIKE '%шкур%'",
+    "gold": [
+      [
+        0
+      ]
+    ],
+    "note": "Кожевенное сырьё в номенклатуре товаров отсутствует."
+  },
+  {
+    "id": "i050",
+    "lang": "ru",
+    "kind": "no_data",
+    "question": "сколько сделок по газообразному аргону было заключено в Бухарской области?",
+    "gold_sql": "SELECT COUNT(*) FROM deals_enriched WHERE product_base LIKE '%аргон%' AND region='Buxoro viloyati'",
+    "gold": [
+      [
+        0
+      ]
+    ],
+    "note": "Легитимная нулевая комбинация: аргон торгуется только в 5 регионах, Бухарской области среди них нет."
+  },
+  {
+    "id": "i051",
+    "lang": "uz",
+    "kind": "no_data",
+    "question": "gips (гипс) bo'yicha «Фьючерс» shaklida nechta bitim tuzilgan?",
+    "gold_sql": "SELECT COUNT(*) FROM deals_enriched WHERE product_base LIKE '%гипс%' AND contract_form='Фьючерс'",
+    "gold": [
+      [
+        0
+      ]
+    ],
+    "note": "Легитимная нулевая комбинация: фьючерсы в данных заключаются только по хлопку-сырцу."
+  },
+  {
+    "id": "i052",
+    "lang": "ru",
+    "kind": "no_data",
+    "question": "сколько экспортных сделок было заключено по кабелю силовому?",
+    "gold_sql": "SELECT COUNT(*) FROM deals_enriched WHERE product_base LIKE '%кабель%' AND contract_type='Экспортный'",
+    "gold": [
+      [
+        0
+      ]
+    ],
+    "note": "Легитимная нулевая комбинация: кабель силовой нигде не продавался на экспорт."
+  },
+  {
+    "id": "i053",
+    "lang": "uz",
+    "kind": "no_data",
+    "question": "nechta klaster turidagi (Вид деятельности='Кластер') kompaniya xaridor sifatida ro'yxatdan o'tgan?",
+    "gold_sql": "SELECT COUNT(*) FROM participants WHERE \"Вид деятельности\"='Кластер' AND \"Роль\"='Покупатель'",
+    "gold": [
+      [
+        0
+      ]
+    ],
+    "note": "Легитимная нулевая комбинация: компании вида «Кластер» в справочнике зарегистрированы только как продавцы."
+  },
+  {
+    "id": "i054",
+    "lang": "ru",
+    "kind": "no_data",
+    "question": "кто подписал сделку №250000 со стороны покупателя (ФИО представителя)?",
+    "gold_sql": "-- нет данных: поле/сущность отсутствует в схеме",
+    "gold": [],
+    "note": "ФИО подписанта/представителя не входит в состав данных сделки."
+  },
+  {
+    "id": "i055",
+    "lang": "uz",
+    "kind": "no_data",
+    "question": "shartnomalar matni qaysi tilda (o'zbek, rus yoki ingliz) tuzilgan bo'ladi?",
+    "gold_sql": "-- нет данных: поле/сущность отсутствует в схеме",
+    "gold": [],
+    "note": "Язык текста договора не фиксируется в данных."
+  },
+  {
+    "id": "i056",
+    "lang": "ru",
+    "kind": "no_data",
+    "question": "какая ставка НДС (в процентах) применяется к сделкам по сахару белому?",
+    "gold_sql": "-- нет данных: поле/сущность отсутствует в схеме",
+    "gold": [],
+    "note": "В данных есть только признак «Плательщик НДС» (Да/Нет), самой ставки налога нет."
+  },
+  {
+    "id": "i057",
+    "lang": "uz",
+    "kind": "no_data",
+    "question": "UZEXнинг расмий мобиль иловаси (mobile app) борми?",
+    "gold_sql": "-- нет данных: поле/сущность отсутствует в схеме",
+    "gold": [],
+    "note": "Информации о мобильном приложении биржи в данных нет."
+  },
+  {
+    "id": "i058",
+    "lang": "ru",
+    "kind": "no_data",
+    "question": "сколько голов скота было продано через биржу за всё время?",
+    "gold_sql": "SELECT COUNT(*) FROM deals_enriched WHERE product_base LIKE '%скот%' OR product_base LIKE '%голов%'",
+    "gold": [
+      [
+        0
+      ]
+    ],
+    "note": "Живой скот в номенклатуре товаров отсутствует."
+  },
+  {
+    "id": "i059",
+    "lang": "uz",
+    "kind": "no_data",
+    "question": "\"Rozi Tekstil\" OK kompaniyasining kredit reytingi qanday?",
+    "gold_sql": "-- нет данных: поле/сущность отсутствует в схеме",
+    "gold": [],
+    "note": "Кредитный рейтинг компаний не входит в состав данных участников."
+  },
+  {
+    "id": "i060",
+    "lang": "uz",
+    "kind": "no_data",
+    "question": "BK066 brokerlik kontorasi ISO sifat sertifikatiga egami?",
+    "gold_sql": "-- нет данных: поле/сущность отсутствует в схеме",
+    "gold": [],
+    "note": "Сведения о сертификации ISO брокерских контор в данных отсутствуют."
+  }
+]
