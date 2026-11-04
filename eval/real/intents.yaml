@@ -1,0 +1,1484 @@
+# Realistic evaluation intents (see docs/eval-design.md).
+# Each intent: what is asked, with reference SQL per acceptable reading. `sql_check` (an independent second
+# query) and `questions` (ru / uz_latn / uz_cyrl phrasings) are written separately.
+# Conventions: money in amount_uzs (amount_usd when dollars are asked); annulled = is_cancelled; rankings,
+# averages and money exclude annulled deals unless the intent says otherwise; canonical products
+# (product_canonical) unless a specific spelling / grade is named; mass in volume_tonnes.
+
+# ---------------------------------------------------------------- deals
+- id: r001
+  split: dev
+  subject: deals
+  shape: lookup
+  answerable: true
+  intent: "Buyer, seller, product, amount in UZS and status of deal No. 387830"
+  readings:
+    - name: deal card
+      sql: |-
+        SELECT d.deal_id, d.deal_date, d.product_canonical, d.buyer_inn, pb.name AS buyer_name,
+               d.seller_inn, ps.name AS seller_name, d.amount_uzs, d.status
+        FROM deals d
+        LEFT JOIN participants pb ON pb.inn = d.buyer_inn
+        LEFT JOIN participants ps ON ps.inn = d.seller_inn
+        WHERE d.deal_id = 387830
+      key: [buyer_inn, seller_inn, amount_uzs, status]
+
+- id: r002
+  split: test
+  subject: deals
+  shape: lookup
+  answerable: true
+  intent: "Payment date and delivery date of deal No. 412345"
+  readings:
+    - name: dates
+      sql: "SELECT deal_id, payment_date, delivery_date, status FROM deals WHERE deal_id = 412345"
+      key: [payment_date, delivery_date]
+
+- id: r003
+  split: dev
+  subject: deals
+  shape: lookup
+  answerable: true
+  intent: "Status of deal No. 387876 and why it did not go through (it was annulled as unpaid)"
+  readings:
+    - name: status
+      sql: "SELECT deal_id, status, is_cancelled, payment_date FROM deals WHERE deal_id = 387876"
+      key: [status]
+
+- id: r004
+  split: dev
+  subject: deals
+  shape: count
+  answerable: true
+  intent: "Number of deals concluded in October 2025 (status not specified: all deals, or only those that went through)"
+  readings:
+    - name: all deals
+      sql: "SELECT COUNT(*) AS deals FROM deals WHERE year = 2025 AND month = 10"
+      key: [deals]
+    - name: without annulled
+      sql: "SELECT COUNT(*) AS deals FROM deals WHERE year = 2025 AND month = 10 AND NOT is_cancelled"
+      key: [deals]
+
+- id: r005
+  split: test
+  subject: deals
+  shape: count
+  answerable: true
+  intent: "Number of export deals in 2024 (status not specified: all deals, or without annulled)"
+  readings:
+    - name: all deals
+      sql: "SELECT COUNT(*) AS deals FROM deals WHERE year = 2024 AND contract_type = 'Экспортный'"
+      key: [deals]
+    - name: without annulled
+      sql: "SELECT COUNT(*) AS deals FROM deals WHERE year = 2024 AND contract_type = 'Экспортный' AND NOT is_cancelled"
+      key: [deals]
+
+- id: r006
+  split: test
+  subject: deals
+  shape: count
+  answerable: true
+  intent: "Number of annulled (unpaid) deals in 2022"
+  readings:
+    - name: annulled
+      sql: "SELECT COUNT(*) AS annulled FROM deals WHERE year = 2022 AND is_cancelled"
+      key: [annulled]
+
+- id: r007
+  split: dev
+  subject: deals
+  shape: count
+  answerable: true
+  intent: "Number of deals for AI-92 gasoline (grade АИ-92, any spelling) in 2025, all statuses"
+  readings:
+    - name: AI-92 all statuses
+      sql: |-
+        SELECT COUNT(*) AS deals FROM deals
+        WHERE year = 2025 AND product_canonical = 'Бензин автомобильный' AND product_name_full ILIKE '%АИ-92%'
+      key: [deals]
+
+- id: r008
+  split: test
+  subject: deals
+  shape: count
+  answerable: true
+  intent: "Number of 2025 deals (excluding annulled) delivered later than the contract delivery term"
+  readings:
+    - name: late deliveries
+      sql: "SELECT COUNT(*) AS late_deliveries FROM deals WHERE year = 2025 AND NOT is_cancelled AND delivery_late_days > 0"
+      key: [late_deliveries]
+
+- id: r009
+  split: dev
+  subject: deals
+  shape: total
+  answerable: true
+  intent: "Tonnes of raw cotton (all spellings and contract forms) sold in 2025, excluding annulled deals"
+  readings:
+    - name: tonnes
+      sql: "SELECT SUM(volume_tonnes) AS tonnes FROM deals WHERE product_canonical = 'Хлопок-сырец' AND year = 2025 AND NOT is_cancelled"
+      key: [tonnes]
+
+- id: r010
+  split: dev
+  subject: deals
+  shape: total
+  answerable: true
+  intent: "Total value in UZS of all deals in 2025 (status not specified: all deals, or without annulled)"
+  readings:
+    - name: all deals
+      sql: "SELECT SUM(amount_uzs) AS total_uzs FROM deals WHERE year = 2025"
+      key: [total_uzs]
+    - name: without annulled
+      sql: "SELECT SUM(amount_uzs) AS total_uzs FROM deals WHERE year = 2025 AND NOT is_cancelled"
+      key: [total_uzs]
+
+- id: r011
+  split: test
+  subject: deals
+  shape: total
+  answerable: true
+  intent: "Total value in US dollars of export deals in 2025, excluding annulled"
+  readings:
+    - name: usd
+      sql: "SELECT SUM(amount_usd) AS total_usd FROM deals WHERE year = 2025 AND contract_type = 'Экспортный' AND NOT is_cancelled"
+      key: [total_usd]
+
+- id: r012
+  split: dev
+  subject: deals
+  shape: total
+  answerable: true
+  intent: "Tonnes of Portland cement grade ЦЕМ I 42,5 Н (any spelling) sold in 2024, excluding annulled"
+  readings:
+    - name: tonnes
+      sql: |-
+        SELECT SUM(volume_tonnes) AS tonnes FROM deals
+        WHERE year = 2024 AND product_canonical = 'Портландцемент' AND product_name_full ILIKE '%ЦЕМ I 42,5%' AND NOT is_cancelled
+      key: [tonnes]
+
+- id: r013
+  split: test
+  subject: deals
+  shape: total
+  answerable: true
+  intent: "Number of ceramic bricks (pieces) sold in 2025, excluding annulled deals"
+  readings:
+    - name: pieces
+      sql: |-
+        SELECT unit, SUM(volume) AS pieces FROM deals
+        WHERE year = 2025 AND product_canonical = 'Кирпич керамический' AND NOT is_cancelled GROUP BY unit
+      key: [pieces]
+
+- id: r014
+  split: test
+  subject: deals
+  shape: average
+  answerable: true
+  intent: "Average price of raw cotton in 2025 excluding annulled (weighted per kg, or simple mean of deal prices per tonne)"
+  readings:
+    - name: weighted per kg
+      sql: |-
+        SELECT SUM(amount_uzs) / (SUM(volume_tonnes) * 1000) AS price_uzs_per_kg FROM deals
+        WHERE product_canonical = 'Хлопок-сырец' AND year = 2025 AND NOT is_cancelled
+      key: [price_uzs_per_kg]
+    - name: simple mean per tonne
+      sql: |-
+        SELECT AVG(amount_uzs / volume_tonnes) AS mean_price_uzs_per_t FROM deals
+        WHERE product_canonical = 'Хлопок-сырец' AND year = 2025 AND NOT is_cancelled
+      key: [mean_price_uzs_per_t]
+
+- id: r015
+  split: dev
+  subject: deals
+  shape: average
+  answerable: true
+  intent: "Median price of wheat per kg in UZS across individual 2024 deals, excluding annulled"
+  readings:
+    - name: median per kg
+      sql: |-
+        SELECT MEDIAN(amount_uzs / (volume_tonnes * 1000)) AS median_uzs_per_kg FROM deals
+        WHERE product_canonical = 'Пшеница' AND year = 2024 AND NOT is_cancelled
+      key: [median_uzs_per_kg]
+
+- id: r016
+  split: dev
+  subject: deals
+  shape: average
+  answerable: true
+  intent: "Average price of sugar in 2023 excluding annulled (weighted per kg, or simple mean of deal prices per tonne)"
+  readings:
+    - name: weighted per kg
+      sql: |-
+        SELECT SUM(amount_uzs) / (SUM(volume_tonnes) * 1000) AS price_uzs_per_kg FROM deals
+        WHERE product_canonical = 'Сахар' AND year = 2023 AND NOT is_cancelled
+      key: [price_uzs_per_kg]
+    - name: simple mean per tonne
+      sql: |-
+        SELECT AVG(amount_uzs / volume_tonnes) AS mean_price_uzs_per_t FROM deals
+        WHERE product_canonical = 'Сахар' AND year = 2023 AND NOT is_cancelled
+      key: [mean_price_uzs_per_t]
+
+- id: r017
+  split: test
+  subject: deals
+  shape: average
+  answerable: true
+  intent: "Average deal amount in UZS in 2025 (status not specified: all deals, or without annulled)"
+  readings:
+    - name: all deals
+      sql: "SELECT AVG(amount_uzs) AS avg_amount_uzs FROM deals WHERE year = 2025"
+      key: [avg_amount_uzs]
+    - name: without annulled
+      sql: "SELECT AVG(amount_uzs) AS avg_amount_uzs FROM deals WHERE year = 2025 AND NOT is_cancelled"
+      key: [avg_amount_uzs]
+
+- id: r018
+  split: test
+  subject: deals
+  shape: average
+  answerable: true
+  intent: "Average number of days from deal to payment for export deals in 2025 (paid deals only)"
+  readings:
+    - name: days
+      sql: "SELECT AVG(days_to_payment) AS avg_days_to_payment FROM deals WHERE year = 2025 AND contract_type = 'Экспортный' AND NOT is_cancelled"
+      key: [avg_days_to_payment]
+
+- id: r019
+  split: dev
+  subject: deals
+  shape: share
+  answerable: true
+  intent: "Share (%) of 2025 deals by count that were annulled, out of all 2025 deals"
+  readings:
+    - name: annulled pct
+      sql: "SELECT 100.0 * COUNT(*) FILTER (WHERE is_cancelled) / COUNT(*) AS cancelled_pct FROM deals WHERE year = 2025"
+      key: [cancelled_pct]
+
+- id: r020
+  split: test
+  subject: deals
+  shape: share
+  answerable: true
+  intent: "Share (%) of export deals in the total 2025 turnover in UZS, excluding annulled"
+  readings:
+    - name: by value
+      sql: |-
+        SELECT 100.0 * SUM(amount_uzs) FILTER (WHERE contract_type = 'Экспортный') / SUM(amount_uzs) AS export_share_pct
+        FROM deals WHERE year = 2025 AND NOT is_cancelled
+      key: [export_share_pct]
+
+- id: r021
+  split: dev
+  subject: deals
+  shape: share
+  answerable: true
+  intent: "Share (%) of cotton in 2025 turnover in UZS excluding annulled (raw cotton only, or all cotton products)"
+  readings:
+    - name: raw cotton
+      sql: |-
+        SELECT 100.0 * SUM(amount_uzs) FILTER (WHERE product_canonical = 'Хлопок-сырец') / SUM(amount_uzs) AS share_pct
+        FROM deals WHERE year = 2025 AND NOT is_cancelled
+      key: [share_pct]
+    - name: all cotton products
+      sql: |-
+        SELECT 100.0 * SUM(amount_uzs) FILTER (WHERE product_family = 'Хлопок') / SUM(amount_uzs) AS share_pct
+        FROM deals WHERE year = 2025 AND NOT is_cancelled
+      key: [share_pct]
+
+- id: r022
+  split: dev
+  subject: deals
+  shape: share
+  answerable: true
+  intent: "Share (%) of forward deals among all deals of 2025, by count, all statuses"
+  readings:
+    - name: forward pct
+      sql: "SELECT 100.0 * COUNT(*) FILTER (WHERE contract_form = 'Форвард') / COUNT(*) AS forward_pct FROM deals WHERE year = 2025"
+      key: [forward_pct]
+
+- id: r023
+  split: test
+  subject: deals
+  shape: share
+  answerable: true
+  intent: "Share (%) of the 2024 deal value in UZS that was annulled, out of the value of all 2024 deals"
+  readings:
+    - name: annulled by value
+      sql: "SELECT 100.0 * SUM(amount_uzs) FILTER (WHERE is_cancelled) / SUM(amount_uzs) AS annulled_value_pct FROM deals WHERE year = 2024"
+      key: [annulled_value_pct]
+
+- id: r024
+  split: test
+  subject: deals
+  shape: top_n
+  answerable: true
+  intent: "Warehouse region that sold the most wheat in 2025, excluding annulled (by tonnes, or by value in UZS)"
+  readings:
+    - name: by tonnes
+      sql: |-
+        SELECT region, SUM(volume_tonnes) AS tonnes FROM deals
+        WHERE product_canonical = 'Пшеница' AND year = 2025 AND NOT is_cancelled
+        GROUP BY region ORDER BY tonnes DESC LIMIT 1
+      key: [region, tonnes]
+    - name: by value
+      sql: |-
+        SELECT region, SUM(amount_uzs) AS total_uzs FROM deals
+        WHERE product_canonical = 'Пшеница' AND year = 2025 AND NOT is_cancelled
+        GROUP BY region ORDER BY total_uzs DESC LIMIT 1
+      key: [region, total_uzs]
+
+- id: r025
+  split: dev
+  subject: deals
+  shape: top_n
+  answerable: true
+  intent: "Top 5 products (canonical) by turnover in UZS in 2024, excluding annulled"
+  readings:
+    - name: top 5
+      sql: |-
+        SELECT product_canonical, SUM(amount_uzs) AS total_uzs FROM deals
+        WHERE year = 2024 AND NOT is_cancelled GROUP BY product_canonical ORDER BY total_uzs DESC LIMIT 5
+      key: [product_canonical]
+
+- id: r026
+  split: test
+  subject: deals
+  shape: top_n
+  answerable: true
+  intent: "Three largest deals of 2026 by amount in UZS, excluding annulled: deal number, product, amount"
+  readings:
+    - name: top 3 deals
+      sql: |-
+        SELECT deal_id, deal_date, product_canonical, amount_uzs FROM deals
+        WHERE year = 2026 AND NOT is_cancelled ORDER BY amount_uzs DESC LIMIT 3
+      key: [deal_id, amount_uzs]
+
+- id: r027
+  split: dev
+  subject: deals
+  shape: top_n
+  answerable: true
+  intent: "Top 3 buyer regions (by company registration) by value in UZS of gasoline purchases in 2025, excluding annulled"
+  readings:
+    - name: buyer regions
+      sql: |-
+        SELECT buyer_region, SUM(amount_uzs) AS total_uzs FROM deals
+        WHERE product_canonical = 'Бензин автомобильный' AND year = 2025 AND NOT is_cancelled
+        GROUP BY buyer_region ORDER BY total_uzs DESC LIMIT 3
+      key: [buyer_region, total_uzs]
+
+- id: r028
+  split: test
+  subject: deals
+  shape: least
+  answerable: true
+  intent: "Canonical product with the smallest turnover in UZS in 2025, excluding annulled"
+  readings:
+    - name: least product
+      sql: |-
+        SELECT product_canonical, SUM(amount_uzs) AS total_uzs FROM deals
+        WHERE year = 2025 AND NOT is_cancelled GROUP BY product_canonical ORDER BY total_uzs ASC LIMIT 1
+      key: [product_canonical, total_uzs]
+
+- id: r029
+  split: dev
+  subject: deals
+  shape: least
+  answerable: true
+  intent: "Warehouse region with the fewest deals in 2023, excluding annulled"
+  readings:
+    - name: least region
+      sql: |-
+        SELECT region, COUNT(*) AS deals FROM deals
+        WHERE year = 2023 AND NOT is_cancelled GROUP BY region ORDER BY deals ASC LIMIT 1
+      key: [region, deals]
+
+- id: r030
+  split: test
+  subject: deals
+  shape: least
+  answerable: true
+  intent: "Month of 2025 with the lowest weighted average price of diesel fuel per kg, excluding annulled"
+  readings:
+    - name: cheapest month
+      sql: |-
+        SELECT month, SUM(amount_uzs) / (SUM(volume_tonnes) * 1000) AS price_uzs_per_kg FROM deals
+        WHERE product_canonical = 'Дизельное топливо' AND year = 2025 AND NOT is_cancelled
+        GROUP BY month ORDER BY price_uzs_per_kg ASC LIMIT 1
+      key: [month, price_uzs_per_kg]
+
+- id: r031
+  split: dev
+  subject: deals
+  shape: least
+  answerable: true
+  intent: "Cheapest single raw-cotton deal of 2025 by price per kg, excluding annulled: deal number and price"
+  readings:
+    - name: cheapest deal
+      sql: |-
+        SELECT deal_id, deal_date, amount_uzs / (volume_tonnes * 1000) AS price_uzs_per_kg FROM deals
+        WHERE product_canonical = 'Хлопок-сырец' AND year = 2025 AND NOT is_cancelled
+        ORDER BY price_uzs_per_kg ASC, deal_id LIMIT 1
+      key: [deal_id, price_uzs_per_kg]
+
+- id: r032
+  split: test
+  subject: deals
+  shape: distinct_count
+  answerable: true
+  intent: "Number of distinct buyer companies of Portland cement in 2025, excluding annulled deals"
+  readings:
+    - name: buyers
+      sql: "SELECT COUNT(DISTINCT buyer_inn) AS buyers FROM deals WHERE product_canonical = 'Портландцемент' AND year = 2025 AND NOT is_cancelled"
+      key: [buyers]
+
+- id: r033
+  split: dev
+  subject: deals
+  shape: distinct_count
+  answerable: true
+  intent: "Number of distinct seller companies of wheat in 2024, excluding annulled deals"
+  readings:
+    - name: sellers
+      sql: "SELECT COUNT(DISTINCT seller_inn) AS sellers FROM deals WHERE product_canonical = 'Пшеница' AND year = 2024 AND NOT is_cancelled"
+      key: [sellers]
+
+- id: r034
+  split: dev
+  subject: deals
+  shape: compare_periods
+  answerable: true
+  intent: "Deal counts in Q1 2025 versus Q1 2026 and the change in % (all deals, or without annulled)"
+  readings:
+    - name: all deals
+      sql: |-
+        SELECT COUNT(*) FILTER (WHERE year = 2025) AS q1_2025, COUNT(*) FILTER (WHERE year = 2026) AS q1_2026,
+               100.0 * (COUNT(*) FILTER (WHERE year = 2026)) / (COUNT(*) FILTER (WHERE year = 2025)) - 100 AS change_pct
+        FROM deals WHERE quarter = 1 AND year IN (2025, 2026)
+      key: [q1_2025, q1_2026]
+    - name: without annulled
+      sql: |-
+        SELECT COUNT(*) FILTER (WHERE year = 2025) AS q1_2025, COUNT(*) FILTER (WHERE year = 2026) AS q1_2026,
+               100.0 * (COUNT(*) FILTER (WHERE year = 2026)) / (COUNT(*) FILTER (WHERE year = 2025)) - 100 AS change_pct
+        FROM deals WHERE quarter = 1 AND year IN (2025, 2026) AND NOT is_cancelled
+      key: [q1_2025, q1_2026]
+
+- id: r035
+  split: test
+  subject: deals
+  shape: compare_periods
+  answerable: true
+  intent: "Tonnes of raw cotton sold in January–October 2025 versus January–October 2026, excluding annulled, and the change in %"
+  readings:
+    - name: tonnes
+      sql: |-
+        SELECT SUM(volume_tonnes) FILTER (WHERE year = 2025) AS t_2025, SUM(volume_tonnes) FILTER (WHERE year = 2026) AS t_2026,
+               100.0 * SUM(volume_tonnes) FILTER (WHERE year = 2026) / SUM(volume_tonnes) FILTER (WHERE year = 2025) - 100 AS change_pct
+        FROM deals WHERE product_canonical = 'Хлопок-сырец' AND year IN (2025, 2026) AND month <= 10 AND NOT is_cancelled
+      key: [t_2025, t_2026, change_pct]
+
+- id: r036
+  split: dev
+  subject: deals
+  shape: compare_periods
+  answerable: true
+  intent: "Exchange turnover in UZS in 2023 versus 2024, excluding annulled, and the growth in %"
+  readings:
+    - name: turnover
+      sql: |-
+        SELECT SUM(amount_uzs) FILTER (WHERE year = 2023) AS uzs_2023, SUM(amount_uzs) FILTER (WHERE year = 2024) AS uzs_2024,
+               100.0 * SUM(amount_uzs) FILTER (WHERE year = 2024) / SUM(amount_uzs) FILTER (WHERE year = 2023) - 100 AS change_pct
+        FROM deals WHERE year IN (2023, 2024) AND NOT is_cancelled
+      key: [uzs_2023, uzs_2024, change_pct]
+
+- id: r037
+  split: test
+  subject: deals
+  shape: compare_periods
+  answerable: true
+  intent: "Share (%) of annulled deals by count in 2024 versus 2025 and the change in percentage points"
+  readings:
+    - name: pct and pp
+      sql: |-
+        SELECT 100.0 * COUNT(*) FILTER (WHERE year = 2024 AND is_cancelled) / COUNT(*) FILTER (WHERE year = 2024) AS pct_2024,
+               100.0 * COUNT(*) FILTER (WHERE year = 2025 AND is_cancelled) / COUNT(*) FILTER (WHERE year = 2025) AS pct_2025,
+               100.0 * COUNT(*) FILTER (WHERE year = 2025 AND is_cancelled) / COUNT(*) FILTER (WHERE year = 2025)
+               - 100.0 * COUNT(*) FILTER (WHERE year = 2024 AND is_cancelled) / COUNT(*) FILTER (WHERE year = 2024) AS change_pp
+        FROM deals WHERE year IN (2024, 2025)
+      key: [pct_2024, pct_2025]
+
+- id: r038
+  split: dev
+  subject: deals
+  shape: trend
+  answerable: true
+  intent: "Number of deals per quarter of 2025, excluding annulled"
+  readings:
+    - name: by quarter
+      sql: "SELECT quarter, COUNT(*) AS deals FROM deals WHERE year = 2025 AND NOT is_cancelled GROUP BY quarter ORDER BY quarter"
+      key: [quarter, deals]
+
+- id: r039
+  split: test
+  subject: deals
+  shape: trend
+  answerable: true
+  intent: "Monthly turnover in UZS of gasoline deals from January to May 2026, excluding annulled"
+  readings:
+    - name: by month
+      sql: |-
+        SELECT month, SUM(amount_uzs) AS total_uzs FROM deals
+        WHERE product_canonical = 'Бензин автомобильный' AND year = 2026 AND month <= 5 AND NOT is_cancelled
+        GROUP BY month ORDER BY month
+      key: [month, total_uzs]
+
+- id: r040
+  split: dev
+  subject: deals
+  shape: trend
+  answerable: true
+  intent: "Share (%) of annulled deals by count for each year 2022–2026"
+  readings:
+    - name: by year
+      sql: "SELECT year, 100.0 * COUNT(*) FILTER (WHERE is_cancelled) / COUNT(*) AS cancelled_pct FROM deals GROUP BY year ORDER BY year"
+      key: [year, cancelled_pct]
+
+- id: r041
+  split: test
+  subject: deals
+  shape: trend
+  answerable: true
+  intent: "Export turnover in US dollars per quarter of 2025, excluding annulled"
+  readings:
+    - name: by quarter
+      sql: |-
+        SELECT quarter, SUM(amount_usd) AS total_usd FROM deals
+        WHERE contract_type = 'Экспортный' AND year = 2025 AND NOT is_cancelled GROUP BY quarter ORDER BY quarter
+      key: [quarter, total_usd]
+
+- id: r042
+  split: dev
+  subject: deals
+  shape: trend
+  answerable: true
+  intent: "Weighted average price of raw cotton per kg in each year 2022–2026, excluding annulled"
+  readings:
+    - name: by year
+      sql: |-
+        SELECT year, SUM(amount_uzs) / (SUM(volume_tonnes) * 1000) AS price_uzs_per_kg FROM deals
+        WHERE product_canonical = 'Хлопок-сырец' AND NOT is_cancelled GROUP BY year ORDER BY year
+      key: [year, price_uzs_per_kg]
+
+- id: r043
+  split: test
+  subject: deals
+  shape: breakdown
+  answerable: true
+  intent: "Number of deals by contract form (spot, forward, futures) in 2025, excluding annulled"
+  readings:
+    - name: by form
+      sql: "SELECT contract_form, COUNT(*) AS deals FROM deals WHERE year = 2025 AND NOT is_cancelled GROUP BY contract_form ORDER BY deals DESC"
+      key: [contract_form, deals]
+
+- id: r044
+  split: dev
+  subject: deals
+  shape: breakdown
+  answerable: true
+  intent: "Tonnes sold in 2025 by cotton product (raw cotton, cottonseed oil, meal, yarn), excluding annulled"
+  readings:
+    - name: by product
+      sql: |-
+        SELECT product_canonical, SUM(volume_tonnes) AS tonnes FROM deals
+        WHERE product_family = 'Хлопок' AND year = 2025 AND NOT is_cancelled GROUP BY product_canonical ORDER BY tonnes DESC
+      key: [product_canonical, tonnes]
+
+- id: r045
+  split: test
+  subject: deals
+  shape: breakdown
+  answerable: true
+  intent: "Number of deals by trading type (English, reverse, double auction) in 2024, excluding annulled"
+  readings:
+    - name: by trade type
+      sql: "SELECT trade_type, COUNT(*) AS deals FROM deals WHERE year = 2024 AND NOT is_cancelled GROUP BY trade_type ORDER BY deals DESC"
+      key: [trade_type, deals]
+
+- id: r046
+  split: dev
+  subject: deals
+  shape: breakdown
+  answerable: true
+  intent: "Export value in US dollars by product in 2025, excluding annulled"
+  readings:
+    - name: by product
+      sql: |-
+        SELECT product_canonical, SUM(amount_usd) AS total_usd FROM deals
+        WHERE contract_type = 'Экспортный' AND year = 2025 AND NOT is_cancelled GROUP BY product_canonical ORDER BY total_usd DESC
+      key: [product_canonical, total_usd]
+
+- id: r047
+  split: test
+  subject: deals
+  shape: breakdown
+  answerable: true
+  intent: "Number of 2026 deals by status (all statuses), top 5 statuses"
+  readings:
+    - name: by status
+      sql: "SELECT status, COUNT(*) AS deals FROM deals WHERE year = 2026 GROUP BY status ORDER BY deals DESC LIMIT 5"
+      key: [status, deals]
+
+- id: r048
+  split: dev
+  subject: deals
+  shape: date_of_extreme
+  answerable: true
+  intent: "Date and number of the largest single deal ever by amount in UZS, excluding annulled"
+  readings:
+    - name: largest deal
+      sql: "SELECT deal_id, deal_date, product_canonical, amount_uzs FROM deals WHERE NOT is_cancelled ORDER BY amount_uzs DESC LIMIT 1"
+      key: [deal_id, deal_date, amount_uzs]
+
+- id: r049
+  split: test
+  subject: deals
+  shape: date_of_extreme
+  answerable: true
+  intent: "Day of 2025 with the most deals (excluding annulled) and that number"
+  readings:
+    - name: busiest day
+      sql: |-
+        SELECT deal_date, COUNT(*) AS deals FROM deals WHERE year = 2025 AND NOT is_cancelled
+        GROUP BY deal_date ORDER BY deals DESC, deal_date LIMIT 1
+      key: [deal_date, deals]
+
+- id: r050
+  split: dev
+  subject: deals
+  shape: date_of_extreme
+  answerable: true
+  intent: "Month of 2025 with the largest raw-cotton tonnage sold, excluding annulled"
+  readings:
+    - name: peak month
+      sql: |-
+        SELECT month, SUM(volume_tonnes) AS tonnes FROM deals
+        WHERE product_canonical = 'Хлопок-сырец' AND year = 2025 AND NOT is_cancelled GROUP BY month ORDER BY tonnes DESC LIMIT 1
+      key: [month, tonnes]
+
+# ---------------------------------------------------------------- contracts
+- id: r051
+  split: test
+  subject: contracts
+  shape: lookup
+  answerable: true
+  intent: "Product, seller (INN and name), registration date and validity end of contract No. 102267"
+  readings:
+    - name: contract card
+      sql: |-
+        SELECT c.contract_id, c.product_canonical, c.seller_inn, p.name AS seller_name, c.registered_date, c.valid_until
+        FROM contracts c LEFT JOIN participants p ON p.inn = c.seller_inn WHERE c.contract_id = 102267
+      key: [product_canonical, seller_inn, registered_date, valid_until]
+
+- id: r052
+  split: dev
+  subject: contracts
+  shape: lookup
+  answerable: true
+  intent: "Base price, currency and deposit percentage of contract No. 100001"
+  readings:
+    - name: terms
+      sql: "SELECT contract_id, base_price, currency, deposit_pct, unit FROM contracts WHERE contract_id = 100001"
+      key: [base_price, currency, deposit_pct]
+
+- id: r053
+  split: test
+  subject: contracts
+  shape: count
+  answerable: true
+  intent: "Number of Portland cement contracts in force on 1 June 2025 (registered on or before and valid until on or after that date)"
+  readings:
+    - name: active contracts
+      sql: |-
+        SELECT COUNT(*) AS contracts FROM contracts
+        WHERE product_canonical = 'Портландцемент' AND registered_date <= DATE '2025-06-01' AND valid_until >= DATE '2025-06-01'
+      key: [contracts]
+
+- id: r054
+  split: test
+  subject: contracts
+  shape: total
+  answerable: true
+  intent: "Total value in UZS of all deals concluded under contract No. 102267 (all deals, or without annulled)"
+  readings:
+    - name: all deals
+      sql: "SELECT SUM(amount_uzs) AS total_uzs, COUNT(*) AS deals FROM deals WHERE contract_id = 102267"
+      key: [total_uzs]
+    - name: without annulled
+      sql: "SELECT SUM(amount_uzs) AS total_uzs, COUNT(*) AS deals FROM deals WHERE contract_id = 102267 AND NOT is_cancelled"
+      key: [total_uzs]
+
+- id: r055
+  split: dev
+  subject: contracts
+  shape: average
+  answerable: true
+  intent: "Average payment term in days (from the deal date) across forward contracts"
+  readings:
+    - name: avg term
+      sql: "SELECT AVG(payment_term_days) AS avg_payment_term_days FROM contracts WHERE contract_form = 'Форвард'"
+      key: [avg_payment_term_days]
+
+- id: r056
+  split: test
+  subject: contracts
+  shape: share
+  answerable: true
+  intent: "Share (%) of export contracts among all registered contracts"
+  readings:
+    - name: export pct
+      sql: "SELECT 100.0 * COUNT(*) FILTER (WHERE contract_type = 'Экспортный') / COUNT(*) AS export_pct FROM contracts"
+      key: [export_pct]
+
+- id: r057
+  split: dev
+  subject: contracts
+  shape: top_n
+  answerable: true
+  intent: "Top 3 seller companies by number of registered contracts (INN, name, count)"
+  readings:
+    - name: top sellers
+      sql: |-
+        SELECT c.seller_inn, p.name, COUNT(*) AS contracts FROM contracts c LEFT JOIN participants p ON p.inn = c.seller_inn
+        GROUP BY c.seller_inn, p.name ORDER BY contracts DESC LIMIT 3
+      key: [seller_inn, contracts]
+
+- id: r058
+  split: test
+  subject: contracts
+  shape: least
+  answerable: true
+  intent: "Canonical product with the fewest registered contracts"
+  readings:
+    - name: least product
+      sql: "SELECT product_canonical, COUNT(*) AS contracts FROM contracts GROUP BY product_canonical ORDER BY contracts ASC LIMIT 1"
+      key: [product_canonical, contracts]
+
+- id: r059
+  split: dev
+  subject: contracts
+  shape: distinct_count
+  answerable: true
+  intent: "Number of distinct canonical products among contracts registered in 2024"
+  readings:
+    - name: products
+      sql: "SELECT COUNT(DISTINCT product_canonical) AS products FROM contracts WHERE year(registered_date) = 2024"
+      key: [products]
+
+- id: r060
+  split: test
+  subject: contracts
+  shape: compare_periods
+  answerable: true
+  intent: "Number of contracts registered in 2024 versus 2025 and the change in %"
+  readings:
+    - name: counts
+      sql: |-
+        SELECT COUNT(*) FILTER (WHERE year(registered_date) = 2024) AS c_2024,
+               COUNT(*) FILTER (WHERE year(registered_date) = 2025) AS c_2025,
+               100.0 * COUNT(*) FILTER (WHERE year(registered_date) = 2025) / COUNT(*) FILTER (WHERE year(registered_date) = 2024) - 100 AS change_pct
+        FROM contracts
+      key: [c_2024, c_2025, change_pct]
+
+- id: r061
+  split: dev
+  subject: contracts
+  shape: trend
+  answerable: true
+  intent: "Number of contracts registered in each quarter of 2025"
+  readings:
+    - name: by quarter
+      sql: |-
+        SELECT quarter(registered_date) AS quarter, COUNT(*) AS contracts FROM contracts
+        WHERE year(registered_date) = 2025 GROUP BY 1 ORDER BY 1
+      key: [quarter, contracts]
+
+- id: r062
+  split: test
+  subject: contracts
+  shape: breakdown
+  answerable: true
+  intent: "Number of contracts by delivery basis (EXW, FCA, DAP, CPT)"
+  readings:
+    - name: by basis
+      sql: "SELECT delivery_basis, COUNT(*) AS contracts FROM contracts GROUP BY delivery_basis ORDER BY contracts DESC"
+      key: [delivery_basis, contracts]
+
+- id: r063
+  split: dev
+  subject: contracts
+  shape: date_of_extreme
+  answerable: true
+  intent: "Contract with the longest validity period (registration to valid-until): number, dates and length in days"
+  readings:
+    - name: longest
+      sql: |-
+        SELECT contract_id, product_canonical, registered_date, valid_until, valid_until - registered_date AS days
+        FROM contracts ORDER BY days DESC LIMIT 1
+      key: [contract_id, registered_date, valid_until]
+
+# ---------------------------------------------------------------- companies
+- id: r064
+  split: test
+  subject: companies
+  shape: lookup
+  answerable: true
+  intent: "Region, type of activity and VAT-payer status of the company with INN 983531029"
+  readings:
+    - name: card
+      sql: "SELECT inn, name, region, activity, role, vat_payer FROM participants WHERE inn = '983531029'"
+      key: [region, activity, vat_payer]
+
+- id: r065
+  split: dev
+  subject: companies
+  shape: lookup
+  answerable: true
+  intent: "INN and region of the company Linom Energo"
+  readings:
+    - name: inn
+      sql: "SELECT inn, name, region FROM participants WHERE name_norm = 'linom energo'"
+      key: [inn, region]
+
+- id: r066
+  split: test
+  subject: companies
+  shape: count
+  answerable: true
+  intent: "Number of buyer companies registered in Samarkand region"
+  readings:
+    - name: buyers
+      sql: "SELECT COUNT(*) AS companies FROM participants WHERE role = 'Покупатель' AND region = 'Samarqand viloyati'"
+      key: [companies]
+
+- id: r067
+  split: dev
+  subject: companies
+  shape: count
+  answerable: true
+  intent: "Number of deals in 2025 in which Linom Energo (INN 948428016) was the seller (all deals, or without annulled)"
+  readings:
+    - name: all deals
+      sql: "SELECT COUNT(*) AS deals FROM deals WHERE seller_inn = '948428016' AND year = 2025"
+      key: [deals]
+    - name: without annulled
+      sql: "SELECT COUNT(*) AS deals FROM deals WHERE seller_inn = '948428016' AND year = 2025 AND NOT is_cancelled"
+      key: [deals]
+
+- id: r068
+  split: test
+  subject: companies
+  shape: total
+  answerable: true
+  intent: "Tonnes of cotton bought by Zoket Invest (INN 983531029) in 2025, excluding annulled (raw cotton only, or all cotton products)"
+  readings:
+    - name: raw cotton
+      sql: |-
+        SELECT SUM(volume_tonnes) AS tonnes FROM deals
+        WHERE buyer_inn = '983531029' AND year = 2025 AND product_canonical = 'Хлопок-сырец' AND NOT is_cancelled
+      key: [tonnes]
+    - name: all cotton products
+      sql: |-
+        SELECT SUM(volume_tonnes) AS tonnes FROM deals
+        WHERE buyer_inn = '983531029' AND year = 2025 AND product_family = 'Хлопок' AND NOT is_cancelled
+      key: [tonnes]
+
+- id: r069
+  split: dev
+  subject: companies
+  shape: average
+  answerable: true
+  intent: "Average amount in UZS of a 2025 sale by Linom Energo (INN 948428016), excluding annulled"
+  readings:
+    - name: avg sale
+      sql: "SELECT AVG(amount_uzs) AS avg_amount_uzs FROM deals WHERE seller_inn = '948428016' AND year = 2025 AND NOT is_cancelled"
+      key: [avg_amount_uzs]
+
+- id: r070
+  split: test
+  subject: companies
+  shape: share
+  answerable: true
+  intent: "Share (%) of VAT payers among all companies in the participants registry"
+  readings:
+    - name: vat pct
+      sql: "SELECT 100.0 * COUNT(*) FILTER (WHERE vat_payer) / COUNT(*) AS vat_payer_pct FROM participants"
+      key: [vat_payer_pct]
+
+- id: r071
+  split: dev
+  subject: companies
+  shape: top_n
+  answerable: true
+  intent: "Company that bought the most Portland cement over the whole period, excluding annulled (by tonnes, or by value in UZS)"
+  readings:
+    - name: by tonnes
+      sql: |-
+        SELECT d.buyer_inn, p.name, SUM(d.volume_tonnes) AS tonnes FROM deals d LEFT JOIN participants p ON p.inn = d.buyer_inn
+        WHERE d.product_canonical = 'Портландцемент' AND NOT d.is_cancelled GROUP BY d.buyer_inn, p.name ORDER BY tonnes DESC LIMIT 1
+      key: [buyer_inn, tonnes]
+    - name: by value
+      sql: |-
+        SELECT d.buyer_inn, p.name, SUM(d.amount_uzs) AS total_uzs FROM deals d LEFT JOIN participants p ON p.inn = d.buyer_inn
+        WHERE d.product_canonical = 'Портландцемент' AND NOT d.is_cancelled GROUP BY d.buyer_inn, p.name ORDER BY total_uzs DESC LIMIT 1
+      key: [buyer_inn, total_uzs]
+
+- id: r072
+  split: test
+  subject: companies
+  shape: top_n
+  answerable: true
+  intent: "Company that traded the most by value in UZS in 2025, excluding annulled (as buyer, or as seller)"
+  readings:
+    - name: as buyer
+      sql: |-
+        SELECT d.buyer_inn AS inn, p.name, SUM(d.amount_uzs) AS total_uzs FROM deals d LEFT JOIN participants p ON p.inn = d.buyer_inn
+        WHERE d.year = 2025 AND NOT d.is_cancelled GROUP BY d.buyer_inn, p.name ORDER BY total_uzs DESC LIMIT 1
+      key: [inn, total_uzs]
+    - name: as seller
+      sql: |-
+        SELECT d.seller_inn AS inn, p.name, SUM(d.amount_uzs) AS total_uzs FROM deals d LEFT JOIN participants p ON p.inn = d.seller_inn
+        WHERE d.year = 2025 AND NOT d.is_cancelled GROUP BY d.seller_inn, p.name ORDER BY total_uzs DESC LIMIT 1
+      key: [inn, total_uzs]
+
+- id: r073
+  split: dev
+  subject: companies
+  shape: least
+  answerable: true
+  intent: "Cluster company (activity «Кластер») with the smallest sales value in UZS in 2025 among clusters that sold anything, excluding annulled"
+  readings:
+    - name: least cluster
+      sql: |-
+        SELECT d.seller_inn, p.name, SUM(d.amount_uzs) AS total_uzs FROM deals d JOIN participants p ON p.inn = d.seller_inn
+        WHERE p.activity = 'Кластер' AND d.year = 2025 AND NOT d.is_cancelled
+        GROUP BY d.seller_inn, p.name ORDER BY total_uzs ASC LIMIT 1
+      key: [seller_inn, total_uzs]
+
+- id: r074
+  split: test
+  subject: companies
+  shape: distinct_count
+  answerable: true
+  intent: "Number of distinct canonical products Zoket Invest (INN 983531029) has ever bought, excluding annulled deals"
+  readings:
+    - name: products
+      sql: "SELECT COUNT(DISTINCT product_canonical) AS products FROM deals WHERE buyer_inn = '983531029' AND NOT is_cancelled"
+      key: [products]
+
+- id: r075
+  split: dev
+  subject: companies
+  shape: compare_periods
+  answerable: true
+  intent: "Purchases in UZS by Zoket Invest (INN 983531029) in 2024 versus 2025, excluding annulled, and the change in %"
+  readings:
+    - name: purchases
+      sql: |-
+        SELECT SUM(amount_uzs) FILTER (WHERE year = 2024) AS uzs_2024, SUM(amount_uzs) FILTER (WHERE year = 2025) AS uzs_2025,
+               100.0 * SUM(amount_uzs) FILTER (WHERE year = 2025) / SUM(amount_uzs) FILTER (WHERE year = 2024) - 100 AS change_pct
+        FROM deals WHERE buyer_inn = '983531029' AND year IN (2024, 2025) AND NOT is_cancelled
+      key: [uzs_2024, uzs_2025, change_pct]
+
+- id: r076
+  split: test
+  subject: companies
+  shape: trend
+  answerable: true
+  intent: "Purchases in UZS by Fo‘sor Qurilish (INN 975117742) in each quarter of 2025, excluding annulled"
+  readings:
+    - name: by quarter
+      sql: |-
+        SELECT quarter, SUM(amount_uzs) AS total_uzs FROM deals
+        WHERE buyer_inn = '975117742' AND year = 2025 AND NOT is_cancelled GROUP BY quarter ORDER BY quarter
+      key: [quarter, total_uzs]
+
+- id: r077
+  split: dev
+  subject: companies
+  shape: breakdown
+  answerable: true
+  intent: "Number of buyer companies in the registry by type of activity (top 5)"
+  readings:
+    - name: by activity
+      sql: |-
+        SELECT activity, COUNT(*) AS companies FROM participants WHERE role = 'Покупатель'
+        GROUP BY activity ORDER BY companies DESC LIMIT 5
+      key: [activity, companies]
+
+- id: r078
+  split: test
+  subject: companies
+  shape: date_of_extreme
+  answerable: true
+  intent: "Date, deal number and amount of the largest single purchase by Zoket Invest (INN 983531029), excluding annulled"
+  readings:
+    - name: largest purchase
+      sql: |-
+        SELECT deal_id, deal_date, product_canonical, amount_uzs FROM deals
+        WHERE buyer_inn = '983531029' AND NOT is_cancelled ORDER BY amount_uzs DESC LIMIT 1
+      key: [deal_id, deal_date, amount_uzs]
+
+# ---------------------------------------------------------------- brokers
+- id: r079
+  split: dev
+  subject: brokers
+  shape: lookup
+  answerable: true
+  intent: "Name, INN and region of broker BK005"
+  readings:
+    - name: card
+      sql: "SELECT broker_code, name, inn, region FROM brokers WHERE broker_code = 'BK005'"
+      key: [name, inn, region]
+
+- id: r080
+  split: test
+  subject: brokers
+  shape: count
+  answerable: true
+  intent: "Number of brokerage firms registered in Tashkent city"
+  readings:
+    - name: brokers
+      sql: "SELECT COUNT(*) AS brokers FROM brokers WHERE region = 'Toshkent shahri'"
+      key: [brokers]
+
+- id: r081
+  split: dev
+  subject: brokers
+  shape: total
+  answerable: true
+  intent: "Total value in UZS of 2025 deals in which broker BK085 acted on either side, excluding annulled (each deal counted once)"
+  readings:
+    - name: either side
+      sql: |-
+        SELECT SUM(amount_uzs) AS total_uzs FROM deals
+        WHERE year = 2025 AND NOT is_cancelled AND (seller_broker = 'BK085' OR buyer_broker = 'BK085')
+      key: [total_uzs]
+
+- id: r082
+  split: test
+  subject: brokers
+  shape: average
+  answerable: true
+  intent: "Average amount in UZS of 2025 deals handled by broker BK017 on either side, excluding annulled"
+  readings:
+    - name: avg
+      sql: |-
+        SELECT AVG(amount_uzs) AS avg_amount_uzs FROM deals
+        WHERE year = 2025 AND NOT is_cancelled AND (seller_broker = 'BK017' OR buyer_broker = 'BK017')
+      key: [avg_amount_uzs]
+
+- id: r083
+  split: dev
+  subject: brokers
+  shape: share
+  answerable: true
+  intent: "Share (%) of all 2025 deals (by count, all statuses) in which broker BK111 took part on either side"
+  readings:
+    - name: share
+      sql: |-
+        SELECT 100.0 * COUNT(*) FILTER (WHERE seller_broker = 'BK111' OR buyer_broker = 'BK111') / COUNT(*) AS share_pct
+        FROM deals WHERE year = 2025
+      key: [share_pct]
+
+- id: r084
+  split: dev
+  subject: brokers
+  shape: top_n
+  answerable: true
+  intent: "Broker that handled the most export deals over the whole period, excluding annulled (on either side, as seller's broker, or as buyer's broker)"
+  readings:
+    - name: either side
+      sql: |-
+        SELECT b.broker_code, b.name, COUNT(*) AS deals FROM deals d
+        JOIN brokers b ON b.broker_code IN (d.seller_broker, d.buyer_broker)
+        WHERE d.contract_type = 'Экспортный' AND NOT d.is_cancelled
+        GROUP BY b.broker_code, b.name ORDER BY deals DESC LIMIT 1
+      key: [broker_code, deals]
+    - name: seller side
+      sql: |-
+        SELECT d.seller_broker AS broker_code, b.name, COUNT(*) AS deals FROM deals d LEFT JOIN brokers b ON b.broker_code = d.seller_broker
+        WHERE d.contract_type = 'Экспортный' AND NOT d.is_cancelled GROUP BY d.seller_broker, b.name ORDER BY deals DESC LIMIT 1
+      key: [broker_code, deals]
+    - name: buyer side
+      sql: |-
+        SELECT d.buyer_broker AS broker_code, b.name, COUNT(*) AS deals FROM deals d LEFT JOIN brokers b ON b.broker_code = d.buyer_broker
+        WHERE d.contract_type = 'Экспортный' AND NOT d.is_cancelled GROUP BY d.buyer_broker, b.name ORDER BY deals DESC LIMIT 1
+      key: [broker_code, deals]
+
+- id: r085
+  split: test
+  subject: brokers
+  shape: top_n
+  answerable: true
+  intent: "Top 3 buyer-side brokers by value in UZS of 2025 deals, excluding annulled"
+  readings:
+    - name: top 3
+      sql: |-
+        SELECT d.buyer_broker AS broker_code, b.name, SUM(d.amount_uzs) AS total_uzs FROM deals d
+        LEFT JOIN brokers b ON b.broker_code = d.buyer_broker
+        WHERE d.year = 2025 AND NOT d.is_cancelled GROUP BY d.buyer_broker, b.name ORDER BY total_uzs DESC LIMIT 3
+      key: [broker_code, total_uzs]
+
+- id: r086
+  split: dev
+  subject: brokers
+  shape: least
+  answerable: true
+  intent: "Seller-side broker with the fewest deals in 2025 among brokers that had any, excluding annulled"
+  readings:
+    - name: least
+      sql: |-
+        SELECT d.seller_broker AS broker_code, b.name, COUNT(*) AS deals FROM deals d
+        LEFT JOIN brokers b ON b.broker_code = d.seller_broker
+        WHERE d.year = 2025 AND NOT d.is_cancelled GROUP BY d.seller_broker, b.name ORDER BY deals ASC LIMIT 1
+      key: [broker_code, deals]
+
+- id: r087
+  split: test
+  subject: brokers
+  shape: distinct_count
+  answerable: true
+  intent: "Number of distinct seller-side brokers that handled export deals in 2025, excluding annulled"
+  readings:
+    - name: seller brokers
+      sql: |-
+        SELECT COUNT(DISTINCT seller_broker) AS seller_brokers FROM deals
+        WHERE contract_type = 'Экспортный' AND year = 2025 AND NOT is_cancelled
+      key: [seller_brokers]
+
+- id: r088
+  split: dev
+  subject: brokers
+  shape: compare_periods
+  answerable: true
+  intent: "Number of deals with broker BK111 on either side in 2024 versus 2025, excluding annulled, and the change in %"
+  readings:
+    - name: counts
+      sql: |-
+        SELECT COUNT(*) FILTER (WHERE year = 2024) AS d_2024, COUNT(*) FILTER (WHERE year = 2025) AS d_2025,
+               100.0 * COUNT(*) FILTER (WHERE year = 2025) / COUNT(*) FILTER (WHERE year = 2024) - 100 AS change_pct
+        FROM deals WHERE year IN (2024, 2025) AND NOT is_cancelled AND (seller_broker = 'BK111' OR buyer_broker = 'BK111')
+      key: [d_2024, d_2025, change_pct]
+
+- id: r089
+  split: test
+  subject: brokers
+  shape: trend
+  answerable: true
+  intent: "Number of deals per quarter of 2025 in which BK005 was the seller's broker, excluding annulled"
+  readings:
+    - name: by quarter
+      sql: |-
+        SELECT quarter, COUNT(*) AS deals FROM deals
+        WHERE seller_broker = 'BK005' AND year = 2025 AND NOT is_cancelled GROUP BY quarter ORDER BY quarter
+      key: [quarter, deals]
+
+- id: r090
+  split: dev
+  subject: brokers
+  shape: breakdown
+  answerable: true
+  intent: "Number of 2025 deals of broker BK111 as seller's broker and as buyer's broker, separately, excluding annulled"
+  readings:
+    - name: by side
+      sql: |-
+        SELECT COUNT(*) FILTER (WHERE seller_broker = 'BK111') AS as_seller_broker,
+               COUNT(*) FILTER (WHERE buyer_broker = 'BK111') AS as_buyer_broker
+        FROM deals WHERE year = 2025 AND NOT is_cancelled
+      key: [as_seller_broker, as_buyer_broker]
+
+- id: r091
+  split: test
+  subject: brokers
+  shape: date_of_extreme
+  answerable: true
+  intent: "Date, number and amount of the largest deal (by UZS) handled by broker BK002 on either side, excluding annulled"
+  readings:
+    - name: largest
+      sql: |-
+        SELECT deal_id, deal_date, amount_uzs FROM deals
+        WHERE NOT is_cancelled AND (seller_broker = 'BK002' OR buyer_broker = 'BK002') ORDER BY amount_uzs DESC LIMIT 1
+      key: [deal_id, deal_date, amount_uzs]
+
+# ---------------------------------------------------------------- usd_rates
+- id: r092
+  split: dev
+  subject: usd_rates
+  shape: lookup
+  answerable: true
+  intent: "Official UZS per USD rate on 15 June 2025"
+  readings:
+    - name: rate
+      sql: "SELECT rate FROM usd_rates WHERE rate_date = DATE '2025-06-15'"
+      key: [rate]
+
+- id: r093
+  split: dev
+  subject: usd_rates
+  shape: average
+  answerable: true
+  intent: "Average UZS per USD rate in March 2024 (mean of daily rates)"
+  readings:
+    - name: avg
+      sql: "SELECT AVG(rate) AS avg_rate FROM usd_rates WHERE year(rate_date) = 2024 AND month(rate_date) = 3"
+      key: [avg_rate]
+
+- id: r094
+  split: dev
+  subject: usd_rates
+  shape: date_of_extreme
+  answerable: true
+  intent: "Day in 2024 when the dollar was cheapest (lowest UZS per USD rate) and that rate"
+  readings:
+    - name: min day
+      sql: "SELECT rate_date, rate FROM usd_rates WHERE year(rate_date) = 2024 ORDER BY rate ASC LIMIT 1"
+      key: [rate_date, rate]
+
+- id: r095
+  split: test
+  subject: usd_rates
+  shape: date_of_extreme
+  answerable: true
+  intent: "Highest UZS per USD rate in the whole period and the date it occurred"
+  readings:
+    - name: max day
+      sql: "SELECT rate_date, rate FROM usd_rates ORDER BY rate DESC LIMIT 1"
+      key: [rate_date, rate]
+
+- id: r096
+  split: dev
+  subject: usd_rates
+  shape: compare_periods
+  answerable: true
+  intent: "USD rate on 1 January 2025 versus 1 January 2026 and the change in %"
+  readings:
+    - name: change
+      sql: |-
+        SELECT MAX(rate) FILTER (WHERE rate_date = DATE '2025-01-01') AS rate_2025,
+               MAX(rate) FILTER (WHERE rate_date = DATE '2026-01-01') AS rate_2026,
+               100.0 * MAX(rate) FILTER (WHERE rate_date = DATE '2026-01-01') / MAX(rate) FILTER (WHERE rate_date = DATE '2025-01-01') - 100 AS change_pct
+        FROM usd_rates
+      key: [rate_2025, rate_2026, change_pct]
+
+- id: r097
+  split: test
+  subject: usd_rates
+  shape: trend
+  answerable: true
+  intent: "Average USD rate in each quarter of 2025"
+  readings:
+    - name: by quarter
+      sql: |-
+        SELECT quarter(rate_date) AS quarter, AVG(rate) AS avg_rate FROM usd_rates
+        WHERE year(rate_date) = 2025 GROUP BY 1 ORDER BY 1
+      key: [quarter, avg_rate]
+
+- id: r098
+  split: test
+  subject: usd_rates
+  shape: least
+  answerable: true
+  intent: "Month of 2023 with the lowest average USD rate, and that average"
+  readings:
+    - name: least month
+      sql: |-
+        SELECT month(rate_date) AS month, AVG(rate) AS avg_rate FROM usd_rates
+        WHERE year(rate_date) = 2023 GROUP BY 1 ORDER BY avg_rate ASC LIMIT 1
+      key: [month, avg_rate]
+
+- id: r099
+  split: test
+  subject: usd_rates
+  shape: count
+  answerable: true
+  intent: "Number of days in 2025 when the USD rate was above 12 500 UZS"
+  readings:
+    - name: days
+      sql: "SELECT COUNT(*) AS days FROM usd_rates WHERE year(rate_date) = 2025 AND rate > 12500"
+      key: [days]
+
+- id: r100
+  split: dev
+  subject: usd_rates
+  shape: top_n
+  answerable: true
+  intent: "Three days of 2025 with the highest USD rate, with the rates"
+  readings:
+    - name: top 3
+      sql: "SELECT rate_date, rate FROM usd_rates WHERE year(rate_date) = 2025 ORDER BY rate DESC LIMIT 3"
+      key: [rate_date, rate]
+
+- id: r101
+  split: test
+  subject: usd_rates
+  shape: share
+  answerable: true
+  intent: "Share (%) of calendar days of 2024 on which the USD rate exceeded 12 000 UZS"
+  readings:
+    - name: share
+      sql: "SELECT 100.0 * COUNT(*) FILTER (WHERE rate > 12000) / COUNT(*) AS share_pct FROM usd_rates WHERE year(rate_date) = 2024"
+      key: [share_pct]
+
+# ---------------------------------------------------------------- unanswerable
+- id: r102
+  split: test
+  subject: deals
+  shape: count
+  answerable: false
+  intent: "Number of deals in 2021 — the data start on 3 January 2022"
+  readings: []
+
+- id: r103
+  split: dev
+  subject: deals
+  shape: count
+  answerable: false
+  intent: "Number of deals in December 2026 — the data end on 30 October 2026"
+  readings: []
+
+- id: r104
+  split: dev
+  subject: deals
+  shape: average
+  answerable: false
+  intent: "Forecast of the raw cotton price for 2027 — forecasts are not in the data"
+  readings: []
+
+- id: r105
+  split: test
+  subject: deals
+  shape: total
+  answerable: false
+  intent: "Tonnes of gold sold on the exchange in 2025 — gold is not a traded product in the data"
+  readings: []
+
+- id: r106
+  split: test
+  subject: deals
+  shape: share
+  answerable: false
+  intent: "Share of the national cotton harvest of 2025 sold through the exchange — national harvest figures are not in the data"
+  readings: []
+
+- id: r107
+  split: test
+  subject: companies
+  shape: total
+  answerable: false
+  intent: "Net profit of Zoket Invest (INN 983531029) in 2025 — profit is not in the data"
+  readings: []
+
+- id: r108
+  split: test
+  subject: companies
+  shape: lookup
+  answerable: false
+  intent: "Name of the director of Linom Energo — directors are not in the data"
+  readings: []
+
+- id: r109
+  split: dev
+  subject: companies
+  shape: count
+  answerable: false
+  intent: "Number of employees of Linom Energo — staff numbers are not in the data"
+  readings: []
+
+- id: r110
+  split: dev
+  subject: companies
+  shape: total
+  answerable: false
+  intent: "Purchases in 2025 by the company with INN 123456789 — no such company in the registry"
+  readings: []
+
+- id: r111
+  split: test
+  subject: companies
+  shape: top_n
+  answerable: false
+  intent: "Most profitable (highest margin) cement seller — margins and costs are not in the data"
+  readings: []
+
+- id: r112
+  split: dev
+  subject: brokers
+  shape: lookup
+  answerable: false
+  intent: "Phone number and e-mail of broker BK005 — contact details are not in the data"
+  readings: []
+
+- id: r113
+  split: test
+  subject: brokers
+  shape: count
+  answerable: false
+  intent: "Number of deals handled by broker BK150 — brokers are BK001..BK120, BK150 does not exist"
+  readings: []
+
+- id: r114
+  split: dev
+  subject: brokers
+  shape: total
+  answerable: false
+  intent: "Commission earned by broker BK111 in 2025 — broker fees are not in the data"
+  readings: []
+
+- id: r115
+  split: test
+  subject: usd_rates
+  shape: lookup
+  answerable: false
+  intent: "Euro rate on 1 March 2025 — only the US dollar rate is in the data"
+  readings: []
+
+- id: r116
+  split: test
+  subject: usd_rates
+  shape: average
+  answerable: false
+  intent: "Average Russian ruble rate in 2024 — only the US dollar rate is in the data"
+  readings: []
+
+- id: r117
+  split: dev
+  subject: usd_rates
+  shape: date_of_extreme
+  answerable: false
+  intent: "Day in 2020 when the dollar was most expensive — rates start on 1 January 2022"
+  readings: []
+
+- id: r118
+  split: dev
+  subject: usd_rates
+  shape: lookup
+  answerable: false
+  intent: "Expected USD rate at the end of 2026 — forecasts are not in the data"
+  readings: []
+
+- id: r119
+  split: dev
+  subject: contracts
+  shape: lookup
+  answerable: false
+  intent: "Seller under contract No. 999999 — no such contract (numbers run from 100001)"
+  readings: []
+
+- id: r120
+  split: test
+  subject: none
+  shape: total
+  answerable: false
+  intent: "Trading volume of shares on the Tashkent stock exchange in 2025 — other exchanges are not in the data"
+  readings: []
