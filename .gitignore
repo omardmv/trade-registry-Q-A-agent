@@ -5,3 +5,4 @@ __pycache__/
 build/
 eval/results/
 .superpowers/
+.claude/worktrees/
