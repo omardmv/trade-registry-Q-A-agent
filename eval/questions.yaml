@@ -1,0 +1,108 @@
+- {id: q01, lang: ru, answerable: true, question: "Сколько сделок было заключено в октябре 2025 года?", key_columns: [deals_all, deals_valid],
+   gold_sql: "SELECT COUNT(*) AS deals_all, COUNT(*) FILTER (WHERE NOT is_cancelled) AS deals_valid FROM deals WHERE year = 2025 AND month = 10"}
+- {id: q02, lang: ru, answerable: true, question: "Какая компания купила больше всего хлопка?", key_columns: [buyer_inn],
+   gold_sql: "SELECT buyer_inn FROM deals WHERE product_canonical = 'Хлопок-сырец' AND NOT is_cancelled GROUP BY buyer_inn ORDER BY SUM(volume_tonnes) DESC LIMIT 1"}
+- {id: q03, lang: ru, answerable: true, question: "Кто выступал брокером покупателя по сделке 387830?", key_columns: [buyer_broker],
+   gold_sql: "SELECT buyer_broker FROM deals WHERE deal_id = 387830"}
+- {id: q04, lang: ru, answerable: true, question: "Какие брокеры продавца работали по контракту 102267?", key_columns: [seller_broker],
+   gold_sql: "SELECT seller_broker FROM deals WHERE contract_id = 102267 GROUP BY seller_broker ORDER BY COUNT(*) DESC LIMIT 5"}
+- {id: q05, lang: ru, answerable: true, question: "Какова общая стоимость сделок в долларах?", key_columns: [total_usd_all, total_usd_valid],
+   gold_sql: "SELECT SUM(amount_usd) AS total_usd_all, SUM(amount_usd) FILTER (WHERE NOT is_cancelled) AS total_usd_valid FROM deals"}
+- {id: q06, lang: uz, answerable: true, question: "2025-yilda eng ko'p savdo qilgan korxona qaysi?", key_columns: [inn],
+   gold_sql: "(SELECT buyer_inn AS inn FROM deals WHERE year = 2025 AND NOT is_cancelled GROUP BY buyer_inn ORDER BY SUM(amount_uzs) DESC LIMIT 1) UNION ALL (SELECT seller_inn FROM deals WHERE year = 2025 AND NOT is_cancelled GROUP BY seller_inn ORDER BY SUM(amount_uzs) DESC LIMIT 1)"}
+- {id: q07, lang: uz, answerable: true, question: "Qaysi broker orqali eng katta hajmdagi bitimlar amalga oshirilgan?", key_columns: [broker_code],
+   gold_sql: "WITH s AS (SELECT deal_id, seller_broker AS broker_code, amount_uzs FROM deals WHERE NOT is_cancelled UNION SELECT deal_id, buyer_broker, amount_uzs FROM deals WHERE NOT is_cancelled) SELECT broker_code FROM s GROUP BY broker_code ORDER BY SUM(amount_uzs) DESC LIMIT 1"}
+- {id: q08, lang: ru, answerable: true, question: "Сколько сделок было в 2023 году?", key_columns: [deals_all, deals_valid],
+   gold_sql: "SELECT COUNT(*) AS deals_all, COUNT(*) FILTER (WHERE NOT is_cancelled) AS deals_valid FROM deals WHERE year = 2023"}
+- {id: q09, lang: uz, answerable: true, question: "2024-yilda nechta bitim tuzilgan?", key_columns: [deals_all, deals_valid],
+   gold_sql: "SELECT COUNT(*) AS deals_all, COUNT(*) FILTER (WHERE NOT is_cancelled) AS deals_valid FROM deals WHERE year = 2024"}
+- {id: q10, lang: ru, answerable: true, question: "Сколько сделок было аннулировано в 2022 году?", key_columns: [cancelled],
+   gold_sql: "SELECT COUNT(*) AS cancelled FROM deals WHERE year = 2022 AND is_cancelled"}
+- {id: q11, lang: ru, answerable: true, question: "Какая общая сумма сделок в сумах за 2025 год?", key_columns: [total_uzs_all, total_uzs_valid],
+   gold_sql: "SELECT SUM(amount_uzs) AS total_uzs_all, SUM(amount_uzs) FILTER (WHERE NOT is_cancelled) AS total_uzs_valid FROM deals WHERE year = 2025"}
+- {id: q12, lang: ru, answerable: true, question: "Сколько экспортных сделок было в 2024 году?", key_columns: [deals_all, deals_valid],
+   gold_sql: "SELECT COUNT(*) AS deals_all, COUNT(*) FILTER (WHERE NOT is_cancelled) AS deals_valid FROM deals WHERE year = 2024 AND contract_type = 'Экспортный'"}
+- {id: q13, lang: ru, answerable: true, question: "Какой был средний курс доллара в марте 2024 года?", key_columns: [avg_rate],
+   gold_sql: "SELECT AVG(rate) AS avg_rate FROM usd_rates WHERE year(rate_date) = 2024 AND month(rate_date) = 3"}
+- {id: q14, lang: uz, answerable: true, question: "15.06.2025 kuni dollar kursi qancha bo‘lgan?", key_columns: [rate],
+   gold_sql: "SELECT rate FROM usd_rates WHERE rate_date = DATE '2025-06-15'"}
+- {id: q15, lang: ru, answerable: true, question: "Сколько брокерских контор в реестре?", key_columns: [brokers],
+   gold_sql: "SELECT COUNT(*) AS brokers FROM brokers"}
+- {id: q16, lang: ru, answerable: true, question: "Сколько компаний-покупателей в реестре участников?", key_columns: [buyers],
+   gold_sql: "SELECT COUNT(*) AS buyers FROM participants WHERE role = 'Покупатель'"}
+- {id: q17, lang: uz, answerable: true, question: "102267-shartnoma bo‘yicha sotuvchi kim?", key_columns: [seller_inn],
+   gold_sql: "SELECT seller_inn FROM contracts WHERE contract_id = 102267"}
+- {id: q18, lang: ru, answerable: true, question: "Какой товар продаётся по контракту 100001?", key_columns: [product_name],
+   gold_sql: "SELECT product_name FROM contracts WHERE contract_id = 100001"}
+- {id: q19, lang: ru, answerable: true, question: "Назовите три региона с наибольшим числом сделок в 2025 году.", key_columns: [deals],
+   gold_sql: "SELECT region, COUNT(*) AS deals FROM deals WHERE year = 2025 AND NOT is_cancelled GROUP BY region ORDER BY deals DESC LIMIT 3"}
+- {id: q20, lang: ru, answerable: true, question: "Сколько тонн хлопка-сырца продано в 2025 году?", key_columns: [tonnes_valid],
+   gold_sql: "SELECT SUM(volume_tonnes) AS tonnes_valid FROM deals WHERE product_canonical = 'Хлопок-сырец' AND year = 2025 AND NOT is_cancelled"}
+- {id: q21, lang: uz, answerable: true, question: "2025-yilda paxta xom ashyosining o‘rtacha narxi bir kilogramm uchun qancha bo‘lgan?", key_columns: [avg_price_uzs_per_kg],
+   gold_sql: "SELECT SUM(amount_uzs) FILTER (WHERE volume_tonnes IS NOT NULL) / (SUM(volume_tonnes) * 1000) AS avg_price_uzs_per_kg FROM deals WHERE product_canonical = 'Хлопок-сырец' AND year = 2025 AND NOT is_cancelled"}
+- {id: q22, lang: ru, answerable: true, question: "Какой брокер провёл больше всего сделок на стороне покупателя в 2024 году?", key_columns: [buyer_broker],
+   gold_sql: "SELECT buyer_broker FROM deals WHERE year = 2024 AND NOT is_cancelled GROUP BY buyer_broker ORDER BY COUNT(*) DESC LIMIT 1"}
+- {id: q23, lang: ru, answerable: true, question: "Сколько сделок исполнено частично в 2026 году?", key_columns: [partial],
+   gold_sql: "SELECT COUNT(*) AS partial FROM deals WHERE year = 2026 AND status = 'Исполнен(Частично)'"}
+- {id: q24, lang: ru, answerable: true, question: "Какая самая крупная сделка 2023 года по сумме в сумах?", key_columns: [deal_id, amount_uzs],
+   gold_sql: "SELECT deal_id, amount_uzs FROM deals WHERE year = 2023 AND NOT is_cancelled ORDER BY amount_uzs DESC LIMIT 1"}
+- {id: q25, lang: ru, answerable: true, question: "Сколько сделок заключено на двустороннем аукционе в 2025 году?", key_columns: [deals_all, deals_valid],
+   gold_sql: "SELECT COUNT(*) AS deals_all, COUNT(*) FILTER (WHERE NOT is_cancelled) AS deals_valid FROM deals WHERE year = 2025 AND trade_type = 'Двусторонний аукцион'"}
+- {id: q26, lang: ru, answerable: true, question: "Сколько форвардных сделок по хлопку-сырцу было в 2024 году?", key_columns: [deals_all, deals_valid],
+   gold_sql: "SELECT COUNT(*) AS deals_all, COUNT(*) FILTER (WHERE NOT is_cancelled) AS deals_valid FROM deals WHERE year = 2024 AND contract_form = 'Форвард' AND product_canonical = 'Хлопок-сырец'"}
+- {id: q27, lang: uz, answerable: true, question: "2025-yil yanvar oyida Samarqand viloyatida nechta bitim tuzilgan?", key_columns: [deals_all, deals_valid],
+   gold_sql: "SELECT COUNT(*) AS deals_all, COUNT(*) FILTER (WHERE NOT is_cancelled) AS deals_valid FROM deals WHERE year = 2025 AND month = 1 AND region = 'Samarqand viloyati'"}
+- {id: q28, lang: ru, answerable: true, question: "Какая доля сделок была аннулирована в 2025 году?", key_columns: [cancelled_pct],
+   gold_sql: "SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE is_cancelled) / COUNT(*), 2) AS cancelled_pct FROM deals WHERE year = 2025"}
+- {id: q29, lang: ru, answerable: true, question: "Сколько контрактов было зарегистрировано в 2024 году?", key_columns: [contracts],
+   gold_sql: "SELECT COUNT(*) AS contracts FROM contracts WHERE year(registered_date) = 2024"}
+- {id: q30, lang: ru, answerable: true, question: "Сколько разных компаний покупали бензин в 2025 году?", key_columns: [buyers_valid],
+   gold_sql: "SELECT COUNT(DISTINCT buyer_inn) AS buyers_valid FROM deals WHERE product_canonical = 'Бензин автомобильный' AND year = 2025 AND NOT is_cancelled"}
+- {id: q31, lang: ru, answerable: true, question: "Какая компания продала цемента на наибольшую сумму в 2024 году?", key_columns: [seller_inn],
+   gold_sql: "SELECT seller_inn FROM deals WHERE product_canonical = 'Портландцемент' AND year = 2024 AND NOT is_cancelled GROUP BY seller_inn ORDER BY SUM(amount_uzs) DESC LIMIT 1"}
+- {id: q32, lang: uz, answerable: true, question: "2023-yilda kaustik soda bo‘yicha nechta bitim bo‘lgan?", key_columns: [deals_all, deals_valid],
+   gold_sql: "SELECT COUNT(*) AS deals_all, COUNT(*) FILTER (WHERE NOT is_cancelled) AS deals_valid FROM deals WHERE year = 2023 AND product_canonical = 'Сода каустическая'"}
+- {id: q33, lang: ru, answerable: true, question: "Сколько сделок было заключено 30.10.2026?", key_columns: [deals_all],
+   gold_sql: "SELECT COUNT(*) AS deals_all FROM deals WHERE deal_date = DATE '2026-10-30'"}
+- {id: q34, lang: ru, answerable: true, question: "Какой месяц 2025 года был самым активным по числу сделок?", key_columns: [deals],
+   gold_sql: "SELECT month, COUNT(*) AS deals FROM deals WHERE year = 2025 AND NOT is_cancelled GROUP BY month ORDER BY deals DESC LIMIT 1"}
+- {id: q35, lang: ru, answerable: true, question: "Какой средний срок оплаты по контрактам в днях?", key_columns: [avg_payment_term_days],
+   gold_sql: "SELECT AVG(payment_term_days) AS avg_payment_term_days FROM contracts"}
+- {id: q36, lang: uz, answerable: true, question: "BK001 broker 2025-yilda nechta bitimda ishtirok etgan?", key_columns: [deals_all],
+   gold_sql: "SELECT COUNT(*) AS deals_all FROM deals WHERE year = 2025 AND (seller_broker = 'BK001' OR buyer_broker = 'BK001')"}
+- {id: q37, lang: ru, answerable: true, question: "Сколько участников являются плательщиками НДС?", key_columns: [vat_payers],
+   gold_sql: "SELECT COUNT(*) AS vat_payers FROM participants WHERE vat_payer"}
+- {id: q38, lang: ru, answerable: true, question: "Какова сумма экспортных сделок в долларах за 2025 год?", key_columns: [total_usd_all, total_usd_valid],
+   gold_sql: "SELECT SUM(amount_usd) AS total_usd_all, SUM(amount_usd) FILTER (WHERE NOT is_cancelled) AS total_usd_valid FROM deals WHERE year = 2025 AND contract_type = 'Экспортный'"}
+- {id: q39, lang: ru, answerable: true, question: "Какой товар принёс наибольшую сумму сделок в 2025 году?", key_columns: [product_canonical],
+   gold_sql: "SELECT product_canonical FROM deals WHERE year = 2025 AND NOT is_cancelled GROUP BY product_canonical ORDER BY SUM(amount_uzs) DESC LIMIT 1"}
+- {id: q40, lang: uz, answerable: true, question: "2026-yilda eng ko‘p bitim tuzgan sotuvchi kompaniya qaysi?", key_columns: [seller_inn],
+   gold_sql: "SELECT seller_inn FROM deals WHERE year = 2026 AND NOT is_cancelled GROUP BY seller_inn ORDER BY COUNT(*) DESC LIMIT 1"}
+- {id: q41, lang: ru, answerable: true, question: "Сколько сделок по карбамиду было в 2024 году и на какую сумму?", key_columns: [deals_valid, total_uzs_valid],
+   gold_sql: "SELECT COUNT(*) AS deals_valid, SUM(amount_uzs) AS total_uzs_valid FROM deals WHERE product_canonical = 'Карбамид' AND year = 2024 AND NOT is_cancelled"}
+- {id: q42, lang: ru, answerable: true, question: "Сколько сделок сейчас в статусе «Оплачен»?", key_columns: [paid],
+   gold_sql: "SELECT COUNT(*) AS paid FROM deals WHERE status = 'Оплачен'"}
+- {id: q43, lang: ru, answerable: true, question: "Сколько лотов поставлено по частично исполненным сделкам 2025 года?", key_columns: [lots_delivered],
+   gold_sql: "SELECT SUM(delivered_lots) AS lots_delivered FROM deals WHERE status = 'Исполнен(Частично)' AND year = 2025"}
+- {id: q44, lang: uz, answerable: true, question: "2024-yilda qaysi viloyatda bitimlar summasi eng katta bo‘lgan?", key_columns: [total_uzs],
+   gold_sql: "SELECT region, SUM(amount_uzs) AS total_uzs FROM deals WHERE year = 2024 AND NOT is_cancelled GROUP BY region ORDER BY total_uzs DESC LIMIT 1"}
+- {id: q45, lang: ru, answerable: true, question: "Какая средняя сумма сделки в 2022 году в сумах?", key_columns: [avg_all, avg_valid],
+   gold_sql: "SELECT AVG(amount_uzs) AS avg_all, AVG(amount_uzs) FILTER (WHERE NOT is_cancelled) AS avg_valid FROM deals WHERE year = 2022"}
+- {id: q46, lang: ru, answerable: true, question: "Сколько сделок по дизельному топливу было в 2026 году?", key_columns: [deals_all, deals_valid],
+   gold_sql: "SELECT COUNT(*) AS deals_all, COUNT(*) FILTER (WHERE NOT is_cancelled) AS deals_valid FROM deals WHERE year = 2026 AND product_canonical = 'Дизельное топливо'"}
+- {id: q47, lang: ru, answerable: true, question: "Кто покупатель по сделке 504708?", key_columns: [buyer_inn],
+   gold_sql: "SELECT buyer_inn FROM deals WHERE deal_id = 504708"}
+- {id: q48, lang: uz, answerable: true, question: "2026-yilning birinchi choragida nechta bitim tuzilgan?", key_columns: [deals_all, deals_valid],
+   gold_sql: "SELECT COUNT(*) AS deals_all, COUNT(*) FILTER (WHERE NOT is_cancelled) AS deals_valid FROM deals WHERE year = 2026 AND month BETWEEN 1 AND 3"}
+- {id: q49, lang: ru, answerable: false, question: "Сколько сделок было в 2021 году?"}
+- {id: q50, lang: ru, answerable: false, question: "Какая прибыль была у компании «Pudexiz Plast» в 2025 году?"}
+- {id: q51, lang: ru, answerable: false, question: "Кто директор компании «Pudexiz Plast»?"}
+- {id: q52, lang: ru, answerable: false, question: "Какой будет курс доллара в декабре 2026 года?"}
+- {id: q53, lang: ru, answerable: false, question: "Сколько сотрудников у брокера BK001?"}
+- {id: q54, lang: uz, answerable: false, question: "Qaysi kompaniya eng ko‘p oltin sotgan?"}
+- {id: q55, lang: ru, answerable: false, question: "Сколько сделок по сырой нефти было в 2024 году?"}
+- {id: q56, lang: ru, answerable: false, question: "Какой кредитный рейтинг у компании с ИНН 915688255?"}
+- {id: q57, lang: uz, answerable: false, question: "2027-yilda nechta bitim bo‘ladi?"}
+- {id: q58, lang: ru, answerable: false, question: "Каков был курс евро на 01.01.2024?"}
+- {id: q59, lang: ru, answerable: false, question: "Сколько сделок заключил брокер BK999?"}
+- {id: q60, lang: uz, answerable: false, question: "BK001 brokerining elektron pochtasi qanday?"}
