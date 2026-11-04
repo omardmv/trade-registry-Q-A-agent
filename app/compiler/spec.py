@@ -2,6 +2,7 @@
 import datetime as dt
 import re
 from dataclasses import dataclass, field
+from dataclasses import fields as dc_fields
 
 DATA_START, DATA_END = dt.date(2022, 1, 3), dt.date(2026, 10, 30)
 RATES_START, RATES_END = dt.date(2022, 1, 1), dt.date(2026, 10, 31)
@@ -171,9 +172,38 @@ def _check_year(year: int | None) -> None:
         raise _outside(f"year {year}")
 
 
+FILTER_KEYS = tuple(f.name for f in dc_fields(Filters))
+ALLOWED_KEYS = {
+    "deals_aggregate": ("kind", "measures", "filters", "group_by", "top", "status_scope"),
+    "deal_lookup": ("kind", "deal_id"),
+    "contract_lookup": ("kind", "contract_id"),
+    "usd_rate": ("kind", "date", "year", "month"),
+    "registry_count": ("kind", "entity", "role", "vat_payer", "region", "registered_year"),
+}
+_MISPLACED = ("date", "year", "month", "month_from", "month_to", "date_from", "date_to") + FILTER_KEYS
+
+
+def _empty(v) -> bool:
+    return v is None or (isinstance(v, (str, list, tuple, dict)) and len(v) == 0)
+
+
+def _reject_unknown(d: dict, allowed: tuple[str, ...], where: str, kind: str | None = None) -> None:
+    for key in d:
+        if key in allowed or _empty(d[key]):
+            continue
+        hint = ""
+        if kind == "deals_aggregate" and key in _MISPLACED:
+            hint = f"put {key} inside filters"
+            if key == "date":
+                hint += " (for a single day use filters.date_from and filters.date_to with the same date)"
+            hint += "; "
+        raise SpecError(f"unknown key {key!r} in {where}; {hint}allowed keys: {', '.join(allowed)}")
+
+
 def _parse_filters(d: dict) -> Filters:
     if not isinstance(d, dict):
         raise SpecError(f"filters must be an object, got {d!r}")
+    _reject_unknown(d, FILTER_KEYS, "filters")
     f = Filters(
         year=_opt_int(d, "year"), month_from=_opt_int(d, "month_from"), month_to=_opt_int(d, "month_to"),
         date_from=_opt_date(d, "date_from"), date_to=_opt_date(d, "date_to"),
@@ -257,6 +287,8 @@ def parse_spec(d: dict) -> Spec:
     if not isinstance(d, dict):
         raise SpecError(f"spec must be an object, got {type(d).__name__}")
     kind = d.get("kind")
+    if kind in ALLOWED_KEYS:
+        _reject_unknown(d, ALLOWED_KEYS[kind], f"{kind} spec", kind)
     if kind == "deals_aggregate":
         return _parse_aggregate(d)
     if kind == "deal_lookup":

@@ -171,3 +171,53 @@ def test_open_ended_range_outside_data():
         parse_spec({"kind": "deals_aggregate", "measures": ["deal_count"], "filters": {"date_from": "2021-01-01"}})
     with _pt.raises(SpecError, match="outside"):
         parse_spec({"kind": "deals_aggregate", "measures": ["deal_count"], "filters": {"date_to": "2021-12-31"}})
+
+
+# --- unknown-key rejection -------------------------------------------------
+import pytest as _pytest
+
+from app.compiler.spec import SpecError as _SpecError, parse_spec as _parse
+
+
+def test_top_level_date_rejected_with_hint():
+    with _pytest.raises(_SpecError) as e:
+        _parse({"kind": "deals_aggregate", "measures": ["deal_count"], "date": "2026-10-30",
+                "status_scope": "split"})
+    msg = str(e.value)
+    assert "date" in msg and "filters.date_from" in msg and "filters.date_to" in msg
+
+
+@_pytest.mark.parametrize("key", ["year", "month", "month_from", "month_to", "date_from", "date_to",
+                                  "products", "regions"])
+def test_top_level_filter_key_says_put_inside_filters(key):
+    with _pytest.raises(_SpecError, match=f"put {key} inside filters"):
+        _parse({"kind": "deals_aggregate", "measures": ["deal_count"], key: 5})
+
+
+def test_unknown_key_names_key_and_allowed():
+    with _pytest.raises(_SpecError) as e:
+        _parse({"kind": "deals_aggregate", "measures": ["deal_count"], "bogus": 1})
+    assert "bogus" in str(e.value) and "measures" in str(e.value)
+
+
+@_pytest.mark.parametrize("d", [
+    {"kind": "deal_lookup", "deal_id": 1, "year": 2024},
+    {"kind": "contract_lookup", "contract_id": 1, "x": "y"},
+    {"kind": "usd_rate", "year": 2024, "measures": ["deal_count"]},
+    {"kind": "registry_count", "entity": "brokers", "year": 2024},
+])
+def test_unknown_keys_other_kinds(d):
+    with _pytest.raises(_SpecError):
+        _parse(d)
+
+
+def test_unknown_filter_key_rejected():
+    with _pytest.raises(_SpecError, match="bogus"):
+        _parse({"kind": "deals_aggregate", "measures": ["deal_count"], "filters": {"bogus": 1}})
+
+
+def test_empty_unknown_values_ignored():
+    s = _parse({"kind": "deals_aggregate", "measures": ["deal_count"], "date": "", "year": None,
+                "products": [], "bogus": None, "filters": {"zzz": "", "yy": []}})
+    assert s.measures == ["deal_count"]
+    _parse({"kind": "usd_rate", "year": 2024, "month": 3, "date": None, "entity": ""})
