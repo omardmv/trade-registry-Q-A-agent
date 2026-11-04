@@ -1,5 +1,5 @@
 """One-line, deterministic description of what a compiled query computed."""
-from app.compiler.spec import DealsAggregate, Filters, Spec
+from app.compiler.spec import DATA_END, DealsAggregate, Filters, Spec
 
 _T = {
     "ru": {
@@ -19,6 +19,7 @@ _T = {
         "role_split": "отдельно как покупатель и как продавец",
         "volume_by_unit": "объём по единицам измерения", "ranked_top": "топ-{n}",
         "cancelled_share": "доля аннулированных — от всех сделок",
+        "data_until": " (данные до 30.10.2026)",
     },
     "uz": {
         "prefix": "Hisob:", "deals": "bitimlar", "all_time": "butun davr uchun (03.01.2022–30.10.2026)",
@@ -37,6 +38,7 @@ _T = {
         "role_split": "xaridor va sotuvchi sifatida alohida",
         "volume_by_unit": "hajm o‘lchov birliklari bo‘yicha", "ranked_top": "eng yaxshi {n} ta",
         "cancelled_share": "bekor qilinganlar ulushi — barcha bitimlardan",
+        "data_until": " (ma’lumotlar 30.10.2026 gacha)",
     },
 }
 
@@ -47,7 +49,22 @@ _NOTE_KEYS = ("excluded_cancelled", "all_statuses", "status_split", "uzs_convert
 _STATUS_NOTES = ("excluded_cancelled", "all_statuses", "status_split")
 
 
+def _past_data_end(f: Filters) -> bool:
+    if f.date_to is not None and f.date_to > DATA_END:
+        return True
+    if f.date_from is not None and f.date_to is None and f.date_from > DATA_END:
+        return True
+    if f.year == 2026:
+        return f.month_from is None or (f.month_to or 0) >= 10
+    return False
+
+
 def _period(f: Filters, t: dict) -> str:
+    text = _period_text(f, t)
+    return text + t["data_until"] if _past_data_end(f) else text
+
+
+def _period_text(f: Filters, t: dict) -> str:
     if f.date_from or f.date_to:
         d1 = f.date_from.strftime("%d.%m.%Y") if f.date_from else "03.01.2022"
         d2 = f.date_to.strftime("%d.%m.%Y") if f.date_to else "30.10.2026"

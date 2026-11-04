@@ -101,3 +101,18 @@ def test_participant_role_split_ru():
     text = _explain({"kind": "deals_aggregate", "measures": ["deal_count"], "group_by": "participant",
                      "filters": {"year": 2025}}, "ru")
     assert "отдельно как покупатель и как продавец" in text
+
+
+def test_period_past_data_end_is_flagged():
+    ru = _explain({"kind": "deals_aggregate", "measures": ["deal_count"], "filters": {"year": 2026}}, "ru")
+    assert "(данные до 30.10.2026)" in ru
+    uz = _explain({"kind": "deals_aggregate", "measures": ["deal_count"], "filters": {"year": 2026}}, "uz")
+    assert "(ma’lumotlar 30.10.2026 gacha)" in uz
+    m = _explain({"kind": "deals_aggregate", "measures": ["deal_count"],
+                  "filters": {"year": 2026, "month_from": 9, "month_to": 10}}, "ru")
+    assert "(данные до 30.10.2026)" in m
+    ok = _explain({"kind": "deals_aggregate", "measures": ["deal_count"],
+                   "filters": {"year": 2026, "month_from": 3, "month_to": 4}}, "ru")
+    assert "данные до" not in ok
+    assert "данные до" not in _explain({"kind": "deals_aggregate", "measures": ["deal_count"],
+                                        "filters": {"year": 2025}}, "ru")

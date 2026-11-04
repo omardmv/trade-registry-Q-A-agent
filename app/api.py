@@ -13,6 +13,7 @@ from app.pipeline import Pipeline, build_pipeline
 
 log = logging.getLogger(__name__)
 app = FastAPI(title="Exchange Q&A")
+INTERNAL_FIELDS = ("reason", "unsupported")
 
 
 class Previous(BaseModel):
@@ -39,7 +40,10 @@ async def unhandled(request: Request, exc: Exception) -> JSONResponse:
 @app.post("/ask")
 def ask(body: AskIn, pipeline: Pipeline = Depends(get_pipeline)) -> dict:
     previous = body.previous.model_dump() if body.previous else None
-    return asdict(pipeline.ask(body.question.strip(), previous))
+    out = asdict(pipeline.ask(body.question.strip(), previous))
+    for internal in INTERNAL_FIELDS:  # kept for logs / eval only
+        out.pop(internal, None)
+    return out
 
 
 @app.get("/health")

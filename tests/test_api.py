@@ -70,3 +70,14 @@ def test_pipeline_exception_returns_generic_500(caplog):
     assert r.status_code == 500
     assert r.json() == {"detail": "internal error"}
     assert "Traceback" not in r.text and "boom" not in r.text
+
+
+def test_internal_fields_not_exposed():
+    class Leaky:
+        def ask(self, question, previous=None):
+            return AskResult("В данных нет ответа.", "ru", False, "failed", reason="llm error: secret internals",
+                             unsupported=["12345"])
+
+    body = client(Leaky()).post("/ask", json={"question": "Q?"}).json()
+    assert "reason" not in body and "unsupported" not in body
+    assert "secret" not in str(body) and body["answer"] == "В данных нет ответа."

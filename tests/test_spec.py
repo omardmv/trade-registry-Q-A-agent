@@ -155,3 +155,19 @@ def test_usd_rate_valid_month():
 def test_string_fields(spec):
     with pytest.raises(SpecError, match="must be a string"):
         parse_spec(spec)
+
+
+# --- final review: open-ended date ranges ---
+def test_open_ended_range_inside_data_parses():
+    s = parse_spec({"kind": "deals_aggregate", "measures": ["deal_count"], "filters": {"date_from": "2025-03-01"}})
+    assert s.filters.date_from.isoformat() == "2025-03-01" and s.filters.date_to is None
+    s = parse_spec({"kind": "deals_aggregate", "measures": ["deal_count"], "filters": {"date_to": "2024-03-01"}})
+    assert s.filters.date_to.isoformat() == "2024-03-01"
+
+
+def test_open_ended_range_outside_data():
+    import pytest as _pt
+    with _pt.raises(SpecError, match="clamp date_from/date_to"):
+        parse_spec({"kind": "deals_aggregate", "measures": ["deal_count"], "filters": {"date_from": "2021-01-01"}})
+    with _pt.raises(SpecError, match="outside"):
+        parse_spec({"kind": "deals_aggregate", "measures": ["deal_count"], "filters": {"date_to": "2021-12-31"}})

@@ -214,8 +214,8 @@ def _parse_filters(d: dict) -> Filters:
         raise SpecError("data ends 30.10.2026: set month_to to 10 and add an assumption that the "
                         "period is covered only up to 30.10.2026")
     if has_dates:
-        lo = f.date_from or dt.date.min
-        hi = f.date_to or dt.date.max
+        lo = f.date_from or DATA_START  # a missing bound means the data bound
+        hi = f.date_to or DATA_END
         if hi < DATA_START or lo > DATA_END:
             raise _outside(f"{f.date_from or '...'}..{f.date_to or '...'}")
         if lo < DATA_START or hi > DATA_END:
