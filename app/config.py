@@ -12,7 +12,7 @@ GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 DEADLINE_S = float(os.environ.get("UZEX_DEADLINE_S", "75"))
-LLM_TIMEOUT_S = float(os.environ.get("UZEX_LLM_TIMEOUT_S", "25"))
+LLM_TIMEOUT_S = float(os.environ.get("UZEX_LLM_TIMEOUT_S", "15"))
 MAX_TOOL_CALLS = 8
 MAX_FIX_RETRIES = 2
 ROW_LIMIT = 1000

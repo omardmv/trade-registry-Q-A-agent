@@ -156,14 +156,34 @@ def test_writer_budget_requires_llm_timeout():
     assert res.status == "failed" and res.reason == "timeout"
 
 
+def _with_spec(columns, rows):
+    wr, _ = compiled_result()
+    wr.result = QueryResult(list(columns), rows, False)
+    return wr
+
+
 def test_label_only_rows_are_no_data():
-    r = Pipeline(StubWriter(ok([("buyer", None), ("seller", None)])), FakeLLM()).ask(Q)
+    wr = _with_spec(["role", "inn", "name", "total_uzs"], [("buyer", None, None, None)])
+    r = Pipeline(StubWriter(wr), FakeLLM()).ask(Q)
     assert r.source == "no_data" and not r.answered
+
+
+def test_names_list_with_null_region_is_answered():
+    llm = FakeLLM(completions=["«ООО Альфа» — Ташкент; «ООО Бета»."])
+    wr = _with_spec(["name", "region"], [("ООО Альфа", "Ташкент"), ("ООО Бета", None)])
+    r = Pipeline(StubWriter(wr), llm).ask("Список компаний")
+    assert r.answered and r.source != "no_data"
+
+
+def test_sql_path_null_measure_not_no_data():
+    r = Pipeline(StubWriter(ok([("buyer", None)], columns=("role", "total_uzs"))),
+                 FakeLLM(completions=["buyer"])).ask(Q)
+    assert r.source != "no_data"
 
 
 def test_zero_count_is_a_real_answer():
     llm = FakeLLM(completions=["Сделок: 0."])
-    r = Pipeline(StubWriter(ok([(0,)], columns=("deals_all",))), llm).ask(Q)
+    r = Pipeline(StubWriter(ok([(0,)], columns=("deals",))), llm).ask(Q)
     assert r.answered and r.source == "llm"
 
 

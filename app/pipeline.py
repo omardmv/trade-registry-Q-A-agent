@@ -10,6 +10,7 @@ from app.answer import templates
 from app.answer.composer import compose
 from app.answer.verifier import verify_answer
 from app.compiler.explain import explain
+from app.compiler.sql import MEASURE_SQL
 from app.db import to_jsonable
 from app.text import detect_lang
 
@@ -38,21 +39,20 @@ class AskResult:
     timings: dict = field(default_factory=dict)
 
 
-def _is_numeric(v) -> bool:
-    return isinstance(v, (int, float, Decimal)) and not isinstance(v, bool)
+_MEASURE_COLUMNS = {alias for _, alias in MEASURE_SQL.values()}
+_MEASURE_COLUMNS |= {f"{a}{suffix}" for a in _MEASURE_COLUMNS for suffix in ("_all", "_valid")}
 
 
-def _is_no_data(result) -> bool:
-    """No rows, all cells NULL, or every numeric cell NULL (a numeric column exists). Zero counts are answers."""
+def _is_no_data(result, compiled: bool) -> bool:
+    """No rows, all cells NULL, or (compiled path) every measure cell NULL. Zero counts are answers."""
     if not result.rows:
         return True
-    cells = [c for row in result.rows for c in row]
-    if all(c is None for c in cells):
+    if all(c is None for row in result.rows for c in row):
         return True
-    if any(_is_numeric(c) for c in cells):
+    if not compiled:
         return False
-    # no numeric value anywhere: no-data only if there is a measure column, i.e. a NULL next to labels
-    return any(c is None for c in cells) and all(c is None or isinstance(c, str) for c in cells)
+    idx = [i for i, c in enumerate(result.columns) if c in _MEASURE_COLUMNS]
+    return bool(idx) and all(row[i] is None for row in result.rows for i in idx)
 
 
 class Pipeline:
@@ -93,7 +93,7 @@ class Pipeline:
                     rows=[[to_jsonable(c) for c in r] for r in result.rows[:MAX_RETURNED_ROWS]],
                     row_count=len(result.rows), truncated=result.truncated, splits=wr.splits,
                     assumptions=wr.assumptions, explanation=explanation)
-        if _is_no_data(result):
+        if _is_no_data(result, wr.spec is not None):
             return AskResult(templates.no_data(lang), answered=False, source="no_data", **base)
 
         context = " ".join(wr.assumptions) + " " + explanation + " " + " ".join(result.columns)
