@@ -5,7 +5,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Literal
 
 from app.agent.llm import LLM, ToolSpec
-from app.agent.validators import validate_sql
+from app.agent.validators import is_grounded, validate_sql
 from app.compiler.spec import (CONTRACT_FORMS, CONTRACT_TYPES, DIMENSIONS, MEASURES, REGISTRY_ENTITIES, ROLES,
                                STATUS_SCOPES, STATUSES, TRADE_TYPES, Spec, SpecError, entity_values, parse_spec)
 from app.compiler.sql import compile_spec
@@ -13,6 +13,7 @@ from app.db import Database, QueryError, QueryResult, to_jsonable
 from app.examples import ExampleStore
 from app.resolve import Resolver
 
+SPLIT_AXES = {"status_scope", "measure", "currency", "product_scope", "role"}
 S, I, B = {"type": "STRING"}, {"type": "INTEGER"}, {"type": "BOOLEAN"}
 
 
@@ -73,7 +74,8 @@ Steps:
    do so and add the assumption — do not declare the question unanswerable.
 2. For every company, broker, product, region or contract mentioned, call resolve(). Use only the IDs/values
    it returns. If resolve returns a product and its product_family with the same score, use the specific
-   product unless the question is about the whole product group. If nothing relevant comes back, call declare_unanswerable. If several candidates are equally
+   product unless the question is about the whole product group. For follow-up questions, re-run resolve()
+   for entities from the previous question; IDs in the previous SQL are not pre-approved. If nothing relevant comes back, call declare_unanswerable. If several candidates are equally
    close, include all of them (max 5) and group by that entity so each is shown separately.
 3. Call get_examples() once.
 4. Prefer compile_query(spec). Use submit_sql only if no spec kind/measure/dimension can express the question.
@@ -120,46 +122,49 @@ class Writer:
     def run(self, question: str, lang: str, deadline: float, previous: dict | None = None) -> WriterResult:
         allowed: set[str] = set()
         trace: list[dict] = []
-
-        def failed(reason):
-            return WriterResult("failed", reason=reason, trace=trace)
-
-        if time.monotonic() > deadline:
-            return failed("timeout")
-        try:
-            return self._loop(question, lang, deadline, previous, allowed, trace)
-        except Exception as e:  # LLMError or any transport failure from the chat
-            return failed(f"llm error: {e}")
-
-    def _loop(self, question, lang, deadline, previous, allowed, trace) -> WriterResult:
         calls = fixes = 0
         nudged = False
 
         def failed(reason):
             return WriterResult("failed", reason=reason, trace=trace)
 
-        chat = self.llm.start_chat(self.system, TOOLS)
-        reply = chat.send_text(self._prompt(question, lang, previous))
-        while True:
+        def send(fn, *args):
+            """-> (reply, None) or (None, failed-result); checks the deadline before every send."""
             if time.monotonic() > deadline:
-                return failed("timeout")
+                return None, failed("timeout")
+            try:
+                return fn(*args), None
+            except Exception as e:  # LLMError or transport failure from the chat
+                return None, failed(f"llm error: {e}")
+
+        if time.monotonic() > deadline:
+            return failed("timeout")
+        try:
+            chat = self.llm.start_chat(self.system, TOOLS)
+        except Exception as e:
+            return failed(f"llm error: {e}")
+        reply, err = send(chat.send_text, self._prompt(question, lang, previous))
+        while True:
+            if err:
+                return err
             if not reply.tool_calls:
                 if nudged:
                     return failed("model did not call a tool")
                 nudged = True
-                reply = chat.send_text("Do not answer in text. Call compile_query, submit_sql or declare_unanswerable.")
+                reply, err = send(chat.send_text,
+                                  "Do not answer in text. Call compile_query, submit_sql or declare_unanswerable.")
                 continue
             results = []
             for tc in reply.tool_calls:
                 calls += 1
                 trace.append({"tool": tc.name, "args": tc.args})
-                if calls > self.max_tool_calls:
-                    return failed("tool budget exceeded")
                 if tc.name == "declare_unanswerable":
                     return WriterResult("unanswerable", reason=str(tc.args.get("reason", "")), trace=trace)
+                if calls > self.max_tool_calls:
+                    return failed("tool budget exceeded")
                 if tc.name in ("compile_query", "submit_sql"):
-                    outcome = (self._compile(tc.args, allowed, question) if tc.name == "compile_query"
-                               else self._sql(tc.args, allowed, question))
+                    outcome = (self._compile(tc.args, allowed, question, deadline) if tc.name == "compile_query"
+                               else self._sql(tc.args, allowed, question, deadline))
                     if isinstance(outcome, WriterResult):
                         outcome.trace = trace
                         return outcome
@@ -169,8 +174,12 @@ class Writer:
                         return failed(f"fix budget exceeded: {outcome}")
                     results.append((tc.name, {"error": outcome}))
                     continue
-                results.append((tc.name, self._tool(tc.name, tc.args, allowed, question)))
-            reply = chat.send_tool_results(results)
+                try:
+                    payload = self._tool(tc.name, tc.args, allowed, question, deadline)
+                except (KeyError, ValueError, TypeError) as e:
+                    payload = {"error": f"bad arguments: {e}"}
+                results.append((tc.name, payload))
+            reply, err = send(chat.send_tool_results, results)
 
     @staticmethod
     def _prompt(question, lang, previous):
@@ -179,36 +188,43 @@ class Writer:
             text += f"Previous question: {previous.get('question', '')}\nPrevious SQL: {previous.get('sql', '')}\n"
         return text
 
-    def _compile(self, args, allowed, question) -> WriterResult | str:
+    @staticmethod
+    def _timeout(deadline, cap):
+        return max(1.0, min(cap, deadline - time.monotonic()))
+
+    def _compile(self, args, allowed, question, deadline) -> WriterResult | str:
         try:
             spec = parse_spec(args.get("spec") or {})
-        except SpecError as e:
+        except (SpecError, KeyError, ValueError, TypeError) as e:
             return str(e)
-        missing = sorted(v for v in entity_values(spec) if v not in allowed and v not in question)
+        missing = sorted(v for k, v in entity_values(spec) if not is_grounded(v, k, allowed, question))
         if missing:
             return f"values {missing} were not returned by resolve() in this request; call resolve() first"
-        compiled = compile_spec(spec)
         try:
-            result = self.db.query(compiled.sql, timeout_s=10)
+            compiled = compile_spec(spec)
+            result = self.db.query(compiled.sql, timeout_s=self._timeout(deadline, 10.0))
+        except (SpecError, KeyError, ValueError, TypeError) as e:
+            return f"could not compile spec: {e}"
         except QueryError as e:
             return f"compiled query failed: {e}"
         return WriterResult("ok", "compiled", compiled.sql, result, spec, compiled.splits, compiled.notes,
                             [str(a) for a in args.get("assumptions") or []])
 
-    def _sql(self, args, allowed, question) -> WriterResult | str:
+    def _sql(self, args, allowed, question, deadline) -> WriterResult | str:
         v = validate_sql(str(args.get("sql", "")), allowed, question, self.db)
         if not v.ok:
             return "; ".join(v.errors)
         try:
-            result = self.db.query(v.sql, timeout_s=10)
+            result = self.db.query(v.sql, timeout_s=self._timeout(deadline, 10.0))
         except QueryError as e:
             return f"query failed: {e}"
-        return WriterResult("ok", "sql", v.sql, result, None, [str(s) for s in args.get("splits") or []][:2], [],
+        splits = [str(x) for x in args.get("splits") or [] if str(x) in SPLIT_AXES][:2]
+        return WriterResult("ok", "sql", v.sql, result, None, splits, [],
                             [str(a) for a in args.get("assumptions") or []])
 
-    def _tool(self, name, args, allowed, question) -> dict:
+    def _tool(self, name, args, allowed, question, deadline) -> dict:
         if name == "resolve":
-            cands = self.resolver.resolve(args.get("kind", ""), str(args.get("text", "")))
+            cands = self.resolver.resolve(args["kind"], str(args["text"]))
             allowed.update(c.id for c in cands)
             return {"candidates": [_json(asdict(c)) for c in cands]}
         if name == "get_examples":
@@ -216,11 +232,11 @@ class Writer:
             return {"examples": [{"question": e.question, "spec": json.dumps(e.spec, ensure_ascii=False) if e.spec
                                   else None, "sql": e.sql, "action": e.action, "note": e.note} for e in exs]}
         if name == "explore_sql":
-            v = validate_sql(str(args.get("sql", "")), allowed, question, self.db, check_ids=False, row_limit=50)
+            v = validate_sql(str(args["sql"]), allowed, question, self.db, check_ids=False, row_limit=50)
             if not v.ok:
                 return {"error": "; ".join(v.errors)}
             try:
-                res = self.db.query(v.sql, timeout_s=5, max_rows=50)
+                res = self.db.query(v.sql, timeout_s=self._timeout(deadline, 5.0), max_rows=50)
             except QueryError as e:
                 return {"error": str(e)}
             return {"columns": res.columns, "rows": [[_json(c) for c in r] for r in res.rows]}

@@ -239,3 +239,14 @@ ACCEPTED_3 = [
 def test_third_review_accepted(sql):
     r = v(sql, allowed={"Samarqand viloyati"})
     assert r.ok, r.errors
+
+
+def test_region_not_grounded_by_question_substring():
+    v = validate_sql("SELECT COUNT(*) FROM deals WHERE region = 'Ташкент'", set(), "сделки в Ташкентской области")
+    assert not v.ok
+
+
+def test_inn_token_in_question_accepted_but_not_prefix():
+    sql = "SELECT COUNT(*) FROM deals WHERE buyer_inn = '975923536'"
+    assert validate_sql(sql, set(), "сделки 975923536 за год").ok
+    assert not validate_sql(sql, set(), "сделки 9759235361 за год").ok

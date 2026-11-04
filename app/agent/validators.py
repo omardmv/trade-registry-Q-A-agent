@@ -21,6 +21,26 @@ _WRAPPERS = (exp.Lower, exp.Upper, exp.Trim, exp.Paren)
 _ID_LITERAL = re.compile(r"\d{9}|BK\d{3}")
 
 
+_NAME_KINDS = {"product", "region"}
+
+
+def is_grounded(value: str, kind: str, allowed: set[str], question: str) -> bool:
+    """product/region values must come from resolve(); ids may also appear as whole tokens in the question."""
+    value = str(value)
+    if value.strip() == "":
+        return False
+    if value in allowed or value.casefold() in {a.casefold() for a in allowed}:
+        return True
+    if kind in _NAME_KINDS:
+        return False
+    return re.search(rf"(?<![\w]){re.escape(value)}(?![\w])", question, re.I) is not None
+
+
+_COLUMN_KIND = {"product_canonical": "product", "product_family": "product", "region": "region",
+                "seller_inn": "inn", "buyer_inn": "inn", "inn": "inn",
+                "seller_broker": "broker", "buyer_broker": "broker", "broker_code": "broker"}
+
+
 @dataclass
 class Validation:
     ok: bool
@@ -75,11 +95,8 @@ def validate_sql(sql: str, allowed: set[str], question: str, db: Database | None
         errors.append(_WHOLE_ROW_ERR)
     table_names = KNOWN_TABLES | ctes | {t.alias_or_name.lower() for t in stmt.find_all(exp.Table)}
 
-    known = {a.casefold() for a in allowed}
-    q = question.casefold()
-
-    def unresolved(value: str) -> bool:
-        return value == "" or (value.casefold() not in known and value.casefold() not in q)
+    def unresolved(value: str, kind: str) -> bool:
+        return not is_grounded(value, kind, allowed, question)
 
     for col in stmt.find_all(exp.Column):
         if isinstance(col.this, exp.Star):
@@ -106,13 +123,13 @@ def validate_sql(sql: str, allowed: set[str], question: str, db: Database | None
             errors.append(f"compare {_n(col)} only with = / IN to values from resolve()")
         elif check_ids:
             for value in literals:
-                if unresolved(value):
+                if unresolved(value, _COLUMN_KIND[_n(col)]):
                     errors.append(f"{_n(col)} = {value!r} was not returned by resolve() in this request")
     if check_ids:
         for lit in stmt.find_all(exp.Literal):
             if isinstance(lit.parent, (exp.Limit, exp.Offset, exp.Fetch)):
                 continue
-            if _ID_LITERAL.fullmatch(str(lit.this)) and unresolved(str(lit.this)):
+            if _ID_LITERAL.fullmatch(str(lit.this)) and unresolved(str(lit.this), "broker" if str(lit.this).startswith("BK") else "inn"):
                 errors.append(f"ID {str(lit.this)!r} was not returned by resolve() in this request")
 
     money: set[str] = set()

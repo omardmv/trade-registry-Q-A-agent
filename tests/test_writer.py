@@ -125,3 +125,71 @@ def test_explore_sql_payload_is_json_safe(parts):
     assert "error" not in payload, payload
     json.dumps(payload)
     assert isinstance(payload["rows"][0][0], str)
+
+
+def _err(llm, i=1):
+    return llm.chat.sent[i][1][0][1].get("error", "")
+
+
+@pytest.mark.parametrize("question,flt", [
+    ("Сколько сделок в Ташкентской области?", {"regions": ["Ташкент"]}),
+    ("Сколько сделок по газетам?", {"products": ["газ"]}),
+    ("Сделки брокера BK1234?", {"brokers": ["BK123"]}),
+])
+def test_review_probes_rejected(parts, question, flt):
+    spec = {"kind": "deals_aggregate", "measures": ["deal_count"], "filters": {"year": 2025, **flt}}
+    writer, llm = make(parts, [call("compile_query", spec=spec, assumptions=[]),
+                               call("declare_unanswerable", reason="x")])
+    res = writer.run(question, "ru", deadline())
+    assert res.status != "ok" and "resolve" in _err(llm)
+
+
+def test_contract_id_grounding(parts):
+    spec = {"kind": "deals_aggregate", "measures": ["deal_count"],
+            "filters": {"year": 2025, "contract_id": 999999}}
+    writer, llm = make(parts, [call("compile_query", spec=spec, assumptions=[]),
+                               call("declare_unanswerable", reason="x")])
+    res = writer.run("Сколько сделок по контракту?", "ru", deadline())
+    assert res.status != "ok" and "resolve" in _err(llm)
+    spec["filters"]["contract_id"] = 102267
+    writer, _ = make(parts, [call("compile_query", spec=spec, assumptions=[])])
+    res = writer.run("Сколько сделок по контракту 102267?", "ru", deadline())
+    assert res.status == "ok"
+
+
+def test_deal_lookup_id_in_question(parts):
+    writer, _ = make(parts, [call("compile_query", spec={"kind": "deal_lookup", "deal_id": 387830}, assumptions=[])])
+    assert writer.run("Покажи сделку 387830", "ru", deadline()).status == "ok"
+    writer, llm = make(parts, [call("compile_query", spec={"kind": "deal_lookup", "deal_id": 387830},
+                                    assumptions=[]), call("declare_unanswerable", reason="x")])
+    assert writer.run("Покажи сделку", "ru", deadline()).status == "unanswerable"
+    assert "resolve" in _err(llm)
+
+
+def test_bad_tool_arguments_fed_back(parts):
+    writer, llm = make(parts, [call("resolve", kind="nope", text="x"), call("declare_unanswerable", reason="x")])
+    res = writer.run("?", "ru", deadline())
+    assert res.status == "unanswerable"
+    assert "bad arguments" in _err(llm)
+
+
+def test_two_tool_calls_in_one_reply(parts):
+    from app.agent.llm import LLMReply, ToolCall
+    both = LLMReply(tool_calls=[ToolCall("resolve", {"kind": "company", "text": "Pudexiz Plast"}),
+                                ToolCall("compile_query", {"spec": COUNT_SPEC, "assumptions": []})])
+    writer, _ = make(parts, [both])
+    # compile_query is evaluated after resolve in the same reply, so the INN is grounded
+    assert writer.run("Сколько продала Pudexiz Plast в 2025?", "ru", deadline()).status == "ok"
+
+
+def test_unanswerable_beats_tool_budget(parts):
+    replies = [call("get_examples", question="x")] * 8 + [call("declare_unanswerable", reason="no")]
+    writer, _ = make(parts, replies, max_tool_calls=8)
+    assert writer.run("?", "ru", deadline()).status == "unanswerable"
+
+
+def test_sql_splits_filtered_to_axes(parts):
+    sql = "SELECT AVG(delivery_term_days) AS avg_days FROM contracts WHERE contract_form = 'Форвард'"
+    writer, _ = make(parts, [call("submit_sql", sql=sql, splits=["bogus", "role", "currency", "measure"],
+                                  assumptions=[])])
+    assert writer.run("Средний срок?", "ru", deadline()).splits == ["role", "currency"]

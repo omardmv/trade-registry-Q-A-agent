@@ -52,7 +52,8 @@ def test_entity_values():
     s = parse_spec({"kind": "deals_aggregate", "measures": ["deal_count"],
                     "filters": {"products": ["Карбамид"], "regions": ["Samarqand viloyati"],
                                 "buyer_inns": ["915688255"], "brokers": ["BK001"]}})
-    assert entity_values(s) == {"Карбамид", "Samarqand viloyati", "915688255", "BK001"}
+    assert entity_values(s) == {("product", "Карбамид"), ("region", "Samarqand viloyati"),
+                                ("inn", "915688255"), ("broker", "BK001")}
 
 
 def _agg(filters):

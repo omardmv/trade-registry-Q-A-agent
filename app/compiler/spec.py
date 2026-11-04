@@ -302,15 +302,23 @@ def parse_spec(d: dict) -> Spec:
                     "usd_rate or registry_count")
 
 
-def entity_values(spec: Spec) -> set[str]:
-    """Values that must have been returned by resolve() in this request."""
+def entity_values(spec: Spec) -> set[tuple[str, str]]:
+    """(kind, value) pairs that must be grounded; kinds: product, region, inn, broker, contract, deal."""
+    out: set[tuple[str, str]] = set()
     if isinstance(spec, DealsAggregate):
         f = spec.filters
-        values = set(f.products + f.regions + f.buyer_inns + f.seller_inns + f.participant_inns
-                     + f.seller_brokers + f.buyer_brokers + f.brokers)
+        out |= {("product", v) for v in f.products}
+        out |= {("region", v) for v in f.regions}
+        out |= {("inn", v) for v in f.buyer_inns + f.seller_inns + f.participant_inns}
+        out |= {("broker", v) for v in f.seller_brokers + f.buyer_brokers + f.brokers}
         if f.product_family:
-            values.add(f.product_family)
-        return values
-    if isinstance(spec, RegistryCount) and spec.region:
-        return {spec.region}
-    return set()
+            out.add(("product", f.product_family))
+        if f.contract_id is not None:
+            out.add(("contract", str(f.contract_id)))
+    elif isinstance(spec, RegistryCount) and spec.region:
+        out.add(("region", spec.region))
+    elif isinstance(spec, ContractLookup):
+        out.add(("contract", str(spec.contract_id)))
+    elif isinstance(spec, DealLookup):
+        out.add(("deal", str(spec.deal_id)))
+    return out
