@@ -79,7 +79,7 @@ def test_tool_results_unmatched_name_raises():
     llm = openai_llm([o_call("resolve", cid="c1")])
     chat = llm.start_chat("s", [TOOL])
     chat.send_text("q")
-    with pytest.raises(LLMError, match="matches no pending"):
+    with pytest.raises(RuntimeError, match="matches no pending"):
         chat.send_tool_results([("other", {}), ("x", {})])
     assert len(chat._messages) == 3  # nothing committed
 

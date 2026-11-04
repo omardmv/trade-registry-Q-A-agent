@@ -1,6 +1,7 @@
 """OpenAI Chat Completions backend with the same Chat/LLM interface as GeminiChat/GeminiLLM."""
 import json
 
+from app import config
 from app.agent.llm import LLMError, LLMReply, ProviderError, ToolCall, ToolSpec, note_provider
 
 _TYPES = {"OBJECT": "object", "STRING": "string", "ARRAY": "array", "INTEGER": "integer",
@@ -33,15 +34,19 @@ def _transient_status(status: int) -> bool:
     return status in (408, 409, 429) or status >= 500
 
 
-def _create(client, **kwargs):
+def _create(client, reasoning_effort: str = "", **kwargs):
     """chat.completions.create with openai exceptions mapped to TimeoutError / ProviderError."""
     import openai
+    if reasoning_effort:
+        kwargs["reasoning_effort"] = reasoning_effort
     try:
         return client.chat.completions.create(**kwargs)
     except openai.APITimeoutError as e:
         raise TimeoutError(f"OpenAI timeout: {e}") from e
     except openai.APIStatusError as e:
-        raise ProviderError(f"OpenAI HTTP {e.status_code}: {e.message}",
+        # 401/403 messages can echo (part of) the API key: keep only status and error type
+        detail = type(e).__name__ if e.status_code in (401, 403) else e.message
+        raise ProviderError(f"OpenAI HTTP {e.status_code}: {detail}",
                             transient=_transient_status(e.status_code), status=e.status_code) from e
     except openai.APIConnectionError as e:
         raise ProviderError(f"OpenAI connection error: {e}", transient=True) from e
@@ -54,6 +59,8 @@ def _choice(resp):
     choice = choices[0]
     if choice.finish_reason == "content_filter":
         raise LLMError("OpenAI blocked the reply (finish_reason=content_filter)")
+    if choice.finish_reason == "length":
+        raise LLMError("OpenAI reply was cut off (finish_reason=length)")
     if getattr(choice.message, "refusal", None):
         raise LLMError(f"OpenAI refused: {choice.message.refusal}")
     return choice
@@ -76,8 +83,8 @@ def _dump(payload) -> str:
 class OpenAIChat:
     name = "openai"
 
-    def __init__(self, client, model: str, system: str, tools: list[ToolSpec]):
-        self._client, self._model = client, model
+    def __init__(self, client, model: str, system: str, tools: list[ToolSpec], reasoning_effort: str = ""):
+        self._client, self._model, self._effort = client, model, reasoning_effort
         self._tools = _tool_payload(tools)
         self._messages: list[dict] = [{"role": "system", "content": system}]
 
@@ -86,7 +93,7 @@ class OpenAIChat:
         kwargs = dict(model=self._model, messages=candidate)
         if self._tools:
             kwargs.update(tools=self._tools, tool_choice="auto")
-        msg = _choice(_create(self._client, **kwargs)).message
+        msg = _choice(_create(self._client, self._effort, **kwargs)).message
         calls, native = [], []
         for tc in msg.tool_calls or []:
             fn = getattr(tc, "function", None)
@@ -117,7 +124,7 @@ class OpenAIChat:
         last = self._messages[-1] if self._messages else {}
         calls = (last.get("tool_calls") or []) if last.get("role") == "assistant" else []
         if not calls:
-            raise LLMError("tool results sent but the previous reply had no tool calls")
+            raise RuntimeError("tool results sent but the previous reply had no tool calls")  # a bug, not the model
         if len(results) == len(calls) and all(r[0] == c["function"]["name"] for r, c in zip(results, calls)):
             pairs = [(c["id"], payload) for c, (_, payload) in zip(calls, results)]
         else:
@@ -126,7 +133,7 @@ class OpenAIChat:
             for name, payload in results:
                 match = next((c for c in calls if c["id"] not in used and c["function"]["name"] == name), None)
                 if match is None:
-                    raise LLMError(f"tool result for {name!r} matches no pending tool call")
+                    raise RuntimeError(f"tool result for {name!r} matches no pending tool call")  # a bug, not the model
                 used.add(match["id"])
                 pairs.append((match["id"], payload))
             pairs += [(c["id"], {"error": "not executed"}) for c in calls if c["id"] not in used]
@@ -140,6 +147,8 @@ class OpenAIChat:
             if kind == "user_text":
                 messages.append({"role": "user", "content": payload})
             elif kind == "assistant":
+                if not payload.text and not payload.tool_calls:
+                    continue  # an empty reply cannot be replayed (the API rejects it)
                 msg = {"role": "assistant", "content": payload.text or None}
                 if payload.tool_calls:
                     msg["tool_calls"] = []
@@ -159,17 +168,18 @@ class OpenAIChat:
 class OpenAILLM:
     name = "openai"
 
-    def __init__(self, api_key: str, model: str, timeout_s: float, client=None):
+    def __init__(self, api_key: str, model: str, timeout_s: float, client=None, reasoning_effort: str | None = None):
         if client is None:
             import openai
             client = openai.OpenAI(api_key=api_key, timeout=timeout_s, max_retries=0)  # retries: call_with_retry
         self._client, self._model = client, model
+        self._effort = (config.OPENAI_REASONING_EFFORT if reasoning_effort is None else reasoning_effort).strip()
 
     def start_chat(self, system: str, tools: list[ToolSpec]) -> OpenAIChat:
-        return OpenAIChat(self._client, self._model, system, tools)
+        return OpenAIChat(self._client, self._model, system, tools, self._effort)
 
     def complete(self, system: str, prompt: str) -> str:
-        resp = _create(self._client, model=self._model,
+        resp = _create(self._client, self._effort, model=self._model,
                        messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}])
         text = (_choice(resp).message.content or "").strip()
         if not text:

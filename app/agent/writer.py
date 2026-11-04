@@ -7,7 +7,7 @@ from typing import Literal
 
 from app import config
 from app.agent.guard import build_index, missing_condition_error, sql_missing_condition_error
-from app.agent.llm import LLM, ToolSpec, call_with_retry, deadline_scope
+from app.agent.llm import LLM, ToolSpec, call_with_retry, deadline_scope, safe_text
 from app.agent.validators import grounding_status, missing_message, validate_sql
 from app.catalog import load_catalog, load_product_attrs, render_catalog
 from app.compiler.spec import (CONTRACT_FORMS, CONTRACT_TYPES, DIMENSIONS, FILTER_KEYS, KINDS, MEASURES, ORDERS,
@@ -233,14 +233,14 @@ class Writer:
             try:
                 return call_with_retry(lambda: fn(*args), deadline, self.llm_timeout_s), None
             except Exception as e:  # LLMError or transport failure from the chat
-                return None, failed(f"llm error: {e}")
+                return None, failed(f"llm error: {safe_text(e)}")
 
         if deadline - time.monotonic() < self.llm_timeout_s:
             return failed("timeout")
         try:
             chat = self.llm.start_chat(self.system, TOOLS)
         except Exception as e:
-            return failed(f"llm error: {e}")
+            return failed(f"llm error: {safe_text(e)}")
         reply, err = send(chat.send_text, self._prompt(question, lang, previous))
         while True:
             if err:

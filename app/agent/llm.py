@@ -99,7 +99,9 @@ _TIMEOUT_NAMES = {"ReadTimeout", "ConnectTimeout", "WriteTimeout", "PoolTimeout"
                   "APITimeoutError"}
 _CONNECTION_NAMES = {"ConnectError", "ReadError", "WriteError", "RemoteProtocolError", "NetworkError",
                      "ProxyError", "APIConnectionError"}
-_PERMANENT_STATUS = {401, 402, 403}
+_PERMANENT_STATUS = {401, 402, 403, 404}  # 404: unknown model
+_AUTH_STATUS = {401, 403}
+_BAD_KEY_MARKERS = ("api key not valid", "api_key_invalid")
 
 
 def error_status(exc: BaseException) -> int | None:
@@ -142,8 +144,23 @@ def classify_error(exc: BaseException) -> Literal["fallback", "timeout", "bug"]:
 
 
 def is_permanent(exc: BaseException) -> bool:
-    """Credits depleted / bad key / forbidden: the provider will keep failing for a while (circuit breaker)."""
-    return classify_error(exc) == "fallback" and error_status(exc) in _PERMANENT_STATUS
+    """Credits depleted / bad key / forbidden / unknown model: the provider will keep failing for a while
+    (circuit breaker). Gemini reports an invalid key as HTTP 400 "API key not valid" (API_KEY_INVALID)."""
+    if classify_error(exc) != "fallback":
+        return False
+    status = error_status(exc)
+    if status in _PERMANENT_STATUS:
+        return True
+    return status == 400 and any(m in str(exc).lower() for m in _BAD_KEY_MARKERS)
+
+
+def safe_text(exc: BaseException) -> str:
+    """Text of an error that is safe to log or store. Auth errors (401/403) may echo key material in their
+    message: only the status code and the error type are kept. (ProviderError messages are built safe.)"""
+    status = error_status(exc)
+    if status in _AUTH_STATUS and not isinstance(exc, ProviderError):
+        return f"HTTP {status} {type(exc).__name__}"
+    return str(exc)
 
 
 def is_transient(exc: BaseException) -> bool:
@@ -254,7 +271,8 @@ class GeminiChat:
                 parts += [t.Part(function_call=t.FunctionCall(name=c.name, args=c.args),
                                  thought_signature=b"skip_thought_signature_validator")
                           for c in payload.tool_calls]
-                contents.append(t.Content(role="model", parts=parts))
+                if parts:  # Gemini rejects Content with empty parts; an empty reply is simply not replayed
+                    contents.append(t.Content(role="model", parts=parts))
             else:
                 raise ValueError(f"unknown transcript event {kind!r}")
         self._contents = contents

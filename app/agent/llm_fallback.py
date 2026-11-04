@@ -2,8 +2,8 @@
 
 A FallbackChat keeps a provider-neutral transcript. When the active provider fails for a provider reason
 (classify_error == "fallback"), the other provider's chat is rebuilt from the transcript and the same step is
-sent there; the conversation then stays on it. Timeouts never switch within a call (the caller's retry and
-deadline logic decide). A fallback attempt is only started if a full timeout_s still fits before the current
+sent there; the conversation then stays on it. A timeout switches too (the other provider
+may be healthy), but not when the timeout leaves no room for another full timeout_s. A fallback attempt is only started if a full timeout_s still fits before the current
 deadline (deadline_scope), so the per-answer time bound holds.
 """
 import logging
@@ -11,7 +11,7 @@ import threading
 import time
 from collections.abc import Callable
 
-from app.agent.llm import LLM, LLMReply, ToolSpec, classify_error, current_deadline, is_permanent
+from app.agent.llm import LLM, LLMReply, ToolSpec, classify_error, current_deadline, error_status, is_permanent, safe_text
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +30,6 @@ class FallbackLLM:
         self.clock = clock
         self._down_until = [0.0, 0.0]
         self._lock = threading.Lock()
-        self.last_provider: str | None = None
 
     # ---- circuit breaker (process-wide: one FallbackLLM per process) ----
     def _first(self) -> int:
@@ -46,7 +45,8 @@ class FallbackLLM:
         if is_permanent(exc):
             with self._lock:
                 self._down_until[i] = self.clock() + self.cooldown_s
-            log.warning("LLM provider %s marked down for %.0f s: %s", _name(self.providers[i]), self.cooldown_s, exc)
+            log.warning("LLM provider %s marked down for %.0f s: %s", _name(self.providers[i]), self.cooldown_s,
+                        safe_text(exc))
 
     def is_down(self, i: int) -> bool:
         with self._lock:
@@ -64,14 +64,21 @@ class FallbackLLM:
         try:
             return start, attempt(start)
         except Exception as e:
-            if classify_error(e) != "fallback":
+            kind = classify_error(e)
+            if kind == "bug":
                 raise
-            self._failed(start, e)
+            if kind == "fallback":
+                self._failed(start, e)
+            other = 1 - start
             if switched or not self._may_fall_back(deadline):
                 raise
-            other = 1 - start
-            log.warning("LLM provider %s failed (%s); falling back to %s",
-                        _name(self.providers[start]), e, _name(self.providers[other]))
+            # a provider that is marked down is only a last resort, when the one that just failed is down too
+            if self.is_down(other) and not self.is_down(start):
+                raise
+            # a failure with HTTP 400/404 may be our own malformed request: make it visible
+            level = logging.ERROR if error_status(e) in (400, 404) else logging.WARNING
+            log.log(level, "LLM provider %s %s (%s); falling back to %s", _name(self.providers[start]),
+                    "timed out" if kind == "timeout" else "failed", safe_text(e), _name(self.providers[other]))
             if on_switch is not None:
                 on_switch(other)
             try:
@@ -86,9 +93,7 @@ class FallbackLLM:
         return FallbackChat(self, system, tools)
 
     def complete(self, system: str, prompt: str, deadline: float | None = None) -> str:
-        i, text = self._run(self._first(), lambda k: self.providers[k].complete(system, prompt), deadline)
-        self.last_provider = _name(self.providers[i])
-        return text
+        return self._run(self._first(), lambda k: self.providers[k].complete(system, prompt), deadline)[1]
 
 
 class FallbackChat:
@@ -121,7 +126,6 @@ class FallbackChat:
                                     deadline, switched=self._switched, on_switch=self._switch)
         self.events += [(kind, payload), ("assistant", reply)]
         self.providers_used.append(self.provider)
-        self._owner.last_provider = self.provider
         return reply
 
     def send_text(self, text: str, deadline: float | None = None) -> LLMReply:

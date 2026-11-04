@@ -63,7 +63,7 @@ def test_gemini_402_on_first_send_openai_answers():
         reply = chat.send_text("find 7")
         assert reply.tool_calls == [ToolCall("lookup", {"deal_id": 7})]
         assert chat.send_tool_results([("lookup", {"broker": "BK1"})]).text == "BK1"
-    assert chat.provider == "openai" and llm.last_provider == "openai"
+    assert chat.provider == "openai"
     assert used == ["openai", "openai"] and chat.providers_used == ["openai", "openai"]
     assert len(g_calls(g)) == 1  # stays on OpenAI for the rest of the conversation
     assert o_calls(o)[0]["messages"] == [{"role": "system", "content": "sys"}, {"role": "user", "content": "find 7"}]
@@ -113,12 +113,12 @@ def test_secondary_failure_raises_no_ping_pong():
     assert len(g_calls(g)) == 1 and len(o_calls(o)) == 2 and chat.events == []
 
 
-def test_timeout_does_not_switch():
+def test_timeout_without_time_for_secondary_stays_on_primary():
     g = gemini([TimeoutError("slow"), g_text("second try")])
     o = openai_llm([])
-    chat = FallbackLLM(g, o).start_chat("s", [TOOL])
+    chat = FallbackLLM(g, o, timeout_s=15).start_chat("s", [TOOL])
     with pytest.raises(TimeoutError):
-        chat.send_text("q")
+        chat.send_text("q", deadline=time.monotonic() + 5)
     assert o_calls(o) == []
     # the caller's retry goes to the same provider
     assert call_with_retry(lambda: chat.send_text("q"), time.monotonic() + 60, 1.0).text == "second try"
@@ -166,13 +166,13 @@ def test_complete_falls_back():
     llm = FallbackLLM(g, o)
     with track_providers() as used:
         assert llm.complete("s", "p") == "from openai"
-    assert used == ["openai"] and llm.last_provider == "openai"
+    assert used == ["openai"]
 
 
-def test_complete_timeout_does_not_switch():
-    llm = FallbackLLM(gemini([TimeoutError()]), openai_llm([]))
+def test_complete_timeout_without_time_does_not_switch():
+    llm = FallbackLLM(gemini([TimeoutError()]), openai_llm([]), timeout_s=15)
     with pytest.raises(TimeoutError):
-        llm.complete("s", "p")
+        llm.complete("s", "p", deadline=time.monotonic() + 5)
 
 
 def test_pipeline_compose_falls_back_and_reports_providers():

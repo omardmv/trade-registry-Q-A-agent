@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from app import config
 from app.agent.writer import Writer, WriterResult
 from app.answer import templates
-from app.agent.llm import call_with_retry, deadline_scope, track_providers
+from app.agent.llm import call_with_retry, deadline_scope, safe_text, track_providers
 from app.answer.composer import compose
 from app.answer.verifier import verify_answer
 from app.compiler.explain import explain
@@ -142,8 +142,8 @@ class Pipeline:
                                         rows=result.rows, row_count=len(result.rows), truncated=result.truncated,
                                         splits=wr.splits, assumptions=assumptions, feedback=feedback),
                         deadline, self.llm_timeout_s)
-            except Exception:
-                log.exception("composer failed")
+            except Exception as e:  # no traceback: provider messages may contain key material
+                log.error("composer failed: %s: %s", type(e).__name__, safe_text(e))
                 break
             check = verify_answer(text, question, shown, extra_text=context, row_count=count,
                                   known_names=self.known_names, alias_groups=self.alias_groups)
