@@ -1,5 +1,6 @@
 """Writer agent: Gemini turns a question into a compiled spec (preferred) or validated SQL."""
 import json
+import re
 import time
 from dataclasses import asdict, dataclass, field
 from typing import Literal
@@ -8,7 +9,8 @@ from app import config
 from app.agent.llm import LLM, ToolSpec, call_with_retry
 from app.agent.validators import grounding_status, missing_message, validate_sql
 from app.compiler.spec import (CONTRACT_FORMS, CONTRACT_TYPES, DIMENSIONS, MEASURES, REGISTRY_ENTITIES, ROLES,
-                               STATUS_SCOPES, STATUSES, TRADE_TYPES, Spec, SpecError, entity_values, parse_spec)
+                               STATUS_SCOPES, STATUSES, TRADE_TYPES, DealsAggregate, Spec, SpecError, UsdRate,
+                               entity_values, parse_spec)
 from app.compiler.sql import compile_spec
 from app.db import Database, QueryError, QueryResult, to_jsonable
 from app.examples import ExampleStore
@@ -92,6 +94,35 @@ Steps:
 
 
 _KIND = {"company": "inn"}
+
+_UZ_SUFFIX = r"(?:да|дан|га|нинг|гача|da|dan|ga|ning|gacha)?"
+_MONTH_RE = re.compile(
+    r"(?<!\w)(?:январ|феврал|апрел|июн|июл|август|сентябр|октябр|ноябр|декабр"
+    r"|yanvar|fevral|aprel|iyun|iyul|avgust|sentyabr|oktyabr|noyabr|dekabr"
+    r"|chorak|чорак|квартал"
+    rf"|март(?:а|е|у|ом|ы)?{_UZ_SUFFIX}(?!\w)|ма[йяе]{_UZ_SUFFIX}(?!\w)"
+    rf"|mart{_UZ_SUFFIX}(?!\w)|may{_UZ_SUFFIX}(?!\w)|май{_UZ_SUFFIX}(?!\w))", re.IGNORECASE)
+_DATE_RE = re.compile(r"(?<![\d.])(\d{1,2}\.\d{1,2}\.\d{4}|\d{4}-\d{2}-\d{2})(?![\d])")
+
+
+def period_error(question: str, spec: Spec) -> str | None:
+    """Fix message when the question names a month/quarter/date that the spec does not filter on."""
+    if isinstance(spec, DealsAggregate):
+        f = spec.filters
+        has_month, has_date = f.month_from is not None or f.date_from is not None, \
+            f.date_from is not None or f.date_to is not None
+    elif isinstance(spec, UsdRate):
+        has_month, has_date = spec.month is not None or spec.date is not None, spec.date is not None
+    else:
+        return None
+    m = _DATE_RE.search(question)
+    if m and not has_date:
+        return (f"the question mentions the date {m.group(1)}; use filters.date_from/date_to "
+                "(or date for usd_rate)")
+    if _MONTH_RE.search(question) and not has_month:
+        return ("the question mentions a month/quarter; add it (filters.month_from/month_to with year, "
+                "or month for usd_rate)")
+    return None
 
 
 def _json(value):
@@ -217,6 +248,8 @@ class Writer:
             spec = parse_spec(args.get("spec") or {})
         except (SpecError, KeyError, ValueError, TypeError) as e:
             return str(e)
+        if (err := period_error(question, spec)) is not None:
+            return err
         statuses = {(k, v): grounding_status(v, k, allowed, question, self._exists)
                     for k, v in entity_values(spec)}
         absent = sorted(v for (k, v), st in statuses.items() if st == "missing")

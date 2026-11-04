@@ -355,3 +355,96 @@ def test_exists_cache_bounded_and_not_used_for_inn_broker(parts):
     for i in range(1100):
         writer._exists("deal", str(100000 + i))
     assert len(writer._exists_cache) <= 1024
+
+
+# --- question/period consistency -------------------------------------------
+USD_YEAR = {"kind": "usd_rate", "year": 2024}
+USD_MARCH = {"kind": "usd_rate", "year": 2024, "month": 3}
+DATE_BAD = {"kind": "deals_aggregate", "measures": ["deal_count"], "status_scope": "split",
+            "filters": {"year": 2026}}
+DATE_OK = {"kind": "deals_aggregate", "measures": ["deal_count"],
+           "filters": {"date_from": "2026-10-30", "date_to": "2026-10-30"}}
+DATE_TOPLEVEL = {"kind": "deals_aggregate", "measures": ["deal_count"], "date": "2026-10-30",
+                 "status_scope": "split"}
+
+
+def test_usd_rate_missing_month_fed_back_then_ok(parts):
+    writer, llm = make(parts, [call("compile_query", spec=USD_YEAR, assumptions=[]),
+                               call("compile_query", spec=USD_MARCH, assumptions=[])])
+    res = writer.run("Какой был средний курс доллара в марте 2024 года?", "ru", deadline())
+    assert res.status == "ok"
+    err = llm.chat.sent[1][1][0][1]["error"]
+    assert "month" in err and "usd_rate" in err
+
+
+def test_toplevel_date_fed_back_then_ok(parts):
+    writer, llm = make(parts, [call("compile_query", spec=DATE_TOPLEVEL, assumptions=[]),
+                               call("compile_query", spec=DATE_OK, assumptions=[])])
+    res = writer.run("Сколько сделок было заключено 30.10.2026?", "ru", deadline())
+    assert res.status == "ok"
+    assert "filters.date_from" in llm.chat.sent[1][1][0][1]["error"]
+
+
+def test_date_mentioned_but_only_year_filter(parts):
+    writer, llm = make(parts, [call("compile_query", spec=DATE_BAD, assumptions=[]),
+                               call("compile_query", spec=DATE_OK, assumptions=[])])
+    res = writer.run("Сколько сделок было заключено 30.10.2026?", "ru", deadline())
+    assert res.status == "ok"
+    err = llm.chat.sent[1][1][0][1]["error"]
+    assert "30.10.2026" in err and "date_from" in err
+
+
+def test_iso_date_mentioned_usd_rate_needs_date(parts):
+    writer, llm = make(parts, [call("compile_query", spec=USD_YEAR, assumptions=[]),
+                               call("compile_query", spec={"kind": "usd_rate", "date": "2025-06-15"},
+                                    assumptions=[])])
+    res = writer.run("Kurs 2025-06-15 qancha edi?", "uz", deadline())
+    assert res.status == "ok"
+    assert "2025-06-15" in llm.chat.sent[1][1][0][1]["error"]
+
+
+def test_month_question_deals_without_month_rejected(parts):
+    spec = {"kind": "deals_aggregate", "measures": ["deal_count"], "filters": {"year": 2024}}
+    writer, llm = make(parts, [call("compile_query", spec=spec, assumptions=[]),
+                               call("declare_unanswerable", reason="x")])
+    writer.run("Сколько сделок в апреле 2024?", "ru", deadline())
+    assert "month" in llm.chat.sent[1][1][0][1]["error"]
+
+
+@pytest.mark.parametrize("q", ["Qancha bitim 2024 yil mart oyida?", "2024 yil birinchi chorak bitimlari",
+                               "Сделки за 1 квартал 2024", "Сделки в мае 2024", "Mayda bitim 2024"])
+def test_period_words_detected(parts, q):
+    spec = {"kind": "deals_aggregate", "measures": ["deal_count"], "filters": {"year": 2024}}
+    writer, llm = make(parts, [call("compile_query", spec=spec, assumptions=[]),
+                               call("declare_unanswerable", reason="x")])
+    writer.run(q, "ru", deadline())
+    assert "error" in llm.chat.sent[1][1][0][1]
+
+
+def test_corrected_month_range_accepted(parts):
+    spec = {"kind": "deals_aggregate", "measures": ["deal_count"],
+            "filters": {"year": 2024, "month_from": 1, "month_to": 3}}
+    writer, _ = make(parts, [call("compile_query", spec=spec, assumptions=[])])
+    assert writer.run("Сделки за 1 квартал 2024", "ru", deadline()).status == "ok"
+
+
+@pytest.mark.parametrize("q", ["Сколько сделок было в 2023 году?", "Какая самая популярная команда?",
+                               "Сколько сделок по маякам и примерам?", "Фирма Смарт и мартышки в 2023",
+                               "Сколько сделок в 2023 году у компании Mayak?"])
+def test_no_period_words_unaffected(parts, q):
+    spec = {"kind": "deals_aggregate", "measures": ["deal_count"], "filters": {"year": 2023}}
+    writer, _ = make(parts, [call("compile_query", spec=spec, assumptions=[])])
+    assert writer.run(q, "ru", deadline()).status == "ok"
+
+
+def test_year_only_usd_ok_without_period(parts):
+    writer, _ = make(parts, [call("compile_query", spec=USD_YEAR, assumptions=[])])
+    assert writer.run("Средний курс доллара за 2024 год?", "ru", deadline()).status == "ok"
+
+
+def test_lookup_not_checked(parts):
+    writer, _ = make(parts, [call("compile_query", spec={"kind": "deal_lookup", "deal_id": 1},
+                                  assumptions=[])])
+    res = writer.run("Покажи сделку 1 за март 2024", "ru", deadline())
+    assert res.status in ("ok", "failed")
+    assert not any("month" in str(t.get("error", "")) for t in res.trace)
