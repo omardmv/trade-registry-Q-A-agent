@@ -142,3 +142,62 @@ def test_gold_sql_error_recorded():
     pipe = Stub({"good": AskResult("5 854", "ru", True, "compiled", columns=["paid"], rows=[[5854]])})
     r = evaluate(_q("a", True, "good"), pipe, OneColDb([], fail=True))
     assert "gold SQL failed" in r["error"] and r["answer_ok"] is False
+
+
+def test_ids_match_exactly():
+    assert not value_in_text("BK106", "Брокер BK111")
+    assert value_in_text("BK106", "Брокер BK106.")
+    assert not value_in_text("900099809", "ИНН 900099556")
+    assert value_in_text("900099809", "ИНН 900099809")
+
+
+def test_phrase_words_consecutive_and_in_order():
+    assert value_in_text("Хлопок-сырец", "больше всего хлопка-сырца")
+    assert not value_in_text("Хлопок-сырец", "«Масло хлопковое», затем «Сырой газ»")
+    assert not value_in_text("Масло хлопковое", "«Шрот хлопковый» и «Масло подсолнечное»")
+    assert value_in_text("Масло хлопковое", "Масло хлопковое лидирует")
+    assert not value_in_text("Профиль алюминиевый", "Профиль стальной, алюминиевый лист")
+    assert not value_in_text("Toshkent viloyati", "Toshkent shahri va Samarqand viloyati")
+    assert value_in_text("Toshkent shahri", "Toshkent shahri lidiruet")
+
+
+def test_single_word_inflection_documented():
+    # derived forms differing by more than 3 trailing chars are NOT accepted (length cap); plain inflection is
+    assert value_in_text("Полиэтилен", "Трубы полиэтиленовые") is False
+    assert value_in_text("Полиэтилен", "продано полиэтилена") is True
+
+
+def test_top1_multi_column_groups():
+    cols = ("role", "ranking", "inn")
+    rows = [["buyer", "by_total_uzs", "A"], ["buyer", "by_total_uzs", "B"],
+            ["seller", "by_total_uzs", "G"], ["seller", "by_total_uzs", "A"],
+            ["seller", "by_deals", "C"], ["seller", "by_deals", "G"]]
+    db = OneColDb([("G",)], cols=("inn",))
+    q = _tq("t", ["inn"])
+    ok = evaluate(q, Stub({"t": _ranked(rows, cols)}), db)
+    assert ok["sql_ok"] is True  # first in (seller, by_total_uzs)
+    rows2 = [["buyer", "r", "X"], ["buyer", "r", "G"], ["seller", "r", "Y"], ["seller", "r", "G"]]
+    bad = evaluate(q, Stub({"t": _ranked(rows2, cols)}), db)
+    assert bad["sql_ok"] is False  # second in every group
+
+
+def test_gold_error_excluded_from_answered_wrong(monkeypatch, tmp_path, capsys):
+    import json
+    import eval.run as run
+
+    class BadDb:
+        def query(self, sql):
+            raise ValueError("bad")
+
+    monkeypatch.setattr(run, "build_pipeline",
+                        lambda: Stub({"g": AskResult("5 854", "ru", True, "compiled", columns=["paid"], rows=[[5854]])}))
+    monkeypatch.setattr(run, "Database", lambda path: BadDb())
+    monkeypatch.setattr(run.yaml, "safe_load", lambda f: [_q("a", True, "g")])
+    monkeypatch.setattr(run.config, "ROOT", tmp_path)
+    (tmp_path / "eval").mkdir()
+    (tmp_path / "eval" / "questions.yaml").write_text("x", encoding="utf-8")
+    monkeypatch.setattr("sys.argv", ["eval.run"])
+    run.main()
+    out = capsys.readouterr().out
+    s = json.loads(out[out.index("{"):])
+    assert s["errors"] == 1 and s["answered_wrong"] == 0

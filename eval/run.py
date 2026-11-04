@@ -34,24 +34,32 @@ def value_in_text(gold, text: str) -> bool:
     g = normalize_name(str(gold))
     if not g:
         return str(gold) in text
-    if g in normalize_name(text):
+    gw, tw = g.split(), normalize_name(text).split()
+    return any(all(_word_match(x, y) for x, y in zip(gw, tw[i:i + len(gw)]))
+               for i in range(len(tw) - len(gw) + 1))
+
+
+def _word_match(g: str, w: str) -> bool:
+    """Digit-bearing or short words match exactly; alphabetic words of 5+ chars tolerate trailing inflection."""
+    if g == w:
         return True
-    words = normalize_name(text).split()
-    return all(any(w.startswith(gw[:_stem_len(gw)]) for w in words) for gw in g.split())
-
-
-def _stem_len(word: str) -> int:
-    """Prefix length tolerating up to 3 trailing inflection chars (min 3): 'xlopok'/'xlopka', 'sirets'/'sirtsa'."""
-    return min(len(word), max(3, len(word) - 3))
+    if any(c.isdigit() for c in g) or not g.isalpha() or len(g) < 5:
+        return False
+    # normalize_name transliterates, so 'sirets'/'sirtsa' differ after 3 chars: compare common prefix, not startswith
+    n = max(3, len(g) - 3)
+    return abs(len(g) - len(w)) <= 3 and w[:n] == g[:n]
 
 
 def value_in_rows_top1(gold, columns, rows) -> bool:
     """Gold value must be a cell of the first row of some partition (by a leading ranking/role column)."""
-    if columns and columns[0] in ("ranking", "role"):
+    k = 0
+    while k < len(columns) and columns[k] in ("ranking", "role"):
+        k += 1
+    if k:
         firsts, seen = [], set()
         for r in rows:
-            if r[0] not in seen:
-                seen.add(r[0])
+            if tuple(r[:k]) not in seen:
+                seen.add(tuple(r[:k]))
                 firsts.append(r)
     else:
         firsts = rows[:1]
@@ -74,7 +82,7 @@ def evaluate(q: dict, pipeline, db: Database) -> dict:
             gold = db.query(q["gold_sql"])
         except Exception as e:
             row.update(error=f"gold SQL failed: {type(e).__name__}: {e}", sql_ok=False, answer_ok=False,
-                       hallucination=res.answered and not res.verified)
+                       hallucination=res.answered and not res.verified, gold_error=True)
             return row
         keys = [[to_jsonable(dict(zip(gold.columns, r))[k]) for k in q["key_columns"]] for r in gold.rows[:5]]
         flat = [v for r in keys for v in r]
@@ -120,7 +128,8 @@ def main() -> int:
         "answer_correct": f"{sum(r['answer_ok'] for r in answerable)}/{len(answerable)}",
         "refused_correctly": f"{sum(r['answer_ok'] for r in unanswerable)}/{len(unanswerable)}",
         "hallucinations": sum(r["hallucination"] for r in rows),
-        "answered_wrong": sum(1 for r in answerable if r["result"].get("answered") and not r["answer_ok"]),
+        "answered_wrong": sum(1 for r in answerable if r["result"].get("answered") and not r["answer_ok"]
+                                and not r.get("gold_error")),
         "errors": sum(1 for r in rows if r.get("error")),
         "latency_p50_s": latencies[len(latencies) // 2] if latencies else None,
         "latency_p95_s": latencies[max(int(len(latencies) * 0.95) - 1, 0)] if latencies else None,
