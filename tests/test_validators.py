@@ -83,3 +83,60 @@ def test_wrapped_resolved_ids_still_checked():
     sql = "SELECT COUNT(*) FROM deals WHERE upper(buyer_broker) = 'BK001'"
     assert not v(sql).ok
     assert v(sql, allowed={"BK001"}).ok
+
+
+import pytest
+
+REJECTED = [
+    "SELECT 1 FROM participants WHERE regexp_matches(name, 'x')",
+    "SELECT 1 FROM deals WHERE contains(product_name_full, 'x')",
+    "SELECT 1 FROM participants WHERE name SIMILAR TO 'x'",
+    "SELECT 1 FROM participants WHERE name ~ 'x'",
+    "SELECT 1 FROM participants WHERE starts_with(name, 'x')",
+    "SELECT 1 FROM participants WHERE name GLOB 'x*'",
+    "SELECT 1 FROM participants WHERE position('x' IN name) > 0",
+    "SELECT 1 FROM deals WHERE starts_with(region, 'x')",
+    "SELECT 1 FROM deals WHERE contains(product_canonical, 'x')",
+    "SELECT 1 FROM deals WHERE buyer_inn = 123456789",
+    "SELECT 1 FROM deals WHERE region BETWEEN 'A' AND 'Z'",
+    "SELECT 1 FROM deals, LATERAL parquet_scan('x')",
+    "SELECT 1 FROM deals, LATERAL read_ndjson('x')",
+    "SELECT 1 FROM other.deals",
+    "WITH x AS (DELETE FROM deals RETURNING *) SELECT * FROM x",
+    "SELECT SUM(amount), MAX(currency) FROM deals",
+    "SELECT SUM(amount) FROM deals WHERE currency IS NOT NULL",
+]
+
+
+@pytest.mark.parametrize("sql", REJECTED)
+def test_review_probes_rejected(sql):
+    assert not v(sql).ok
+
+
+ACCEPTED = [
+    "SELECT region FROM deals WHERE region IN (SELECT region FROM deals WHERE status = 'done')",
+    "SELECT 1 FROM deals WHERE buyer_inn = '975923536'",
+    "SELECT 1 FROM participants p JOIN deals d ON p.inn = d.buyer_inn",
+    "SELECT 1 FROM deals WHERE lower(region) = 'samarqand viloyati'",
+    "SELECT currency, SUM(amount) FROM deals GROUP BY currency",
+    "SELECT SUM(amount) FROM deals WHERE currency = 'UZS'",
+    "SELECT name FROM participants ORDER BY name",
+]
+
+
+@pytest.mark.parametrize("sql", ACCEPTED)
+def test_structural_accepted(sql):
+    r = v(sql, allowed={"975923536", "samarqand viloyati"})
+    assert r.ok, r.errors
+
+
+def test_huge_limit_clamped():
+    r = v("SELECT deal_id FROM deals LIMIT 100000000")
+    assert r.ok and r.sql.endswith("LIMIT 1000") and "100000000" not in r.sql
+
+
+def test_round_trip_filter_qualify_cast_explain(db):
+    sql = ("SELECT deal_id, COUNT(*) FILTER (WHERE amount_uzs > 0) OVER () AS n, DATE '2025-01-01'::DATE AS d "
+           "FROM deals QUALIFY ROW_NUMBER() OVER (ORDER BY deal_id) = 1")
+    r = v(sql, db=db)
+    assert r.ok, r.errors
