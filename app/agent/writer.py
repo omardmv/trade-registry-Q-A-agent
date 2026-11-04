@@ -7,7 +7,7 @@ from typing import Literal
 
 from app import config
 from app.agent.guard import build_index, missing_condition_error, sql_missing_condition_error
-from app.agent.llm import LLM, ToolSpec, call_with_retry
+from app.agent.llm import LLM, ToolSpec, call_with_retry, deadline_scope
 from app.agent.validators import grounding_status, missing_message, validate_sql
 from app.catalog import load_catalog, load_product_attrs, render_catalog
 from app.compiler.spec import (CONTRACT_FORMS, CONTRACT_TYPES, DIMENSIONS, FILTER_KEYS, KINDS, MEASURES, ORDERS,
@@ -211,6 +211,10 @@ class Writer:
         return self._exists_cache[key]
 
     def run(self, question: str, lang: str, deadline: float, previous: dict | None = None) -> WriterResult:
+        with deadline_scope(deadline):  # a provider fallback inside a send must fit before this deadline
+            return self._run(question, lang, deadline, previous)
+
+    def _run(self, question: str, lang: str, deadline: float, previous: dict | None) -> WriterResult:
         allowed: set[tuple[str, str]] = set()
         names: list[str] = []
         # per-question state: the first guard error, if any

@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from app import config
 from app.agent.writer import Writer, WriterResult
 from app.answer import templates
-from app.agent.llm import call_with_retry
+from app.agent.llm import call_with_retry, deadline_scope, track_providers
 from app.answer.composer import compose
 from app.answer.verifier import verify_answer
 from app.compiler.explain import explain
@@ -38,6 +38,7 @@ class AskResult:
     reason: str = ""
     timings: dict = field(default_factory=dict)
     trace: list[dict] = field(default_factory=list)  # writer tool calls (no rows); eval only
+    providers_used: list[str] = field(default_factory=list)  # LLM provider of each successful reply, in order
 
 
 _MEASURE_COLUMNS = {alias for _, alias in MEASURE_SQL.values()}
@@ -64,6 +65,12 @@ class Pipeline:
         self.deadline_s, self.llm_timeout_s = deadline_s, llm_timeout_s
 
     def ask(self, question: str, previous: dict | None = None) -> AskResult:
+        with track_providers() as used:
+            res = self._ask(question, previous)
+        res.providers_used = list(used)
+        return res
+
+    def _ask(self, question: str, previous: dict | None) -> AskResult:
         t0 = time.monotonic()
         deadline = t0 + self.deadline_s
         lang = detect_lang(question)
@@ -129,11 +136,12 @@ class Pipeline:
             if deadline - time.monotonic() < self.llm_timeout_s:
                 break
             try:
-                text = call_with_retry(
-                    lambda: compose(self.llm, question=question, lang=lang, sql=wr.sql, columns=result.columns,
-                                    rows=result.rows, row_count=len(result.rows), truncated=result.truncated,
-                                    splits=wr.splits, assumptions=assumptions, feedback=feedback),
-                    deadline, self.llm_timeout_s)
+                with deadline_scope(deadline):  # a provider fallback must fit before the deadline too
+                    text = call_with_retry(
+                        lambda: compose(self.llm, question=question, lang=lang, sql=wr.sql, columns=result.columns,
+                                        rows=result.rows, row_count=len(result.rows), truncated=result.truncated,
+                                        splits=wr.splits, assumptions=assumptions, feedback=feedback),
+                        deadline, self.llm_timeout_s)
             except Exception:
                 log.exception("composer failed")
                 break
@@ -150,14 +158,15 @@ class Pipeline:
 
 
 def build_pipeline() -> Pipeline:
-    from app.agent.llm import GeminiLLM
+    from app.agent.llm_fallback import build_llm
     from app.db import Database
     from app.examples import ExampleStore
     from app.resolve import Resolver
     from app.semantic import load_semantic, render_schema_prompt
 
     db = Database(config.DB_PATH)
-    llm = GeminiLLM(config.GEMINI_API_KEY, config.GEMINI_MODEL, config.LLM_TIMEOUT_S)
+    llm = build_llm(config.LLM_PROVIDERS, {"gemini": config.GEMINI_API_KEY, "openai": config.OPENAI_API_KEY},
+                    {"gemini": config.GEMINI_MODEL, "openai": config.OPENAI_MODEL}, config.LLM_TIMEOUT_S)
     resolver = Resolver(db)
     writer = Writer(llm, db, resolver, ExampleStore.from_yaml(config.EXAMPLES_PATH),
                     render_schema_prompt(load_semantic()), config.MAX_TOOL_CALLS, config.MAX_FIX_RETRIES,
