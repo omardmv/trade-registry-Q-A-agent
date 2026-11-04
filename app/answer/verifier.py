@@ -5,10 +5,10 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 
 from app.answer.numbers import (
-    CODE_RE, DATE_RE, MONTH_YEAR_RE, extract_dates, extract_ids, extract_numbers, extract_quoted, format_cell,
+    CODE_RE, DATE_RE, MONTH_YEAR_RE, QUOTED_RE, UNIT_AFTER_RE, extract_dates, extract_ids, extract_numbers, format_cell,
     strip_structural,
 )
-from app.text import normalize_name
+from app.text import normalize_name, normalize_text
 
 _ALWAYS_DATES = {"03.01.2022", "30.10.2026", "01.01.2022", "31.10.2026"}
 _QUOTE_CHARS = "«»“”\""
@@ -82,6 +82,7 @@ def verify_answer(answer: str, question: str, rows: list[tuple], extra_text: str
         dates |= set(extract_dates(context))
         month_years |= _month_years(context)
         ids |= set(extract_ids(context))
+    text_hay = [f" {normalize_text(t)} " for t in [*cells, question, extra_text]]
     name_hay = [_padded(c) for c in cells] + [_padded(question), _padded(extra_text)]
 
     unsupported: list[str] = []
@@ -91,17 +92,22 @@ def verify_answer(answer: str, question: str, rows: list[tuple], extra_text: str
     for ident in extract_ids(answer):
         if ident not in ids:
             unsupported.append(ident)
-    quote_ok: list[str] = []
-    for quoted in extract_quoted(_delete_cells(answer, cells, only_with_quotes=True)):
+    masked = _delete_cells(answer, cells, only_with_quotes=True)
+    parts: list[str] = []
+    last = 0
+    for m in QUOTED_RE.finditer(masked):
+        quoted = m.group(1).strip()
+        if not re.search(r"[^\W\d_]", quoted):  # no letters: not a name, its numbers are checked normally
+            continue
         norm = normalize_name(quoted)
         if not norm or not any(f" {norm} " in hay for hay in name_hay):
             unsupported.append(quoted)
         else:
-            quote_ok.append(quoted)
-
-    scrubbed = _delete_cells(answer, cells)
-    for quoted in sorted(set(quote_ok), key=len, reverse=True):
-        scrubbed = scrubbed.replace(quoted, " ")
+            parts.append(masked[last:m.start()])
+            parts.append(" ")
+            last = m.end()
+    parts.append(masked[last:])
+    scrubbed = _delete_cells("".join(parts), cells)
 
     def _month_year(m: re.Match) -> str:
         if (int(m.group(1)), int(m.group(2))) not in month_years:
@@ -111,8 +117,12 @@ def verify_answer(answer: str, question: str, rows: list[tuple], extra_text: str
     scrubbed = MONTH_YEAR_RE.sub(_month_year, scrubbed)
 
     def _code(m: re.Match) -> str:
-        norm = normalize_name(m.group(0))
-        if norm and any(f" {norm} " in hay for hay in name_hay):
+        norm = normalize_text(m.group(0))
+        if not (re.search(r"[a-z]", norm) and re.search(r"\d", norm)):
+            return m.group(0)
+        if UNIT_AFTER_RE.match(scrubbed, m.end()):
+            return m.group(0)
+        if any(f" {norm} " in hay for hay in text_hay):
             return " "
         return m.group(0)
 

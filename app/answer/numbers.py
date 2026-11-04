@@ -31,7 +31,9 @@ _STRUCTURAL_RES = [
 ]
 # product / grade codes: АИ-92, AGROMIR-2, КС-65, 21х32мм, "ПЦ 400"
 CODE_RE = re.compile(
-    r"(?<!\w)(?:[^\W\d_]+[-\u2010]?\d[\w,.хx]*|\d+[хx]\d+\w*|[^\W\d_]{1,4}[ \u00a0\u202f]\d+)(?![\w])", re.I)
+    r"(?<!\w)(?:[^\W\d_]+[-\u2010]?\d[\w,.хxХX]*|\d+[хxХX]\d+\w*"
+    r"|[A-ZА-ЯЁЎҚҒҲ]{2,4}[ \u00a0\u202f]\d+(?![\d\w]|[ \u00a0\u202f]\d{3}))(?![\w])")
+UNIT_AFTER_RE = re.compile(r"\s*(?:тонн\w*|т\b|кг|литр\w*|сум\w*|so‘m|som|dona|ta\b|шт\w*)", re.I)
 MONTH_YEAR_RE = re.compile(r"(?<![\d.])(0[1-9]|1[0-2])\.(20\d\d)\b(?!\.\d)")
 DATE_RE = re.compile(r"\b\d{2}\.\d{2}\.\d{4}\b|\b\d{4}-\d{2}-\d{2}\b")
 ID_RE = re.compile(r"(?<!\d)\d{9}(?!\d)|\bBK\d{3}\b", re.I)

@@ -284,3 +284,24 @@ def test_template_has_no_extra_numbers_beyond_ellipsis():
 def test_rereview_probes(answer, question, rows, extra, row_count, ok):
     r = verify_answer(answer, question, rows, extra_text=extra, row_count=row_count)
     assert r.ok is ok, r.unsupported
+
+
+# ---- third re-review: uppercase-only short codes, units, grouped numbers, letterless quotes ----
+
+@pytest.mark.parametrize("answer,question,rows,ok", [
+    ("Продано по 50 тонн", "?", [("в мешках по 50 кг",)], False),
+    ("Продано АО 7 тонн", "?", [("Срок 7 дней",)], False),
+    ("Продано ok 7 тонн", "?", [("Срок 7 дней",)], False),
+    ("Сделки на 1 234 567 сум", "Сделки на 1 октября?", [(234567,)], False),
+    ("Продано КС-65 тонн", "?", [("Комбикорм КС-65 гранулы",)], False),
+    ("Доля «10 %», затем 10 % снова", "?", [("Топ-10",)], False),
+    ("«Alfa 5» и Alfa 5", "?", [("Alfa 5 plus",)], False),
+    ("Товар ПЦ 400: 5 сделок", "?", [("Цемент ПЦ 400 Д20", 5)], True),
+    ("Объём SDR 17: 5 сделок", "?", [("Труба ПЭ 100 SDR 17", 5)], True),
+    ("Бензин АИ-92 продан на 1 234 сум", "?", [("Бензин АИ-92 премиум", 1234)], True),
+    ("Лидер — «Agromir-2» — 45,6 млн сум.", "?", [('ООО «AGROMIR-2»', 45_600_000.0)], True),
+    ("«Alfa 5» продан", "?", [("Alfa 5 plus",)], True),
+])
+def test_third_rereview_probes(answer, question, rows, ok):
+    r = verify_answer(answer, question, rows)
+    assert r.ok is ok, r.unsupported
