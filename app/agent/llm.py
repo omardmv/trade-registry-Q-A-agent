@@ -1,8 +1,10 @@
 """LLM abstraction so the agent can be tested with scripted fakes; Gemini is the real backend."""
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
-from collections.abc import Callable, Sequence
-from typing import Protocol, TypeVar
+from collections.abc import Callable, Iterator, Sequence
+from typing import Literal, Protocol, TypeVar
 
 from pydantic import BaseModel
 
@@ -45,10 +47,111 @@ class LLMError(RuntimeError):
     """The model returned no usable content (blocked, empty, or malformed response)."""
 
 
+class ProviderError(RuntimeError):
+    """The provider refused or failed the call (HTTP status, connection error). transient=True: worth a retry."""
+
+    def __init__(self, message: str, *, transient: bool, status: int | None = None):
+        super().__init__(message)
+        self.transient, self.status = transient, status
+
+    @property
+    def code(self) -> int | None:  # same attribute name as google.genai errors (call_with_retry reads it)
+        return self.status
+
+
+# ---- per-request context: the deadline for fallback attempts, and which providers answered ----
+_DEADLINE: ContextVar[float | None] = ContextVar("llm_deadline", default=None)
+_PROVIDERS: ContextVar[list[str] | None] = ContextVar("llm_providers", default=None)
+
+
+@contextmanager
+def deadline_scope(deadline: float | None) -> Iterator[None]:
+    """LLM calls made inside may only start a fallback attempt that fits before this monotonic deadline."""
+    token = _DEADLINE.set(deadline)
+    try:
+        yield
+    finally:
+        _DEADLINE.reset(token)
+
+
+def current_deadline() -> float | None:
+    return _DEADLINE.get()
+
+
+@contextmanager
+def track_providers() -> Iterator[list[str]]:
+    """Collect the name of the provider of every successful LLM reply made inside (in order)."""
+    used: list[str] = []
+    token = _PROVIDERS.set(used)
+    try:
+        yield used
+    finally:
+        _PROVIDERS.reset(token)
+
+
+def note_provider(name: str) -> None:
+    used = _PROVIDERS.get()
+    if used is not None:
+        used.append(name)
+
+
+_TIMEOUT_NAMES = {"ReadTimeout", "ConnectTimeout", "WriteTimeout", "PoolTimeout", "TimeoutException",
+                  "APITimeoutError"}
+_CONNECTION_NAMES = {"ConnectError", "ReadError", "WriteError", "RemoteProtocolError", "NetworkError",
+                     "ProxyError", "APIConnectionError"}
+_PERMANENT_STATUS = {401, 402, 403}
+
+
+def error_status(exc: BaseException) -> int | None:
+    """HTTP status of a provider error (ProviderError, google.genai APIError, openai APIStatusError)."""
+    if isinstance(exc, ProviderError):
+        return exc.status
+    for attr in ("code", "status_code"):
+        value = getattr(exc, attr, None)
+        if isinstance(value, int):
+            return value
+    return None
+
+
+def _is_genai_error(exc: BaseException) -> bool:
+    try:
+        from google.genai import errors
+    except ImportError:
+        return False
+    return isinstance(exc, errors.APIError)
+
+
+def _is_openai_error(exc: BaseException) -> bool:
+    try:
+        import openai
+    except ImportError:
+        return False
+    return isinstance(exc, openai.APIError)
+
+
+def classify_error(exc: BaseException) -> Literal["fallback", "timeout", "bug"]:
+    """fallback: the provider failed (HTTP status, connection error, blocked/empty reply) -> try another provider.
+    timeout: the call ran out of time -> no switch within that call. bug: anything else -> propagate."""
+    if isinstance(exc, TimeoutError) or type(exc).__name__ in _TIMEOUT_NAMES:
+        return "timeout"
+    if isinstance(exc, (ProviderError, LLMError)) or _is_genai_error(exc) or _is_openai_error(exc):
+        return "fallback"
+    if type(exc).__name__ in _CONNECTION_NAMES:
+        return "fallback"
+    return "bug"
+
+
+def is_permanent(exc: BaseException) -> bool:
+    """Credits depleted / bad key / forbidden: the provider will keep failing for a while (circuit breaker)."""
+    return classify_error(exc) == "fallback" and error_status(exc) in _PERMANENT_STATUS
+
+
 def is_transient(exc: BaseException) -> bool:
-    """HTTP 429/500/503 from the Gemini API, or a timeout."""
+    """HTTP 429/500/503 from the Gemini API, a transient ProviderError, or a timeout."""
     if isinstance(exc, TimeoutError):
         return True
+    if isinstance(exc, ProviderError):
+        return exc.transient
     try:
         from google.genai import errors
         if isinstance(exc, errors.APIError) and getattr(exc, "code", None) in _TRANSIENT_STATUS:
@@ -105,6 +208,8 @@ def _content_of(resp):
 
 
 class GeminiChat:
+    name = "gemini"
+
     def __init__(self, client, model: str, system: str, tools: list[ToolSpec],
                  thinking_budget: int = config.GEMINI_THINKING_BUDGET):
         from google.genai import types
@@ -130,7 +235,29 @@ class GeminiChat:
         parts = content.parts or []
         text = "".join(p.text for p in parts if getattr(p, "text", None))
         calls = [ToolCall(fc.name, _plain(fc.args or {})) for fc in (resp.function_calls or [])]
+        note_provider(self.name)
         return LLMReply(text, calls)
+
+    def load_history(self, events: list[tuple[str, object]]) -> None:
+        """Rebuild the native history from a provider-neutral transcript (see app.agent.llm_fallback).
+        Replayed function calls carry no real thought signature, so they get Gemini's documented bypass value."""
+        t = self._types
+        contents = []
+        for kind, payload in events:
+            if kind == "user_text":
+                contents.append(t.Content(role="user", parts=[t.Part.from_text(text=payload)]))
+            elif kind == "tool_results":
+                contents.append(t.Content(role="user", parts=[
+                    t.Part.from_function_response(name=name, response=data) for name, data in payload]))
+            elif kind == "assistant":
+                parts = [t.Part.from_text(text=payload.text)] if payload.text else []
+                parts += [t.Part(function_call=t.FunctionCall(name=c.name, args=c.args),
+                                 thought_signature=b"skip_thought_signature_validator")
+                          for c in payload.tool_calls]
+                contents.append(t.Content(role="model", parts=parts))
+            else:
+                raise ValueError(f"unknown transcript event {kind!r}")
+        self._contents = contents
 
     def send_text(self, text: str) -> LLMReply:
         t = self._types
@@ -143,6 +270,8 @@ class GeminiChat:
 
 
 class GeminiLLM:
+    name = "gemini"
+
     def __init__(self, api_key: str, model: str, timeout_s: float,
                  thinking_budget: int = config.GEMINI_THINKING_BUDGET):
         from google import genai
@@ -165,4 +294,5 @@ class GeminiLLM:
         text = "".join(p.text for p in (content.parts or []) if getattr(p, "text", None) and not getattr(p, "thought", None))
         if not text.strip():
             raise LLMError(f"Gemini returned empty text ({_block_reason(resp)})")
+        note_provider(self.name)
         return text.strip()
