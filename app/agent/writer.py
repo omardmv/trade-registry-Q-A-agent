@@ -9,7 +9,7 @@ from app import config
 from app.agent.guard import build_index, missing_condition_error, sql_missing_condition_error
 from app.agent.llm import LLM, ToolSpec, call_with_retry
 from app.agent.validators import grounding_status, missing_message, validate_sql
-from app.catalog import load_catalog, render_catalog
+from app.catalog import load_catalog, load_product_attrs, render_catalog
 from app.compiler.spec import (CONTRACT_FORMS, CONTRACT_TYPES, DIMENSIONS, FILTER_KEYS, KINDS, MEASURES, ORDERS,
                                PERIOD_KEYS, REGISTRY_ENTITIES, ROLES, SHARE_BASES, SHARE_FIELDS, STATUS_SCOPES, STATUSES,
                                TRADE_TYPES, USD_EXTREMES, DealsAggregate, Spec, SpecError, UsdRate, check_catalog,
@@ -194,6 +194,7 @@ class Writer:
             catalog = load_catalog(db) if db is not None else {}
         self.catalog = catalog
         self._guard_index = build_index(catalog)
+        self._product_attrs = load_product_attrs(db) if db is not None else {}
         self.system = SYSTEM.format(schema=schema_prompt + ("\n\n" + render_catalog(catalog) if catalog else ""))
         self.max_tool_calls, self.max_fixes = max_tool_calls, max_fixes
         self.llm_timeout_s = llm_timeout_s
@@ -296,7 +297,8 @@ class Writer:
         spec = enforce_status_default(question, spec)
         if (err := period_error(question, spec)) is not None:
             return err
-        if (err := missing_condition_error(question, spec, self._guard_index, names)) is not None:
+        if (err := missing_condition_error(question, spec, self._guard_index, names,
+                                           product_attrs=self._product_attrs)) is not None:
             state["guard"] = state["guard"] or err
             return err
         statuses = {(k, v): grounding_status(v, k, allowed, question, self._exists)

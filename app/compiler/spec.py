@@ -424,6 +424,10 @@ def _parse_aggregate(d: dict) -> DealsAggregate:
         if lengths[0] != lengths[1]:
             raise SpecError("compare_periods must have the same length (e.g. two years, or the same months of "
                             "two years)")
+        if any(p.year == 2026 and p.month_from is None for p in periods):
+            raise SpecError("data ends 30.10.2026, so a full year 2026 is not comparable with a full year: compare "
+                            "the same months of both years (month_from 1, month_to 10 in both periods) and add an "
+                            "assumption that 2026 is covered only up to 30.10.2026")
     if group_by == "broker_side":
         if not f.brokers or f.seller_brokers or f.buyer_brokers:
             raise SpecError("group_by=broker_side needs filters.brokers (the broker codes to split by side) and "

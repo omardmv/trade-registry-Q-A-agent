@@ -33,7 +33,10 @@ FIELD_TARGETS = {
 _CONTEXT_ONLY = {("status", "Новый"), ("status", "Заключен"), ("status", "Оплачен"), ("activity", "Производитель")}
 _CONTEXT_RE = {"status": re.compile(r"статус|состояни|holat|ҳолат", re.IGNORECASE),
                "activity": re.compile(r"деятельност|faoliyat|фаолият|тип\w* компани|turi", re.IGNORECASE)}
+# plural (company-type) forms: whole tokens, or token prefixes for Uzbek plural + case endings
+# ("ishlab chiqaruvchilar", "ishlab chiqaruvchilardan")
 _PLURAL_FORMS = {("activity", "Производитель"): {"proizvoditeli", "proizvoditeley"}}
+_PLURAL_PREFIXES = {("activity", "Производитель"): ("chiqaruvchilar",)}
 # Status names are past participles of everyday verbs: exact tokens only. Unit words only take endings
 # ("литр" ~ "литрах").
 _EXACT_FIELDS = {"status"}
@@ -60,6 +63,9 @@ _SHARE_BASIS_RE = {"amount_uzs": re.compile(r"оборот|сумм|summa|qiymat
 _NEGATION_RE = re.compile(r"(?<!\w)(?:кроме|без|не|bundan\s+tashqari|tashqari|emas)(?!\w)", re.IGNORECASE)
 _EACH_RE = re.compile(r"по\s+кажд\w*|по\s+всем|har\s+bir", re.IGNORECASE)
 _MIN_MAX_MEASURES = {"min_unit_price_uzs", "max_unit_price_uzs"}
+_PRODUCT_FIELDS = ("category", "industry", "product_group")
+# a money / volume measure next to cancelled_pct answers "what share ... and for how much" (not a money share)
+_BASIS_MEASURES = {"amount_uzs": {"amount_uzs", "amount_usd"}, "volume_t": {"volume_tonnes", "volume"}}
 
 
 @dataclass(frozen=True)
@@ -133,7 +139,8 @@ def _context_ok(v: _Value, question: str, q_tokens: list[str], span: tuple[int, 
     if rx is not None and rx.search(question):
         return True
     plural = _PLURAL_FORMS.get((v.field, v.value), set())
-    return any(t in plural for t in q_tokens[span[0]:span[1]])
+    prefixes = _PLURAL_PREFIXES.get((v.field, v.value), ())
+    return any(t in plural or t.startswith(prefixes) for t in q_tokens[span[0]:span[1]] if t)
 
 
 def mentioned_values(question: str, index: list[_Value], ignore_names=()) -> list[_Value]:
@@ -179,9 +186,24 @@ def _spec_strings(spec: Spec) -> dict[str, set[str]]:
     return out
 
 
-def _covered(v: _Value, spec: Spec, strings: dict[str, set[str]], question: str, named: set[str]) -> bool:
+def _products_within(v: _Value, spec: Spec, question: str, product_attrs) -> bool:
+    """A products-only filter whose every product belongs to the named category / industry / group (or, without
+    the word категория / отрасль, to a family of that name) already expresses the condition."""
+    products = spec.filters.products if isinstance(spec, DealsAggregate) else \
+        spec.products if isinstance(spec, RegistryCount) else []
+    if not products or not product_attrs or v.field not in _PRODUCT_FIELDS:
+        return False
+    fields_ok = [v.field] + (["product_family"] if v.field in ("category", "industry")
+                             and not _CATEGORY_WORD_RE.search(question) else [])
+    return all(any(product_attrs.get(p, {}).get(f) == {v.value} for f in fields_ok) for p in products)
+
+
+def _covered(v: _Value, spec: Spec, strings: dict[str, set[str]], question: str, named: set[str],
+             product_attrs=None) -> bool:
     keys, dims = FIELD_TARGETS[v.field]
     value = normalize_text(v.value)
+    if _products_within(v, spec, question, product_attrs):
+        return True
     if isinstance(spec, DealsAggregate):
         if spec.group_by in dims:
             return True
@@ -199,7 +221,10 @@ def _covered(v: _Value, spec: Spec, strings: dict[str, set[str]], question: str,
     return v.field in _SINGLE_VALUED and bool(set_values & named)
 
 
-def missing_condition_error(question: str, spec: Spec, index: list[_Value], ignore_names=()) -> str | None:
+def missing_condition_error(question: str, spec: Spec, index: list[_Value], ignore_names=(),
+                            product_attrs=None) -> str | None:
+    """product_attrs: product_canonical -> {category, industry, product_group, product_family: values}
+    (app.catalog.load_product_attrs); lets a products filter cover a category it lies within."""
     if not isinstance(spec, (DealsAggregate, RegistryCount)):
         return None
     strings = _spec_strings(spec)
@@ -211,7 +236,7 @@ def missing_condition_error(question: str, spec: Spec, index: list[_Value], igno
         if v.field == "contract_form" and by_field["contract_form"] >= set(CONTRACT_FORMS):
             continue  # "all forms (spot, forward, futures)": no contract_form restriction
         named = {normalize_text(x) for x in by_field[v.field]}
-        if _covered(v, spec, strings, question, named):
+        if _covered(v, spec, strings, question, named, product_attrs):
             continue
         keys, dims = FIELD_TARGETS[v.field]
         where = " or ".join(("filters." if isinstance(spec, DealsAggregate) and k != "activity" else "") + k
@@ -243,6 +268,12 @@ def missing_condition_error(question: str, spec: Spec, index: list[_Value], igno
             if rx.search(q):
                 return (f"the question asks for a share of money / volume, not of the deal count: set "
                         f"share_of.basis=\"{basis}\"")
+    if _SHARE_RE.search(q) and "cancelled_pct" in spec.measures:
+        for basis, rx in _SHARE_BASIS_RE.items():
+            if rx.search(q) and not _BASIS_MEASURES[basis] & set(spec.measures):
+                return ("the question asks for a share of money / volume, but cancelled_pct is a share of the deal "
+                        "count: use share_pct with share_of {field: \"status\", value: \"Аннулирован(Не оплачен)\", "
+                        f"basis: \"{basis}\"}} (basis amount_uzs for money, volume_t for tonnes)")
     if _SHARE_RE.search(q) and not (any(m in _PERCENT_MEASURES for m in spec.measures) or spec.compare_periods):
         return ("the question asks for a share / percentage: use share_pct with share_of {field, value} "
                 "(or cancelled_pct for the cancelled share); if the share is of something share_of cannot "
@@ -287,7 +318,8 @@ def sql_missing_condition_error(question: str, sql: str, index: list[_Value], ig
         orders = list(tree.find_all(exp.Ordered))
         if orders and not any(not o.args.get("desc") for o in orders) and tree.find(exp.Min) is None:
             return "the question asks for the least / cheapest / fewest: order the ranking ascending"
-    if _DISTINCT_RE.search(q) and not any(isinstance(c.this, exp.Distinct) for c in tree.find_all(exp.Count)):
+    if _DISTINCT_RE.search(q) and not any(isinstance(c.this, exp.Distinct) for c in tree.find_all(exp.Count)) \
+            and not any(sel.args.get("distinct") for sel in tree.find_all(exp.Select)):
         return "the question asks how many distinct items: use COUNT(DISTINCT ...)"
     if _SHARE_RE.search(q) and tree.find(exp.Div) is None:
         return "the question asks for a share / percentage: compute it as a ratio column in SQL"

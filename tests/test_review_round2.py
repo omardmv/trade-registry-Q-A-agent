@@ -1,12 +1,14 @@
-"""Second review round: product_variant_query and status shares."""
+"""Second review round: product_variant_query, status shares, synonyms, minor guard / spec fixes."""
 import json
 import time
 
 import pytest
 
 from app import config
+from app.agent.guard import build_index, missing_condition_error, sql_missing_condition_error
 from app.agent.validators import validate_sql
 from app.agent.writer import Writer
+from app.catalog import load_catalog, load_product_attrs
 from app.compiler.explain import explain
 from app.compiler.spec import SpecError, parse_spec
 from app.compiler.sql import compile_spec
@@ -21,6 +23,16 @@ COTTON_1 = "Хлопок-сырец 1 сорт"
 @pytest.fixture(scope="module")
 def resolver(db):
     return Resolver(db)
+
+
+@pytest.fixture(scope="module")
+def index(db):
+    return build_index(load_catalog(db))
+
+
+@pytest.fixture(scope="module")
+def attrs(db):
+    return load_product_attrs(db)
 
 
 def agg(measures, **kw):
@@ -108,3 +120,51 @@ def test_status_share_with_other_measure_counts_all_statuses(db):
     want = db.query("SELECT ROUND(100.0 * SUM(volume_tonnes) FILTER (WHERE is_cancelled) / SUM(volume_tonnes), 2) "
                     "FROM deals WHERE year = 2025").rows[0][0]
     assert got == want
+
+
+def test_cancelled_share_by_amount_needs_share_pct(index):
+    q = "Какой процент сделок аннулирован в 2025 году по сумме?"
+    e = missing_condition_error(q, parse_spec(agg(["cancelled_pct"], filters={"year": 2025})), index)
+    assert e and "share_pct" in e and "amount_uzs" in e
+    good = agg(["share_pct"], filters={"year": 2025},
+               share_of={"field": "status", "value": "Аннулирован(Не оплачен)", "basis": "amount_uzs"})
+    assert missing_condition_error(q, parse_spec(good), index) is None
+
+
+# 4. synonym «продовольствие» ------------------------------------------------------------------------------------
+
+def test_food_family_passes_guard(index):
+    q = "Сколько сделок по продовольствию в 2025?"
+    spec = parse_spec(agg(["deal_count"], filters={"year": 2025, "product_family": "Продовольствие"}))
+    assert missing_condition_error(q, spec, index, ["Продовольствие"]) is None
+
+
+# minors -----------------------------------------------------------------------------------------------------------
+
+def test_free_sql_distinct_subquery_accepted(index):
+    q = "Сколько разных покупателей было в 2024?"
+    sql = "SELECT COUNT(*) FROM (SELECT DISTINCT buyer_inn FROM deals WHERE year = 2024) t"
+    assert sql_missing_condition_error(q, sql, index) is None
+
+
+def test_uzbek_producers_plural_is_a_condition(index):
+    q = "2024-yilda ishlab chiqaruvchilar nechta bitim sotib olgan?"
+    e = missing_condition_error(q, parse_spec(agg(["deal_count"], filters={"year": 2024})), index)
+    assert e and "Производитель" in e
+    q2 = "2024-yilda ishlab chiqaruvchi nechta bitim tuzgan?"   # singular: an ordinary word
+    assert missing_condition_error(q2, parse_spec(agg(["deal_count"], filters={"year": 2024})), index) is None
+
+
+def test_products_in_named_category_cover_it(index, attrs):
+    q = "Сколько сделок по нефтепродуктам в 2025 году?"
+    spec = parse_spec(agg(["deal_count"], filters={"year": 2025, "products": ["Дизельное топливо", "Бензин автомобильный"]}))
+    assert missing_condition_error(q, spec, index, product_attrs=attrs) is None
+    other = parse_spec(agg(["deal_count"], filters={"year": 2025, "products": ["Карбамид"]}))
+    assert missing_condition_error(q, other, index, product_attrs=attrs) is not None
+
+
+def test_compare_periods_past_data_end_needs_equal_months():
+    with pytest.raises(SpecError, match="month_from 1, month_to 10"):
+        parse_spec(agg(["deal_count"], compare_periods=[{"year": 2025}, {"year": 2026}]))
+    parse_spec(agg(["deal_count"], compare_periods=[{"year": 2025, "month_from": 1, "month_to": 10},
+                                                     {"year": 2026, "month_from": 1, "month_to": 10}]))

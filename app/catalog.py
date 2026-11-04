@@ -29,6 +29,22 @@ def load_catalog(db: Database) -> dict[str, set[str]]:
     return out
 
 
+_PRODUCT_ATTRS = ("category", "industry", "product_group", "product_family")
+
+
+def load_product_attrs(db: Database) -> dict[str, dict[str, set[str]]]:
+    """product_canonical -> {category, industry, product_group, product_family: values} from contracts."""
+    out: dict[str, dict[str, set[str]]] = {}
+    rows = db.query(f"SELECT DISTINCT product_canonical, {', '.join(_PRODUCT_ATTRS)} FROM contracts",
+                    max_rows=100_000).rows
+    for product, *vals in rows:
+        d = out.setdefault(product, {k: set() for k in _PRODUCT_ATTRS})
+        for k, v in zip(_PRODUCT_ATTRS, vals):
+            if v is not None:
+                d[k].add(v)
+    return out
+
+
 def render_catalog(catalog: dict[str, set[str]]) -> str:
     """Prompt section listing the allowed values of every enum-like filter."""
     lines = ["# Value catalog (exact values for enum-like filters)"]
