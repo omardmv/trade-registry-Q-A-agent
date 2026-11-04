@@ -18,6 +18,7 @@ _T = {
         "broker_both_sides": "брокер учитывается и со стороны продавца, и со стороны покупателя",
         "role_split": "отдельно как покупатель и как продавец",
         "volume_by_unit": "объём по единицам измерения", "ranked_top": "топ-{n}",
+        "cancelled_share": "доля аннулированных — от всех сделок",
     },
     "uz": {
         "prefix": "Hisob:", "deals": "bitimlar", "all_time": "butun davr uchun (03.01.2022–30.10.2026)",
@@ -35,12 +36,15 @@ _T = {
         "broker_both_sides": "broker sotuvchi va xaridor tomonida ham hisobga olingan",
         "role_split": "xaridor va sotuvchi sifatida alohida",
         "volume_by_unit": "hajm o‘lchov birliklari bo‘yicha", "ranked_top": "eng yaxshi {n} ta",
+        "cancelled_share": "bekor qilinganlar ulushi — barcha bitimlardan",
     },
 }
 
 # Compiler note codes (app/compiler/sql.py) that are rendered as fixed phrases.
 _NOTE_KEYS = ("excluded_cancelled", "all_statuses", "status_split", "uzs_converted", "usd_converted",
               "broker_both_sides", "role_split", "volume_by_unit")
+# Status phrases describe the row set; a cancelled_pct-only query always runs over all deals.
+_STATUS_NOTES = ("excluded_cancelled", "all_statuses", "status_split")
 
 
 def _period(f: Filters, t: dict) -> str:
@@ -59,12 +63,13 @@ def _period(f: Filters, t: dict) -> str:
 
 
 def explain(spec: Spec, notes: list[str], lang: str) -> str:
-    """Return one sentence describing the computation; empty for non-aggregate specs."""
-    if lang not in ("ru", "uz", "uz-Cyrl"):
-        raise ValueError(f"unsupported explanation language {lang!r}")
+    """Return one sentence describing the computation; empty for non-aggregate specs.
+
+    Unknown languages fall back to Russian.
+    """
     if not isinstance(spec, DealsAggregate):
         return ""
-    t = _T["ru"] if lang == "ru" else _T["uz"]
+    t = _T["uz"] if lang in ("uz", "uz-Cyrl") else _T["ru"]
     f = spec.filters
     parts = [f"{t['deals']} {_period(f, t)}"]
     for key, values in (("product", f.products), ("region", f.regions), ("buyer", f.buyer_inns),
@@ -78,9 +83,18 @@ def explain(spec: Spec, notes: list[str], lang: str) -> str:
                        ("trade_type", f.trade_type)):
         if value is not None:
             parts.append(t[key].format(v=value))
+    cancelled_only = spec.measures == ["cancelled_pct"]
     for note in notes:
         if note.startswith("ranked_top_"):
             parts.append(t["ranked_top"].format(n=note.removeprefix("ranked_top_")))
-        elif note in _NOTE_KEYS:
+        elif note not in _NOTE_KEYS:
+            continue
+        elif cancelled_only and note in _STATUS_NOTES:
+            continue
+        elif note == "all_statuses" and f.statuses:
+            continue  # the status filter phrase already describes the scope
+        else:
             parts.append(t[note])
+    if "cancelled_pct" in spec.measures:
+        parts.append(t["cancelled_share"])
     return f"{t['prefix']} " + "; ".join(parts) + "."

@@ -32,3 +32,72 @@ def test_currency_note():
 
 def test_lookup_has_no_explanation():
     assert _explain({"kind": "deal_lookup", "deal_id": 1}, "ru") == ""
+
+
+QUAL_RU = "доля аннулированных — от всех сделок"
+QUAL_UZ = "bekor qilinganlar ulushi — barcha bitimlardan"
+
+
+def test_cancelled_only_skips_status_phrases():
+    text = _explain({"kind": "deals_aggregate", "measures": ["cancelled_pct"],
+                     "filters": {"year": 2025}}, "ru")
+    assert QUAL_RU in text
+    assert "отдельно без аннулированных" not in text
+    assert "без аннулированных" not in text
+    assert "все состояния сделок" not in text
+
+
+def test_cancelled_only_uz_qualifier():
+    text = _explain({"kind": "deals_aggregate", "measures": ["cancelled_pct"],
+                     "filters": {"year": 2025}}, "uz")
+    assert QUAL_UZ in text
+    assert "alohida bekor qilinganlarsiz" not in text
+
+
+def test_cancelled_among_several_keeps_notes_and_adds_qualifier():
+    text = _explain({"kind": "deals_aggregate", "measures": ["deal_count", "cancelled_pct"],
+                     "filters": {"year": 2025}}, "ru")
+    assert QUAL_RU in text
+    assert "все сделки и отдельно без аннулированных" in text
+
+
+def test_status_filter_skips_all_statuses():
+    text = _explain({"kind": "deals_aggregate", "measures": ["deal_count"],
+                     "filters": {"statuses": ["Заключен"]}}, "ru")
+    assert "состояние: Заключен" in text
+    assert "все состояния сделок" not in text
+
+
+def test_unknown_lang_falls_back_to_ru():
+    text = _explain({"kind": "deals_aggregate", "measures": ["deal_count"],
+                     "filters": {"year": 2025}}, "en")
+    assert text.startswith("Расчёт:")
+
+
+def test_uz_cyrl_returns_latin_uzbek():
+    text = _explain({"kind": "deals_aggregate", "measures": ["deal_count"],
+                     "filters": {"year": 2025}}, "uz-Cyrl")
+    assert text.startswith("Hisob:")
+
+
+def test_month_range_ru():
+    text = _explain({"kind": "deals_aggregate", "measures": ["deal_count"],
+                     "filters": {"year": 2025, "month_from": 4, "month_to": 6}}, "ru")
+    assert "04.2025–06.2025" in text
+
+
+def test_date_range_ru():
+    text = _explain({"kind": "deals_aggregate", "measures": ["deal_count"],
+                     "filters": {"date_from": "2024-01-01", "date_to": "2024-03-31"}}, "ru")
+    assert "с 01.01.2024 по 31.03.2024" in text
+
+
+def test_no_period_ru():
+    text = _explain({"kind": "deals_aggregate", "measures": ["deal_count"]}, "ru")
+    assert "за весь период (03.01.2022–30.10.2026)" in text
+
+
+def test_participant_role_split_ru():
+    text = _explain({"kind": "deals_aggregate", "measures": ["deal_count"], "group_by": "participant",
+                     "filters": {"year": 2025}}, "ru")
+    assert "отдельно как покупатель и как продавец" in text
