@@ -59,3 +59,27 @@ def test_ids_must_be_resolved_or_in_question():
 def test_explain_catches_bad_column(db):
     r = v("SELECT nope FROM deals", db=db)
     assert not r.ok and r.errors
+
+
+def test_returned_sql_regenerated_without_semicolon_or_comment():
+    r = v("SELECT 1; -- x")
+    assert r.ok, r.errors
+    assert ";" not in r.sql and "--" not in r.sql
+
+
+def test_union_gets_exactly_one_limit_and_explains(db):
+    r = v("SELECT buyer_inn FROM deals UNION ALL SELECT seller_inn FROM deals", db=db)
+    assert r.ok, r.errors
+    assert r.sql.upper().count("LIMIT") == 1 and r.sql.rstrip().endswith("LIMIT 1000")
+
+
+def test_wrapped_name_filters_rejected():
+    assert not v("SELECT COUNT(*) FROM participants WHERE lower(name) = 'x'").ok
+    r = v("SELECT COUNT(*) FROM participants p WHERE trim(p.name) LIKE '%x%'")
+    assert not r.ok and any("resolve" in e for e in r.errors)
+
+
+def test_wrapped_resolved_ids_still_checked():
+    sql = "SELECT COUNT(*) FROM deals WHERE upper(buyer_broker) = 'BK001'"
+    assert not v(sql).ok
+    assert v(sql, allowed={"BK001"}).ok

@@ -63,7 +63,8 @@ def validate_sql(sql: str, allowed: set[str], question: str, db: Database | None
             break
 
     for node in stmt.find_all(exp.EQ, exp.NEQ, exp.Like, exp.ILike, exp.In):
-        cols = [x for x in (node.this, node.args.get("expression")) if isinstance(x, exp.Column)]
+        cols = [c for side in (node.this, node.args.get("expression")) if isinstance(side, exp.Expression)
+                for c in side.find_all(exp.Column)]
         literals = _string_literals(node)
         for col in cols:
             if col.name in NAME_COLUMNS and literals:
@@ -79,7 +80,8 @@ def validate_sql(sql: str, allowed: set[str], question: str, db: Database | None
                 errors.append(f"ID {value!r} was not returned by resolve() in this request")
 
     if stmt.args.get("limit") is None:
-        sql = f"{sql}\nLIMIT {row_limit}"
+        stmt = stmt.limit(row_limit)
+    sql = stmt.sql(dialect="duckdb")
     errors = list(dict.fromkeys(errors))
     if not errors and db is not None:
         try:
