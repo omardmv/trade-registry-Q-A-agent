@@ -206,3 +206,13 @@ def test_cancelled_pct_with_count_keeps_status_split(db):
     assert row["deals_valid"] == scalar(db, "SELECT COUNT(*) FROM deals WHERE year=2025 AND NOT is_cancelled")
     assert row["cancelled_pct"] == scalar(db, """SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE is_cancelled)
                                                  / COUNT(*), 2) FROM deals WHERE year=2025""")
+
+
+def test_top_deal_matches_hand_query(db):
+    c, res = run(db, {"kind": "deals_aggregate", "measures": ["amount_uzs"], "group_by": "deal", "top": 1,
+                      "status_scope": "valid", "filters": {"year": 2023}})
+    assert res.columns[:3] == ["deal_id", "deal_date", "product"]
+    want = db.query("SELECT deal_id, amount_uzs FROM deals WHERE year=2023 AND NOT is_cancelled "
+                    "ORDER BY amount_uzs DESC LIMIT 1").rows[0]
+    assert len(res.rows) == 1 and res.rows[0][0] == want[0]
+    assert round(want[1]) == 30190376286

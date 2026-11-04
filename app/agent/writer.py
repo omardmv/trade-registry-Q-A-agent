@@ -2,7 +2,7 @@
 import json
 import re
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from typing import Literal
 
 from app import config
@@ -103,6 +103,21 @@ _MONTH_RE = re.compile(
     rf"|март(?:а|е|у|ом|ы)?{_UZ_SUFFIX}(?!\w)|ма[йяе]{_UZ_SUFFIX}(?!\w)"
     rf"|mart{_UZ_SUFFIX}(?!\w)|may{_UZ_SUFFIX}(?!\w)|май{_UZ_SUFFIX}(?!\w))", re.IGNORECASE)
 _DATE_RE = re.compile(r"(?<![\d.])(\d{1,2}\.\d{1,2}\.\d{4}|\d{4}-\d{2}-\d{2})(?![\d])")
+
+
+_STATUS_WORDS = ("аннулир", "отмен", "состоявш", "исполнен", "оплач", "подписан", "действительн", "валидн",
+                 "все сделки", "всех сделок", "bekor", "amalga osh", "to‘lan", "to'lan", "to’lan", "imzolan",
+                 "barcha bitim")
+
+
+def enforce_status_default(question: str, spec: Spec) -> Spec:
+    """Ungrouped deal counts/totals default to the split view unless the question names a status."""
+    if not isinstance(spec, DealsAggregate) or spec.group_by or spec.measures == ["cancelled_pct"]:
+        return spec
+    q = question.lower()
+    if any(w in q for w in _STATUS_WORDS):
+        return spec
+    return replace(spec, status_scope="split")
 
 
 def period_error(question: str, spec: Spec) -> str | None:
@@ -248,6 +263,7 @@ class Writer:
             spec = parse_spec(args.get("spec") or {})
         except (SpecError, KeyError, ValueError, TypeError) as e:
             return str(e)
+        spec = enforce_status_default(question, spec)
         if (err := period_error(question, spec)) is not None:
             return err
         statuses = {(k, v): grounding_status(v, k, allowed, question, self._exists)

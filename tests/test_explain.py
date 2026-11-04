@@ -136,3 +136,9 @@ def test_usd_rate_explanations():
 def test_contract_lookup_and_registry_have_no_explanation():
     from app.compiler.spec import parse_spec
     assert explain(parse_spec({"kind": "contract_lookup", "contract_id": 1}), [], "ru") == ""
+
+
+def test_deal_ranking_renders_top_n():
+    text = _explain({"kind": "deals_aggregate", "measures": ["amount_uzs"], "group_by": "deal", "top": 1,
+                     "status_scope": "valid", "filters": {"year": 2023}}, "ru")
+    assert "топ-1" in text

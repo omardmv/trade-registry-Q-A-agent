@@ -67,3 +67,7 @@
 - question: "Какой средний срок поставки по форвардным контрактам?"
   note: "нет шаблона → submit_sql"
   sql: "SELECT AVG(delivery_term_days) AS avg_delivery_term_days, COUNT(*) AS contracts FROM contracts WHERE contract_form = 'Форвард'"
+- question: "Какая самая крупная сделка 2024 года?"
+  spec: {kind: deals_aggregate, measures: [amount_uzs], group_by: deal, top: 1, filters: {year: 2024}}
+- question: "2024-yildagi eng katta bitim qaysi?"
+  spec: {kind: deals_aggregate, measures: [amount_uzs], group_by: deal, top: 1, filters: {year: 2024}}

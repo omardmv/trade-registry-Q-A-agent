@@ -12,7 +12,7 @@ MEASURES = ("deal_count", "amount_uzs", "amount_usd", "volume_tonnes", "volume",
             "lots_bought", "lots_delivered", "cancelled_pct")
 DIMENSIONS = ("buyer", "seller", "participant", "seller_broker", "buyer_broker", "broker", "region",
               "product", "product_family", "month", "year", "contract_type", "contract_form",
-              "trade_type", "status", "unit", "contract")
+              "trade_type", "status", "unit", "contract", "deal")
 STATUSES = ("Новый", "Не подписан", "Заключен", "Ждёт оплату", "Оплачен", "Исполнен",
             "Исполнен(Частично)", "Аннулирован(Не оплачен)")
 CONTRACT_TYPES = ("Внутренний", "Экспортный")

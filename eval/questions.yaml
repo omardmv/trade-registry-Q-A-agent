@@ -44,7 +44,7 @@
    gold_sql: "SELECT buyer_broker FROM deals WHERE year = 2024 AND NOT is_cancelled GROUP BY buyer_broker ORDER BY COUNT(*) DESC LIMIT 1"}
 - {id: q23, lang: ru, answerable: true, question: "Сколько сделок исполнено частично в 2026 году?", key_columns: [partial],
    gold_sql: "SELECT COUNT(*) AS partial FROM deals WHERE year = 2026 AND status = 'Исполнен(Частично)'"}
-- {id: q24, lang: ru, answerable: true, top1: true, question: "Какая самая крупная сделка 2023 года по сумме в сумах?", key_columns: [amount_uzs],
+- {id: q24, lang: ru, answerable: true, top1: true, question: "Какая самая крупная сделка 2023 года по сумме в сумах?", key_columns: [deal_id, amount_uzs],
    gold_sql: "SELECT deal_id, amount_uzs FROM deals WHERE year = 2023 AND NOT is_cancelled ORDER BY amount_uzs DESC LIMIT 1"}
 - {id: q25, lang: ru, answerable: true, question: "Сколько сделок заключено на двустороннем аукционе в 2025 году?", key_columns: [deals_all, deals_valid],
    gold_sql: "SELECT COUNT(*) AS deals_all, COUNT(*) FILTER (WHERE NOT is_cancelled) AS deals_valid FROM deals WHERE year = 2025 AND trade_type = 'Двусторонний аукцион'"}

@@ -58,6 +58,8 @@ DIMS = {
     "status": Dim(("d.status AS status",), ("d.status",)),
     "unit": Dim(("d.unit AS unit",), ("d.unit",)),
     "contract": Dim(("d.contract_id AS contract_id",), ("d.contract_id",)),
+    "deal": Dim(("d.deal_id AS deal_id", "d.deal_date AS deal_date", "d.product_canonical AS product"),
+                ("d.deal_id", "d.deal_date", "d.product_canonical")),
 }
 _UNIT = Dim(("d.unit AS unit",), ("d.unit",))
 

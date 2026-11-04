@@ -448,3 +448,24 @@ def test_lookup_not_checked(parts):
     res = writer.run("Покажи сделку 1 за март 2024", "ru", deadline())
     assert res.status in ("ok", "failed")
     assert not any("month" in str(t.get("error", "")) for t in res.trace)
+
+
+USD_SPEC = {"kind": "deals_aggregate", "measures": ["amount_usd"], "status_scope": "all", "filters": {"year": 2024}}
+
+
+def test_status_default_forced_to_split(parts):
+    writer, _ = make(parts, [call("compile_query", spec=USD_SPEC, assumptions=[])])
+    res = writer.run("Какова общая стоимость сделок в долларах в 2024 году?", "ru", deadline())
+    assert res.result.columns == ["total_usd_all", "total_usd_valid"]
+
+
+def test_status_word_keeps_model_choice(parts):
+    spec = {"kind": "deals_aggregate", "measures": ["deal_count"], "status_scope": "all", "filters": {"year": 2024}}
+    writer, _ = make(parts, [call("compile_query", spec=spec, assumptions=[])])
+    res = writer.run("Сколько аннулированных сделок было в 2024 году?", "ru", deadline())
+    assert res.result.columns != ["deals_all", "deals_valid"] and len(res.result.columns) == 1
+
+
+def test_deal_dimension_in_tool_schema():
+    from app.agent import writer as w
+    assert "deal" in w.SPEC_SCHEMA["properties"]["group_by"]["enum"]
