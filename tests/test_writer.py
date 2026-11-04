@@ -553,3 +553,18 @@ def test_broker_lookup_unknown_code_rejected(parts):
                                     assumptions=[]), call("declare_unanswerable", reason="no broker")])
     res = writer.run("Где находится брокер BK999?", "ru", deadline())
     assert res.status == "unanswerable" and "BK999" in llm.chat.sent[1][1][0][1]["error"]
+
+
+def test_dropped_condition_fed_back(parts):
+    spec = {"kind": "registry_count", "entity": "participants"}
+    writer, llm = make(parts, [call("compile_query", spec=spec, assumptions=[]),
+                               call("compile_query", spec={**spec, "activity": "Транспортная компания"},
+                                    assumptions=[])])
+    res = writer.run("Сколько компаний с типом «Транспортная компания»?", "ru", deadline())
+    assert "Транспортная компания" in llm.chat.sent[1][1][0][1]["error"]
+    assert res.status == "ok" and res.result.rows == [(2108,)]
+
+
+def test_system_prompt_forbids_dropping_conditions(parts):
+    writer, _ = make(parts, [])
+    assert "never drop a condition" in writer.system

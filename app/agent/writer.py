@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass, field, replace
 from typing import Literal
 
 from app import config
+from app.agent.guard import build_index, missing_condition_error
 from app.agent.llm import LLM, ToolSpec, call_with_retry
 from app.agent.validators import grounding_status, missing_message, validate_sql
 from app.catalog import load_catalog, render_catalog
@@ -92,7 +93,9 @@ Steps:
 5. Ambiguity: follow the Ambiguity registry. Compute the variants in ONE query: status_scope=split for counts
    and totals; two measures for "most/largest" without a measure; group_by=participant when the role is not
    stated. At most 2 split axes. Write the defaults you applied as short assumptions in the question's language.
-6. Free SQL rules: Put text labels only in the top-level SELECT; for buyer/seller splits use compile_query
+6. If the question has a condition the form cannot express, call declare_unanswerable — never drop a condition.
+   Answering a broader question with real numbers is worse than no answer.
+7. Free SQL rules: Put text labels only in the top-level SELECT; for buyer/seller splits use compile_query
    with group_by=participant. DuckDB dialect; money via amount_uzs/amount_usd; never filter by names; derived numbers
    (percent, averages, differences) as SQL columns; include participant/broker names next to IDs.
 
@@ -179,6 +182,7 @@ class Writer:
         if catalog is None:
             catalog = load_catalog(db) if db is not None else {}
         self.catalog = catalog
+        self._guard_index = build_index(catalog)
         self.system = SYSTEM.format(schema=schema_prompt + ("\n\n" + render_catalog(catalog) if catalog else ""))
         self.max_tool_calls, self.max_fixes = max_tool_calls, max_fixes
         self.llm_timeout_s = llm_timeout_s
@@ -239,7 +243,8 @@ class Writer:
                 if calls > self.max_tool_calls:
                     return failed("tool budget exceeded")
                 if tc.name in ("compile_query", "submit_sql"):
-                    outcome = (self._compile(tc.args, allowed, question, deadline) if tc.name == "compile_query"
+                    outcome = (self._compile(tc.args, allowed, question, deadline, names)
+                               if tc.name == "compile_query"
                                else self._sql(tc.args, allowed, question, deadline))
                     if isinstance(outcome, WriterResult):
                         outcome.trace, outcome.resolved_names = trace, names
@@ -268,7 +273,7 @@ class Writer:
     def _timeout(deadline, cap):
         return max(1.0, min(cap, deadline - time.monotonic()))
 
-    def _compile(self, args, allowed, question, deadline) -> WriterResult | str:
+    def _compile(self, args, allowed, question, deadline, names=()) -> WriterResult | str:
         try:
             spec = parse_spec(args.get("spec") or {})
             check_catalog(spec, self.catalog)
@@ -276,6 +281,8 @@ class Writer:
             return str(e)
         spec = enforce_status_default(question, spec)
         if (err := period_error(question, spec)) is not None:
+            return err
+        if (err := missing_condition_error(question, spec, self._guard_index, names)) is not None:
             return err
         statuses = {(k, v): grounding_status(v, k, allowed, question, self._exists)
                     for k, v in entity_values(spec)}
