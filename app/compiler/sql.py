@@ -380,8 +380,10 @@ WHERE d.deal_id = {int(s.deal_id)}""")
 
 def _compile_contract(s: ContractLookup) -> Compiled:
     cid = int(s.contract_id)
-    return Compiled(f"""SELECT c.contract_id, c.product_name, c.product_canonical, c.unit, c.lot, c.currency,
-       c.base_price, c.region, c.contract_type, c.contract_form, c.trade_type, c.payment_term_days,
+    return Compiled(f"""SELECT c.contract_id, c.product_name, c.product_canonical, c.product_family,
+       c.brand, c.size, c.grade, c.product_type, c.product_class, c.hs_code, c.product_group, c.category, c.industry,
+       c.unit, c.lot, c.currency, c.base_price, c.deposit_pct, c.delivery_basis, c.packaging,
+       c.region, c.warehouse_address, c.contract_type, c.contract_form, c.trade_type, c.payment_term_days,
        c.delivery_term_days, c.registered_date, c.valid_until, c.seller_inn, p.name AS seller_name,
        (SELECT COUNT(*) FROM deals d WHERE d.contract_id = {cid}) AS deals_all,
        (SELECT COUNT(*) FROM deals d WHERE d.contract_id = {cid} AND NOT d.is_cancelled) AS deals_valid,
@@ -393,14 +395,43 @@ FROM contracts c LEFT JOIN participants p ON p.inn = c.seller_inn
 WHERE c.contract_id = {cid}""")
 
 
+def _compile_participant(s: ParticipantLookup) -> Compiled:
+    inn = lit(s.inn)
+    return Compiled(f"""SELECT p.inn, p.name, p.region, p.activity, p.role, p.vat_payer,
+       p.deals_as_buyer, p.deals_as_seller,
+       (SELECT COUNT(*) FROM deals d WHERE d.buyer_inn = {inn} AND NOT d.is_cancelled) AS deals_as_buyer_valid,
+       (SELECT COUNT(*) FROM deals d WHERE d.seller_inn = {inn} AND NOT d.is_cancelled) AS deals_as_seller_valid,
+       (SELECT SUM(d.amount_uzs) FROM deals d WHERE d.buyer_inn = {inn} AND NOT d.is_cancelled) AS bought_uzs_valid,
+       (SELECT SUM(d.amount_uzs) FROM deals d WHERE d.seller_inn = {inn} AND NOT d.is_cancelled) AS sold_uzs_valid,
+       (SELECT MIN(d.deal_date) FROM deals d WHERE d.buyer_inn = {inn} OR d.seller_inn = {inn}) AS first_deal_date,
+       (SELECT MAX(d.deal_date) FROM deals d WHERE d.buyer_inn = {inn} OR d.seller_inn = {inn}) AS last_deal_date
+FROM participants p WHERE p.inn = {inn}""")
+
+
+def _compile_broker(s: BrokerLookup) -> Compiled:
+    code = lit(s.broker_code)
+    return Compiled(f"""SELECT b.broker_code, b.name, b.inn, b.region, b.deals_as_seller_broker, b.deals_as_buyer_broker,
+       (SELECT COUNT(*) FROM deals d WHERE d.seller_broker = {code} AND NOT d.is_cancelled)
+          AS deals_as_seller_broker_valid,
+       (SELECT COUNT(*) FROM deals d WHERE d.buyer_broker = {code} AND NOT d.is_cancelled)
+          AS deals_as_buyer_broker_valid,
+       (SELECT COUNT(*) FROM deals d WHERE d.seller_broker = {code} OR d.buyer_broker = {code}) AS deals_either_side
+FROM brokers b WHERE b.broker_code = {code}""")
+
+
 def _compile_rate(s: UsdRate) -> Compiled:
     if s.date is not None:
         return Compiled(f"SELECT rate_date, rate FROM usd_rates WHERE rate_date = DATE {lit(s.date.isoformat())}")
     where = [f"year(rate_date) = {int(s.year)}"]
     if s.month is not None:
         where.append(f"month(rate_date) = {int(s.month)}")
+    w = " AND ".join(where)
+    if s.extreme is not None:
+        fn = "MIN" if s.extreme == "min" else "MAX"
+        return Compiled(f"SELECT rate_date, rate FROM usd_rates WHERE {w} "
+                        f"AND rate = (SELECT {fn}(rate) FROM usd_rates WHERE {w}) ORDER BY rate_date")
     return Compiled("SELECT AVG(rate) AS avg_rate, MIN(rate) AS min_rate, MAX(rate) AS max_rate, "
-                    f"COUNT(*) AS days FROM usd_rates WHERE {' AND '.join(where)}")
+                    f"COUNT(*) AS days FROM usd_rates WHERE {w}")
 
 
 def _compile_registry(s: RegistryCount) -> Compiled:
@@ -410,10 +441,22 @@ def _compile_registry(s: RegistryCount) -> Compiled:
             where.append(f"role = {lit(s.role)}")
         if s.vat_payer is not None:
             where.append("vat_payer" if s.vat_payer else "NOT vat_payer")
+        if s.activity:
+            where.append(f"activity = {lit(s.activity)}")
     if s.region:
         where.append(f"region = {lit(s.region)}")
-    if s.entity == "contracts" and s.registered_year is not None:
-        where.append(f"year(registered_date) = {int(s.registered_year)}")
+    if s.entity == "contracts":
+        if s.registered_year is not None:
+            where.append(f"year(registered_date) = {int(s.registered_year)}")
+        if s.products:
+            where.append(_in("product_canonical", s.products))
+        if s.contract_form:
+            where.append(f"contract_form = {lit(s.contract_form)}")
+        if s.seller_inn:
+            where.append(f"seller_inn = {lit(s.seller_inn)}")
+        if s.active_on is not None:
+            d = lit(s.active_on.isoformat())
+            where.append(f"registered_date <= DATE {d} AND valid_until >= DATE {d}")
     where_sql = (" WHERE " + " AND ".join(where)) if where else ""
     return Compiled(f"SELECT COUNT(*) AS {s.entity} FROM {s.entity}{where_sql}")
 
@@ -425,6 +468,10 @@ def compile_spec(spec: Spec) -> Compiled:
         return _compile_deal(spec)
     if isinstance(spec, ContractLookup):
         return _compile_contract(spec)
+    if isinstance(spec, ParticipantLookup):
+        return _compile_participant(spec)
+    if isinstance(spec, BrokerLookup):
+        return _compile_broker(spec)
     if isinstance(spec, UsdRate):
         return _compile_rate(spec)
     if isinstance(spec, RegistryCount):

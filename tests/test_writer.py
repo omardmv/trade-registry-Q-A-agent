@@ -539,3 +539,17 @@ def test_share_pct_alone_not_forced_to_split(parts):
     writer, _ = make(parts, [call("compile_query", spec=spec, assumptions=[])])
     res = writer.run("Какая доля форвардных сделок в 2024 году?", "ru", deadline())
     assert res.status == "ok" and res.result.columns == ["share_pct"]
+
+
+def test_participant_lookup_inn_from_question(parts):
+    writer, _ = make(parts, [call("compile_query", spec={"kind": "participant_lookup", "inn": "915688255"},
+                                  assumptions=[])])
+    res = writer.run("В каком регионе зарегистрирована компания с ИНН 915688255?", "ru", deadline())
+    assert res.status == "ok" and "region" in res.result.columns
+
+
+def test_broker_lookup_unknown_code_rejected(parts):
+    writer, llm = make(parts, [call("compile_query", spec={"kind": "broker_lookup", "broker_code": "BK999"},
+                                    assumptions=[]), call("declare_unanswerable", reason="no broker")])
+    res = writer.run("Где находится брокер BK999?", "ru", deadline())
+    assert res.status == "unanswerable" and "BK999" in llm.chat.sent[1][1][0][1]["error"]
