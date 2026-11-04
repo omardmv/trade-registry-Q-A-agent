@@ -197,3 +197,45 @@ def test_second_review_accepted(sql):
 def test_column_list_aliases_rejected(sql):
     r = v(sql)
     assert not r.ok and any("column-list" in e for e in r.errors)
+
+
+REJECTED_3 = [
+    "SELECT count_if(product_name_full ILIKE '%хлоп%') FROM deals",
+    "SELECT countif(name LIKE '%x%') FROM participants",
+    "SELECT sum(contains(name, 'x')::INT) FROM participants",
+    "SELECT count_if(region = 'Atlantis') FROM deals",
+    "SELECT sum(region = 'Atlantis') FROM deals",
+    "SELECT bool_or(region = 'Atlantis') FROM deals",
+    # mixed currency
+    "SELECT currency, SUM(amount) FROM deals GROUP BY currency UNION ALL SELECT 'all', SUM(amount) FROM deals",
+    "SELECT (SELECT SUM(amount) FROM deals WHERE currency = 'UZS') + (SELECT SUM(amount) FROM deals)",
+    "WITH a AS (SELECT currency, SUM(amount) AS s FROM deals GROUP BY currency) SELECT SUM(amount) FROM deals",
+    "SELECT SUM(amount) FROM deals WHERE year IN (SELECT year FROM deals WHERE currency = 'UZS')",
+    # whole-row / COLUMNS
+    "SELECT 1 FROM deals WHERE COLUMNS('.*name.*') ILIKE '%x%'",
+    "SELECT 1 FROM deals WHERE deals::VARCHAR LIKE '%x%'",
+    "SELECT to_json(deals) FROM deals",
+    # empty literal
+    "SELECT 1 FROM deals WHERE region = ''",
+]
+
+
+@pytest.mark.parametrize("sql", REJECTED_3)
+def test_third_review_rejected(sql):
+    assert not v(sql, allowed={"Samarqand viloyati"}).ok
+
+
+ACCEPTED_3 = [
+    "SELECT count_if(region = 'Samarqand viloyati') FROM deals",
+    "SELECT SUM(amount) FILTER (WHERE currency = 'UZS') FROM deals",
+    "SELECT p.name, d.buyer_inn, SUM(d.amount_uzs) FROM deals d JOIN participants p ON p.inn = d.buyer_inn "
+    "GROUP BY p.name, d.buyer_inn ORDER BY 3 DESC",
+    "SELECT COUNT(DISTINCT buyer_inn) FROM deals",
+    "SELECT SUM(d.amount) FROM deals d WHERE d.currency = 'USD'",
+]
+
+
+@pytest.mark.parametrize("sql", ACCEPTED_3)
+def test_third_review_accepted(sql):
+    r = v(sql, allowed={"Samarqand viloyati"})
+    assert r.ok, r.errors

@@ -16,6 +16,7 @@ BLOCKED_FUNCTIONS = {"glob", "getenv", "current_setting", "query", "query_table"
 FORBIDDEN_NODES = tuple(getattr(exp, n) for n in
                         ("Insert", "Update", "Delete", "Create", "Drop", "Alter", "Command", "Copy")
                         if hasattr(exp, n))
+_WHOLE_ROW_ERR = "whole-row and COLUMNS() expressions are not allowed"
 _WRAPPERS = (exp.Lower, exp.Upper, exp.Trim, exp.Paren)
 _ID_LITERAL = re.compile(r"\d{9}|BK\d{3}")
 
@@ -64,26 +65,35 @@ def validate_sql(sql: str, allowed: set[str], question: str, db: Database | None
         if fname.startswith("read_") or fname.endswith("_scan") or fname in BLOCKED_FUNCTIONS:
             errors.append(f"function {fname} is not allowed")
 
-    roots = _filter_roots(stmt)
     aliases = _alias_bases(stmt)
 
     def bases(col: exp.Column) -> set[str]:
         return aliases.get(_n(col), set()) | {_n(col)}
 
-    for root in roots:
-        for col in root.find_all(exp.Column):
-            hit = bases(col) & NAME_COLUMNS
-            if hit:
-                errors.append(f"do not filter by {sorted(hit)[0]} text; call resolve() and filter by inn / "
-                              "broker_code / product_canonical / region")
+    if stmt.find(exp.Columns) or any(
+            isinstance(f, exp.Anonymous) and f.name.lower() == "columns" for f in stmt.find_all(exp.Func)):
+        errors.append(_WHOLE_ROW_ERR)
+    table_names = KNOWN_TABLES | ctes | {t.alias_or_name.lower() for t in stmt.find_all(exp.Table)}
+
     known = {a.casefold() for a in allowed}
     q = question.casefold()
 
     def unresolved(value: str) -> bool:
-        return value.casefold() not in known and value.casefold() not in q
+        return value == "" or (value.casefold() not in known and value.casefold() not in q)
 
     for col in stmt.find_all(exp.Column):
-        if not _in_filter(col):
+        if isinstance(col.this, exp.Star):
+            continue
+        if not col.table and _n(col) in table_names:
+            errors.append(_WHOLE_ROW_ERR)
+            continue
+        bare = _is_bare_item(col)
+        hit = bases(col) & NAME_COLUMNS
+        if hit and not bare and not _is_join_equality(col):
+            errors.append(f"do not filter by {sorted(hit)[0]} text; call resolve() and filter by inn / "
+                          "broker_code / product_canonical / region")
+            continue
+        if bare or _is_count_arg(col):
             continue
         via_alias = sorted((bases(col) - {_n(col)}) & RESOLVED_COLUMNS)
         if via_alias:
@@ -105,11 +115,13 @@ def validate_sql(sql: str, allowed: set[str], question: str, db: Database | None
             if _ID_LITERAL.fullmatch(str(lit.this)) and unresolved(str(lit.this)):
                 errors.append(f"ID {str(lit.this)!r} was not returned by resolve() in this request")
 
-    money = set()
-    for a in stmt.find_all(exp.AggFunc):
-        for c in a.find_all(exp.Column):
-            money |= bases(c) & MONEY_COLUMNS
-    if money and not _has_currency_scope(stmt, aliases):
+    money: set[str] = set()
+    for agg in stmt.find_all(exp.AggFunc):
+        hit = set().union(*(bases(c) for c in agg.find_all(exp.Column))) & MONEY_COLUMNS if agg.find(exp.Column) \
+            else set()
+        if hit and not _agg_has_currency_scope(agg, aliases):
+            money |= hit
+    if money:
         errors.append(f"{', '.join(sorted(money))} is in the contract currency; use amount_uzs / amount_usd "
                       "or group/filter by currency")
 
@@ -159,28 +171,35 @@ def _alias_bases(stmt: exp.Expression) -> dict[str, set[str]]:
     return result
 
 
-def _filter_roots(stmt: exp.Expression) -> list[exp.Expression]:
-    roots: list[exp.Expression] = list(stmt.find_all(exp.Where, exp.Having, exp.Qualify))
-    roots += [j.args["on"] for j in stmt.find_all(exp.Join) if j.args.get("on") is not None]
-    roots += [i.this for i in stmt.find_all(exp.If) if i.this is not None]
-    roots += [c.this for c in stmt.find_all(exp.Case) if c.this is not None]
-    return roots
-
-
-def _in_filter(col: exp.Column) -> bool:
+def _is_bare_item(col: exp.Column) -> bool:
+    """Bare column used as a SELECT item (optionally aliased), GROUP BY item or ORDER BY item."""
     node: exp.Expression = col
-    while node.parent is not None:
-        p = node.parent
-        if isinstance(p, (exp.Where, exp.Having, exp.Qualify)):
-            return True
-        if isinstance(p, exp.Join) and p.args.get("on") is node:
-            return True
-        if isinstance(p, (exp.If, exp.Case)) and p.this is node:
-            return True
-        if isinstance(p, exp.Select):
-            return False
-        node = p
-    return False
+    if isinstance(node.parent, exp.Alias) and node.parent.this is node:
+        node = node.parent
+    p = node.parent
+    if isinstance(p, exp.Select):
+        return node.arg_key == "expressions"
+    if isinstance(p, exp.Group):
+        return node.arg_key == "expressions"
+    return isinstance(p, exp.Ordered) and isinstance(p.parent, exp.Order)
+
+
+def _is_count_arg(col: exp.Column) -> bool:
+    p = col.parent
+    if isinstance(p, exp.Distinct) and isinstance(p.parent, exp.Count):
+        return True
+    return isinstance(p, exp.Count)
+
+
+def _is_join_equality(col: exp.Column) -> bool:
+    p = col.parent
+    if not (isinstance(p, exp.EQ) and isinstance(p.this, exp.Column)
+            and isinstance(p.args.get("expression"), exp.Column)):
+        return False
+    node: exp.Expression = p
+    while isinstance(node.parent, (exp.And, exp.Paren)):
+        node = node.parent
+    return isinstance(node.parent, exp.Join) and node.parent.args.get("on") is node
 
 
 def _unwrap(node: exp.Expression) -> exp.Expression:
@@ -222,33 +241,48 @@ def _conjuncts(e: exp.Expression):
         yield e
 
 
-def _has_currency_scope(stmt: exp.Expression, aliases: dict[str, set[str]]) -> bool:
-    def is_currency(name: str) -> bool:
-        return name == "currency" or "currency" in aliases.get(name, set())
-
-    for g in stmt.find_all(exp.Group):
-        select = g.parent if isinstance(g.parent, exp.Select) else None
-        for e in g.expressions:
-            if any(is_currency(c.name.lower()) for c in e.find_all(exp.Column)):
-                return True
-            if isinstance(e, exp.Literal) and not e.is_string and select is not None and e.this.isdigit():
-                idx = int(e.this) - 1
-                if 0 <= idx < len(select.expressions) and any(
-                        is_currency(c.name.lower()) for c in select.expressions[idx].find_all(exp.Column)):
-                    return True
-        if g.args.get("all") and select is not None and any(
-                isinstance(_strip_alias(x), exp.Column) and is_currency(_strip_alias(x).name.lower())
-                for x in select.expressions):
+def _is_currency_filter(e: exp.Expression | None) -> bool:
+    """Top-level AND conjunct `currency = 'UZS'|'USD'` in a WHERE expression."""
+    if e is None:
+        return False
+    for c in _conjuncts(e):
+        if not isinstance(c, exp.EQ):
+            continue
+        sides = [_unwrap(x) for x in (c.this, c.args.get("expression"))]
+        if any(isinstance(x, exp.Column) and x.name.lower() == "currency" for x in sides) and any(
+                isinstance(x, exp.Literal) and x.is_string and x.this.upper() in {"UZS", "USD"} for x in sides):
             return True
-    for where in stmt.find_all(exp.Where):
-        for c in _conjuncts(where.this):
-            if not isinstance(c, exp.EQ):
-                continue
-            sides = [_unwrap(x) for x in (c.this, c.args.get("expression"))]
-            if any(isinstance(x, exp.Column) and x.name.lower() == "currency" for x in sides) and any(
-                    isinstance(x, exp.Literal) and x.is_string and x.this.upper() in {"UZS", "USD"}
-                    for x in sides):
+    return False
+
+
+def _agg_has_currency_scope(agg: exp.Expression, aliases: dict[str, set[str]]) -> bool:
+    if isinstance(agg.parent, exp.Filter) and _is_currency_filter(agg.parent.expression.this):
+        return True
+    select = agg.find_ancestor(exp.Select)
+    if select is None:
+        return False
+
+    def is_currency(c: exp.Column) -> bool:
+        n = c.name.lower()
+        return n == "currency" or "currency" in aliases.get(n, set())
+
+    where = select.args.get("where")
+    if where is not None and _is_currency_filter(where.this):
+        return True
+    group = select.args.get("group")
+    if group is None:
+        return False
+    for e in group.expressions:
+        if any(is_currency(c) for c in e.find_all(exp.Column)):
+            return True
+        if isinstance(e, exp.Literal) and not e.is_string and e.this.isdigit():
+            idx = int(e.this) - 1
+            if 0 <= idx < len(select.expressions) and any(
+                    is_currency(c) for c in select.expressions[idx].find_all(exp.Column)):
                 return True
+    if group.args.get("all"):
+        return any(isinstance(_strip_alias(x), exp.Column) and is_currency(_strip_alias(x))
+                   for x in select.expressions)
     return False
 
 
