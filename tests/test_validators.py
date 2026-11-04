@@ -188,3 +188,12 @@ ACCEPTED_2 = [
 def test_second_review_accepted(sql):
     r = v(sql, allowed={"Samarqand viloyati"})
     assert r.ok, r.errors
+
+
+@pytest.mark.parametrize("sql", [
+    "WITH t(a) AS (SELECT amount FROM deals) SELECT SUM(a) FROM t",
+    "SELECT * FROM (SELECT name FROM participants) AS x(n) WHERE n = 'x'",
+])
+def test_column_list_aliases_rejected(sql):
+    r = v(sql)
+    assert not r.ok and any("column-list" in e for e in r.errors)

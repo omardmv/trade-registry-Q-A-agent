@@ -55,6 +55,8 @@ def validate_sql(sql: str, allowed: set[str], question: str, db: Database | None
         name = t.name.lower()
         if name not in KNOWN_TABLES | ctes:
             errors.append(f"unknown table {t.name!r}; tables: {', '.join(sorted(KNOWN_TABLES))}")
+    if any(ta.args.get("columns") for ta in stmt.find_all(exp.TableAlias)):
+        errors.append("column-list aliases are not allowed; alias columns inside the SELECT instead")
     if stmt.find(exp.Lateral):
         errors.append("LATERAL is not allowed")
     for f in stmt.find_all(exp.Func):
