@@ -120,3 +120,64 @@ def test_broker_side_is_not_a_ranking(index):
     spec = {"kind": "deals_aggregate", "measures": ["deal_count"], "group_by": "broker_side",
             "filters": {"brokers": ["BK045"]}}
     assert err(index, "Минимально сколько сделок у BK045 как брокера продавца и покупателя?", spec) is None
+
+
+@pytest.mark.parametrize("q,family", [("Сколько сделок с химической продукцией в 2024?", "Химическая продукция"),
+                                       ("Сколько строительных материалов продано в 2024?", "Строительные материалы"),
+                                       ("Сколько сделок с нефтепродуктами в 2024?", "Нефтепродукты"),
+                                       ("Сколько сделок по металлопродукции в 2024?", "Металлопродукция"),
+                                       ("Сколько сделок по машиностроению в 2024?", "Машиностроение")])
+def test_product_family_covers_same_named_category(index, q, family):
+    spec = {**AGG, "filters": {"year": 2024, "product_family": family}}
+    assert err(index, q, spec, names=[family]) is None
+    assert err(index, q, spec) is None
+
+
+def test_category_word_requires_category_filter(index):
+    q = "Сколько сделок в категории «Нефтепродукты» в 2024?"
+    assert "categories" in err(index, q, {**AGG, "filters": {"year": 2024, "product_family": "Нефтепродукты"}},
+                               names=["Нефтепродукты"])
+
+
+def test_strip_names_tolerates_inflection(index):
+    q = "Сколько сделок у компании Транспорт Кластера в 2024?"
+    assert err(index, q, AGG, names=["Transport Klaster MChJ"]) is None
+
+
+@pytest.mark.parametrize("q,value", [
+    ("2024 yilda qurilish materiallari bo'yicha nechta bitim bo'lgan?", "Строительные материалы"),
+    ("Nechta transport kompaniyasi ro'yxatdan o'tgan?", "Транспортная компания"),
+    ("Нечта транспорт компанияси бор?", "Транспортная компания"),
+    ("oziq-ovqat sanoati bitimlari soni 2024 yilda?", "Пищевая промышленность"),
+    ("qoplarda sotilgan tovarlar bitimlari soni?", "в мешках"),
+    ("Ingliz auksionida nechta bitim tuzilgan?", "Английский аукцион"),
+    ("Сколько спотовых сделок было в 2024?", "Спот"),
+    ("Сколько компаний-производителей в реестре?", "Производитель"),
+    ("Сколько сделок со статусом «Оплачен» в 2024?", "Оплачен"),
+])
+def test_synonyms_and_short_forms_detected(index, q, value):
+    assert value in {v.value for v in mentioned_values(q, index)}, q
+
+
+def test_generic_words_without_context_still_ignored(index):
+    assert err(index, "Кто крупнейший производитель цемента в 2024?",
+               {"kind": "deals_aggregate", "measures": ["amount_uzs"], "group_by": "seller",
+                "filters": {"year": 2024}}) is None
+    assert err(index, "Сколько сделок оплачено в 2024 году?", AGG) is None
+
+
+@pytest.mark.parametrize("q", ["Минимальная и максимальная цена по каждому товару в 2024?",
+                               "eng past va eng yuqori narx har bir tovar bo'yicha"])
+def test_least_cue_skipped_for_each_and_min_max(index, q):
+    spec = {"kind": "deals_aggregate", "measures": ["min_unit_price_uzs", "max_unit_price_uzs"], "group_by": "product",
+            "top": 20, "filters": {"year": 2024}}
+    assert err(index, q, spec) is None
+    assert err(index, "Минимальная цена у какого продавца?", {**spec, "measures": ["min_unit_price_uzs"]}) is None
+
+
+def test_named_value_requires_that_value(index):
+    q = "Сколько форвардных сделок было в 2024 году?"
+    assert "Форвард" in err(index, q, {**AGG, "filters": {"year": 2024, "contract_form": "Спот"}})
+    # two values of a single-valued field named: setting one of them is a valid reading
+    q2 = "Сколько сделок по хлопку-сырцу (спот) в форме «Форвард»?"
+    assert err(index, q2, {**AGG, "filters": {"products": ["Хлопок-сырец"], "contract_form": "Форвард"}}) is None

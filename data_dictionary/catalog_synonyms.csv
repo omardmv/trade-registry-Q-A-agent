@@ -1,0 +1,50 @@
+field,value,synonyms
+activity,Торговая компания,savdo kompaniyasi;савдо компанияси;savdo korxonasi;торговая фирма
+activity,Перерабатывающее предприятие,qayta ishlash korxonasi;қайта ишлаш корхонаси;переработчик
+activity,Транспортная компания,transport kompaniyasi;транспорт компанияси;transport korxonasi;транспорт корхонаси
+activity,Производственное предприятие,ishlab chiqarish korxonasi;ишлаб чиқариш корхонаси
+activity,Строительная компания,qurilish kompaniyasi;қурилиш компанияси;qurilish korxonasi
+activity,Производитель,ishlab chiqaruvchi;ишлаб чиқарувчи
+activity,Кластер,klaster
+category,Сельскохозяйственная продукция,qishloq xo‘jaligi mahsulotlari;қишлоқ хўжалиги маҳсулотлари;сельхозпродукция
+category,Продовольственные товары,oziq-ovqat mahsulotlari;oziq-ovqat tovarlari;озиқ-овқат маҳсулотлари;продовольствие
+category,Строительные материалы,qurilish materiallari;қурилиш материаллари;стройматериалы
+category,Нефтепродукты,neft mahsulotlari;нефт маҳсулотлари
+category,Химическая продукция,kimyo mahsulotlari;kimyoviy mahsulotlar;кимё маҳсулотлари
+category,Металлопродукция,metall mahsulotlari;металл маҳсулотлари
+category,Промышленные товары,sanoat tovarlari;саноат товарлари
+category,Полимерная продукция,polimer mahsulotlari;полимер маҳсулотлари
+industry,Сельское хозяйство,qishloq xo‘jaligi;қишлоқ хўжалиги
+industry,Пищевая промышленность,oziq-ovqat sanoati;озиқ-овқат саноати
+industry,Строительная индустрия,qurilish sanoati;қурилиш саноати
+industry,Нефтегазовая промышленность,neft-gaz sanoati;neft va gaz sanoati;нефт-газ саноати
+industry,Химическая промышленность,kimyo sanoati;кимё саноати
+industry,Металлургия,metallurgiya
+industry,Лесная промышленность,o‘rmon sanoati;ўрмон саноати;yog‘och sanoati
+industry,Текстильная промышленность,to‘qimachilik sanoati;тўқимачилик саноати
+industry,Машиностроение,mashinasozlik;машинасозлик
+industry,Электротехническая промышленность,elektrotexnika sanoati;электротехника саноати
+packaging,навалом,to‘kma holda;тўкма ҳолда;sochma
+packaging,в мешках,qoplarda;қопларда;qopda
+packaging,в мешках по 50 кг,50 kg li qoplarda;50 kg qoplarda;50 кг ли қопларда
+packaging,в мешках по 25 кг,25 kg li qoplarda;25 kg qoplarda;25 кг ли қопларда
+packaging,в цистернах,sisternalarda;цистерналарда
+packaging,в бутылках,shishalarda;butilkalarda;шишаларда
+packaging,в пакетах,paketlarda;пакетларда
+packaging,в баллонах,ballonlarda;баллонларда
+packaging,в коробках,qutilarda;коробкаларда;қутиларда
+packaging,в ящиках,yashiklarda;яшикларда
+packaging,в мотках,o‘ramlarda;ўрамларда
+packaging,в банках,bankalarda;банкаларда
+packaging,на поддонах,poddonlarda;поддонларда
+packaging,на барабанах,barabanlarda;барабанларда
+packaging,в сосудах Дьюара,dyuar idishlarida;дьюар идишларида
+packaging,в упаковках по 12 шт,12 tadan qadoqlarda;12 тадан қадоқларда
+trade_type,Английский аукцион,ingliz auksioni;инглиз аукциони
+trade_type,Обратный аукцион,teskari auksion;тескари аукцион
+trade_type,Двусторонний аукцион,ikki tomonlama auksion;икки томонлама аукцион
+contract_form,Спот,spot
+contract_form,Форвард,forvard
+contract_form,Фьючерс,fyuchers;fyuchyers;фючерс;futures
+contract_type,Экспортный,eksport;экспорт;экспорт
+contract_type,Внутренний,ichki;ички
