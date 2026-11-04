@@ -53,7 +53,7 @@ The tests run offline. Before relying on the service, check it against the real 
 | Env | Default | Meaning |
 |---|---|---|
 | `GEMINI_API_KEY` | none | required |
-| `GEMINI_MODEL` | `gemini-2.5-flash` | model for planning and answer writing |
+| `GEMINI_MODEL` | `gemini-3.5-flash` | model for planning and answer writing |
 | `GEMINI_THINKING_BUDGET` | `1024` | thinking tokens per Gemini call |
 | `UZEX_DEADLINE_S` | `75` | hard deadline per question |
 | `UZEX_LLM_TIMEOUT_S` | `15` | per-call LLM timeout |

@@ -28,7 +28,7 @@ def test_plain_converts_nested():
 
 
 def test_gemini_config_builds_offline():
-    llm = GeminiLLM("dummy-key", "gemini-2.5-flash", 5)
+    llm = GeminiLLM("dummy-key", "gemini-3.5-flash", 5)
     chat = llm.start_chat("sys", [ToolSpec("t", "desc", SCHEMA)])
     assert isinstance(chat, GeminiChat)
     decl = chat._config.tools[0].function_declarations[0]
@@ -148,7 +148,7 @@ from app.agent.llm import call_with_retry, is_transient
 def test_thinking_budget_in_both_configs(monkeypatch):
     from app import config
     assert config.GEMINI_THINKING_BUDGET == 1024
-    llm = GeminiLLM("dummy-key", "gemini-2.5-flash", 5)
+    llm = GeminiLLM("dummy-key", "gemini-3.5-flash", 5)
     chat = llm.start_chat("sys", [ToolSpec("t", "desc", SCHEMA)])
     assert chat._config.thinking_config.thinking_budget == 1024
     seen = {}
