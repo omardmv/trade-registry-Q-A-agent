@@ -11,7 +11,7 @@ KNOWN_TABLES = {"deals", "contracts", "participants", "brokers", "usd_rates", "p
 NAME_COLUMNS = {"name", "name_norm", "product_name", "product_name_full", "warehouse_address"}
 MONEY_COLUMNS = {"amount", "start_price", "unit_price", "base_price"}
 RESOLVED_COLUMNS = {"product_canonical", "product_family", "region", "seller_inn", "buyer_inn", "inn",
-                    "seller_broker", "buyer_broker", "broker_code"}
+                    "seller_broker", "buyer_broker", "broker_code", "contract_id", "deal_id"}
 BLOCKED_FUNCTIONS = {"glob", "getenv", "current_setting", "query", "query_table", "sniff_csv"}
 FORBIDDEN_NODES = tuple(getattr(exp, n) for n in
                         ("Insert", "Update", "Delete", "Create", "Drop", "Alter", "Command", "Copy")
@@ -21,24 +21,32 @@ _WRAPPERS = (exp.Lower, exp.Upper, exp.Trim, exp.Paren)
 _ID_LITERAL = re.compile(r"\d{9}|BK\d{3}")
 
 
-_NAME_KINDS = {"product", "region"}
+_NAME_KINDS = {"product", "product_family", "region"}
+_ID_SHAPE = {"inn": r"\d{9}", "broker": r"BK\d{3}", "contract": r"\d{6}", "deal": r"\d{6}"}
 
 
-def is_grounded(value: str, kind: str, allowed: set[str], question: str) -> bool:
-    """product/region values must come from resolve(); ids may also appear as whole tokens in the question."""
+def is_grounded(value: str, kind: str, allowed: set[tuple[str, str]], question: str) -> bool:
+    """allowed holds (kind, value) pairs from resolve(). Names need the exact pair; ids may also appear as
+    whole tokens of the right shape in the question."""
     value = str(value)
     if value.strip() == "":
         return False
-    if value in allowed or value.casefold() in {a.casefold() for a in allowed}:
+    if kind == "broker":
+        value = value.upper()
+    if (kind, value) in allowed:
         return True
     if kind in _NAME_KINDS:
+        return False
+    shape = _ID_SHAPE[kind]
+    if not re.fullmatch(shape, value, re.I):
         return False
     return re.search(rf"(?<![\w]){re.escape(value)}(?![\w])", question, re.I) is not None
 
 
-_COLUMN_KIND = {"product_canonical": "product", "product_family": "product", "region": "region",
+_COLUMN_KIND = {"product_canonical": "product", "product_family": "product_family", "region": "region",
                 "seller_inn": "inn", "buyer_inn": "inn", "inn": "inn",
-                "seller_broker": "broker", "buyer_broker": "broker", "broker_code": "broker"}
+                "seller_broker": "broker", "buyer_broker": "broker", "broker_code": "broker",
+                "contract_id": "contract", "deal_id": "deal"}
 
 
 @dataclass
@@ -48,7 +56,7 @@ class Validation:
     errors: list[str] = field(default_factory=list)
 
 
-def validate_sql(sql: str, allowed: set[str], question: str, db: Database | None = None,
+def validate_sql(sql: str, allowed: set[tuple[str, str]], question: str, db: Database | None = None,
                  check_ids: bool = True, row_limit: int = 1000) -> Validation:
     sql = sql.strip().rstrip(";").strip()
     try:
@@ -129,7 +137,8 @@ def validate_sql(sql: str, allowed: set[str], question: str, db: Database | None
         for lit in stmt.find_all(exp.Literal):
             if isinstance(lit.parent, (exp.Limit, exp.Offset, exp.Fetch)):
                 continue
-            if _ID_LITERAL.fullmatch(str(lit.this)) and unresolved(str(lit.this), "broker" if str(lit.this).startswith("BK") else "inn"):
+            if _ID_LITERAL.fullmatch(str(lit.this)) and unresolved(
+                    str(lit.this), "broker" if str(lit.this).startswith("BK") else "inn"):
                 errors.append(f"ID {str(lit.this)!r} was not returned by resolve() in this request")
 
     money: set[str] = set()

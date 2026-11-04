@@ -89,6 +89,9 @@ Steps:
 """
 
 
+_KIND = {"company": "inn"}
+
+
 def _json(value):
     """Recursively make a value JSON-safe (dates -> ISO strings, Decimal -> float)."""
     if isinstance(value, dict):
@@ -120,7 +123,7 @@ class Writer:
         self.max_tool_calls, self.max_fixes = max_tool_calls, max_fixes
 
     def run(self, question: str, lang: str, deadline: float, previous: dict | None = None) -> WriterResult:
-        allowed: set[str] = set()
+        allowed: set[tuple[str, str]] = set()
         trace: list[dict] = []
         calls = fixes = 0
         nudged = False
@@ -225,7 +228,7 @@ class Writer:
     def _tool(self, name, args, allowed, question, deadline) -> dict:
         if name == "resolve":
             cands = self.resolver.resolve(args["kind"], str(args["text"]))
-            allowed.update(c.id for c in cands)
+            allowed.update((_KIND.get(c.kind, c.kind), c.id) for c in cands)
             return {"candidates": [_json(asdict(c)) for c in cands]}
         if name == "get_examples":
             exs = self.examples.search(str(args.get("question") or question))

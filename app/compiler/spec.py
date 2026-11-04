@@ -312,7 +312,7 @@ def entity_values(spec: Spec) -> set[tuple[str, str]]:
         out |= {("inn", v) for v in f.buyer_inns + f.seller_inns + f.participant_inns}
         out |= {("broker", v) for v in f.seller_brokers + f.buyer_brokers + f.brokers}
         if f.product_family:
-            out.add(("product", f.product_family))
+            out.add(("product_family", f.product_family))
         if f.contract_id is not None:
             out.add(("contract", str(f.contract_id)))
     elif isinstance(spec, RegistryCount) and spec.region:

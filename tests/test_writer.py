@@ -193,3 +193,43 @@ def test_sql_splits_filtered_to_axes(parts):
     writer, _ = make(parts, [call("submit_sql", sql=sql, splits=["bogus", "role", "currency", "measure"],
                                   assumptions=[])])
     assert writer.run("Средний срок?", "ru", deadline()).splits == ["role", "currency"]
+
+
+def _agg(**flt):
+    return {"kind": "deals_aggregate", "measures": ["deal_count"], "filters": {"year": 2025, **flt}}
+
+
+def test_region_exact_case_required(parts):
+    writer, llm = make(parts, [call("resolve", kind="region", text="Toshkent viloyati"),
+                               call("compile_query", spec=_agg(regions=["TOSHKENT VILOYATI"]), assumptions=[]),
+                               call("declare_unanswerable", reason="x")])
+    res = writer.run("Сделки в Toshkent viloyati", "ru", deadline())
+    assert res.status == "unanswerable" and "resolve" in _err(llm, 2)
+
+
+def test_free_sql_region_case_rejected(parts):
+    sql = "SELECT COUNT(*) AS n FROM deals WHERE region = 'TOSHKENT VILOYATI'"
+    writer, llm = make(parts, [call("resolve", kind="region", text="Toshkent viloyati"),
+                               call("submit_sql", sql=sql, splits=[], assumptions=[]),
+                               call("declare_unanswerable", reason="x")])
+    res = writer.run("Сделки в Toshkent viloyati", "ru", deadline())
+    assert res.status == "unanswerable" and "resolve" in _err(llm, 2)
+
+
+def test_product_family_kind_matters(parts):
+    fam = "Минеральные удобрения"
+    writer, llm = make(parts, [call("resolve", kind="product", text=fam),
+                               call("compile_query", spec=_agg(products=[fam]), assumptions=[]),
+                               call("compile_query", spec=_agg(product_family=fam), assumptions=[])])
+    res = writer.run("Сделки по минеральным удобрениям", "ru", deadline())
+    cands = llm.chat.sent[0 + 1][1][0][1]["candidates"]
+    assert any(c["kind"] == "product_family" and c["id"] == fam for c in cands), cands
+    assert "resolve" in _err(llm, 2)
+    assert res.status == "ok" and res.spec.filters.product_family == fam
+
+
+def test_contract_id_that_is_a_year_rejected(parts):
+    writer, llm = make(parts, [call("compile_query", spec=_agg(contract_id=2025), assumptions=[]),
+                               call("declare_unanswerable", reason="x")])
+    res = writer.run("Сколько сделок в 2025 году?", "ru", deadline())
+    assert res.status == "unanswerable" and "resolve" in _err(llm)

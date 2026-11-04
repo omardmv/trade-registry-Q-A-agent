@@ -2,7 +2,11 @@ from app.agent.validators import validate_sql
 
 
 def v(sql, allowed=frozenset(), question="", db=None, **kw):
-    return validate_sql(sql, set(allowed), question, db, **kw)
+    def pair(a):
+        if isinstance(a, tuple):
+            return a
+        return ("inn" if a.isdigit() else "broker" if a.startswith("BK") else "region", a)
+    return validate_sql(sql, {pair(a) for a in allowed}, question, db, **kw)
 
 
 def test_plain_select_ok_and_limit_added():
@@ -250,3 +254,21 @@ def test_inn_token_in_question_accepted_but_not_prefix():
     sql = "SELECT COUNT(*) FROM deals WHERE buyer_inn = '975923536'"
     assert validate_sql(sql, set(), "сделки 975923536 за год").ok
     assert not validate_sql(sql, set(), "сделки 9759235361 за год").ok
+
+
+@pytest.mark.parametrize("sql", [
+    "SELECT COUNT(*) FROM deals WHERE contract_id = 123456",
+    "SELECT COUNT(*) FROM contracts WHERE contract_id = 77777",
+    "SELECT COUNT(*) FROM deals WHERE deal_id = 5",
+])
+def test_contract_deal_ids_must_be_grounded(sql):
+    assert not v(sql, question="Сколько сделок?").ok
+
+
+def test_contract_id_in_question_accepted():
+    assert v("SELECT COUNT(*) FROM deals WHERE contract_id = 102267", question="сделки по 102267").ok
+
+
+def test_region_case_sensitive_exact():
+    sql = "SELECT COUNT(*) FROM deals WHERE region = 'TOSHKENT VILOYATI'"
+    assert not v(sql, allowed={("region", "Toshkent viloyati")}).ok
