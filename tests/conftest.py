@@ -9,3 +9,11 @@ def db_path(tmp_path_factory):
     path = tmp_path_factory.mktemp("db") / "uzex.duckdb"
     build(config.DATA_DIR, config.DICT_DIR, path)
     return path
+
+
+from app.db import Database
+
+
+@pytest.fixture(scope="session")
+def db(db_path):
+    return Database(db_path)
