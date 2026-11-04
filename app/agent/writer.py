@@ -5,7 +5,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Literal
 
 from app import config
-from app.agent.llm import LLM, ToolSpec
+from app.agent.llm import LLM, ToolSpec, call_with_retry
 from app.agent.validators import grounding_status, missing_message, validate_sql
 from app.compiler.spec import (CONTRACT_FORMS, CONTRACT_TYPES, DIMENSIONS, MEASURES, REGISTRY_ENTITIES, ROLES,
                                STATUS_SCOPES, STATUSES, TRADE_TYPES, Spec, SpecError, entity_values, parse_spec)
@@ -149,7 +149,7 @@ class Writer:
             if deadline - time.monotonic() < self.llm_timeout_s:
                 return None, failed("timeout")
             try:
-                return fn(*args), None
+                return call_with_retry(lambda: fn(*args), deadline, self.llm_timeout_s), None
             except Exception as e:  # LLMError or transport failure from the chat
                 return None, failed(f"llm error: {e}")
 

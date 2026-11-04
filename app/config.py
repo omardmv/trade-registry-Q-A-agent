@@ -10,6 +10,7 @@ SEMANTIC_PATH = ROOT / "app" / "semantic.yaml"
 
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_THINKING_BUDGET = int(os.environ.get("GEMINI_THINKING_BUDGET", "1024"))
 
 DEADLINE_S = float(os.environ.get("UZEX_DEADLINE_S", "75"))
 LLM_TIMEOUT_S = float(os.environ.get("UZEX_LLM_TIMEOUT_S", "15"))

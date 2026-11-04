@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from app import config
 from app.agent.writer import Writer, WriterResult
 from app.answer import templates
+from app.agent.llm import call_with_retry
 from app.answer.composer import compose
 from app.answer.verifier import verify_answer
 from app.compiler.explain import explain
@@ -126,9 +127,11 @@ class Pipeline:
             if deadline - time.monotonic() < self.llm_timeout_s:
                 break
             try:
-                text = compose(self.llm, question=question, lang=lang, sql=wr.sql, columns=result.columns,
-                               rows=result.rows, row_count=len(result.rows), truncated=result.truncated,
-                               splits=wr.splits, assumptions=assumptions, feedback=feedback)
+                text = call_with_retry(
+                    lambda: compose(self.llm, question=question, lang=lang, sql=wr.sql, columns=result.columns,
+                                    rows=result.rows, row_count=len(result.rows), truncated=result.truncated,
+                                    splits=wr.splits, assumptions=assumptions, feedback=feedback),
+                    deadline, self.llm_timeout_s)
             except Exception:
                 log.exception("composer failed")
                 break

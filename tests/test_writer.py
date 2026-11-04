@@ -293,3 +293,48 @@ def test_resolved_names_exposed(parts):
     res = writer.run("Сколько продала Pudexiz Plast в 2025?", "ru", deadline())
     assert any("Pudexiz" in n for n in res.resolved_names)
     assert any("хлоп" in n.lower() for n in res.resolved_names)
+
+
+# --- transient retry in the send path ---
+class FlakyChat:
+    def __init__(self, fail_times, sleep_s=0.0):
+        self.fail_times, self.sleep_s, self.calls = fail_times, sleep_s, 0
+
+    def send_text(self, text):
+        self.calls += 1
+        if self.calls <= self.fail_times:
+            time.sleep(self.sleep_s)
+            from google.genai import errors
+            raise errors.ServerError(503, {})
+        return call("declare_unanswerable", reason="x")
+
+
+class FlakyLLM:
+    def __init__(self, chat):
+        self.chat = chat
+
+    def start_chat(self, system, tools):
+        return self.chat
+
+
+def _flaky_writer(parts, chat, timeout):
+    db, resolver, examples, schema = parts
+    return Writer(FlakyLLM(chat), db, resolver, examples, schema, llm_timeout_s=timeout)
+
+
+def test_transient_error_retried_once(parts):
+    chat = FlakyChat(1)
+    res = _flaky_writer(parts, chat, 1.0).run("Q?", "ru", deadline())
+    assert res.status == "unanswerable" and chat.calls == 2
+
+
+def test_transient_error_not_retried_without_time(parts):
+    chat = FlakyChat(1, sleep_s=0.35)
+    res = _flaky_writer(parts, chat, 0.3).run("Q?", "ru", time.monotonic() + 0.5)
+    assert res.status == "failed" and chat.calls == 1
+
+
+def test_second_transient_error_fails(parts):
+    chat = FlakyChat(2)
+    res = _flaky_writer(parts, chat, 1.0).run("Q?", "ru", deadline())
+    assert res.status == "failed" and chat.calls == 2

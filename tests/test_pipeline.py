@@ -235,3 +235,35 @@ def test_known_names_reach_verifier():
     llm = FakeLLM(completions=["Больше всех купила Pakhtakor Agro: 5 т.", "5 т."])
     r = Pipeline(StubWriter(ok([(5.0,)], columns=("volume_t",))), llm, known_names=known).ask("Кто купил больше?")
     assert r.source == "llm" and r.answer == "5 т."
+
+
+def test_composer_transient_error_retried_once():
+    from google.genai import errors
+
+    class Flaky(FakeLLM):
+        n = 0
+
+        def complete(self, system, prompt):
+            Flaky.n += 1
+            if Flaky.n == 1:
+                raise errors.ServerError(503, {})
+            return super().complete(system, prompt)
+
+    llm = Flaky(completions=["Заключено 9 912 сделок."])
+    r = Pipeline(StubWriter(ok([(9912, 9300)])), llm).ask(Q)
+    assert r.source == "llm" and Flaky.n == 2
+
+
+def test_composer_transient_error_not_retried_without_time():
+    from google.genai import errors
+
+    class Slow(FakeLLM):
+        n = 0
+
+        def complete(self, system, prompt):
+            Slow.n += 1
+            time.sleep(0.7)
+            raise errors.ServerError(503, {})
+
+    r = Pipeline(StubWriter(ok([(9912, 9300)])), Slow(), deadline_s=1.0, llm_timeout_s=0.4).ask(Q)
+    assert r.source == "template" and Slow.n == 1

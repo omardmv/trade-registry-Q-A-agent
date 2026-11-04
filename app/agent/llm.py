@@ -1,9 +1,15 @@
 """LLM abstraction so the agent can be tested with scripted fakes; Gemini is the real backend."""
+import time
 from dataclasses import dataclass, field
-from collections.abc import Sequence
-from typing import Protocol
+from collections.abc import Callable, Sequence
+from typing import Protocol, TypeVar
 
 from pydantic import BaseModel
+
+from app import config
+
+T = TypeVar("T")
+_TRANSIENT_STATUS = {429, 500, 503}
 
 
 @dataclass
@@ -39,6 +45,29 @@ class LLMError(RuntimeError):
     """The model returned no usable content (blocked, empty, or malformed response)."""
 
 
+def is_transient(exc: BaseException) -> bool:
+    """HTTP 429/500/503 from the Gemini API, or a timeout."""
+    if isinstance(exc, TimeoutError):
+        return True
+    try:
+        from google.genai import errors
+        if isinstance(exc, errors.APIError) and getattr(exc, "code", None) in _TRANSIENT_STATUS:
+            return True
+    except ImportError:
+        pass
+    return type(exc).__name__ in {"ReadTimeout", "ConnectTimeout", "TimeoutException"}
+
+
+def call_with_retry(fn: Callable[[], T], deadline: float, timeout_s: float) -> T:
+    """Call fn; on a transient error retry once, but only if a full timeout_s still fits before deadline."""
+    try:
+        return fn()
+    except Exception as e:
+        if not is_transient(e) or deadline - time.monotonic() < timeout_s:
+            raise
+    return fn()
+
+
 def _plain(value):
     """Convert SDK map/sequence containers into plain dict/list; leave everything else as is."""
     if isinstance(value, (str, bytes, BaseModel)):
@@ -70,7 +99,8 @@ def _content_of(resp):
 
 
 class GeminiChat:
-    def __init__(self, client, model: str, system: str, tools: list[ToolSpec]):
+    def __init__(self, client, model: str, system: str, tools: list[ToolSpec],
+                 thinking_budget: int = config.GEMINI_THINKING_BUDGET):
         from google.genai import types
         self._types = types
         self._client = client
@@ -83,6 +113,7 @@ class GeminiChat:
                 types.FunctionDeclaration(name=t.name, description=t.description, parameters=t.parameters)
                 for t in tools])],
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+            thinking_config=types.ThinkingConfig(thinking_budget=thinking_budget),
         )
 
     def _call(self, user_content) -> LLMReply:
@@ -106,20 +137,24 @@ class GeminiChat:
 
 
 class GeminiLLM:
-    def __init__(self, api_key: str, model: str, timeout_s: float):
+    def __init__(self, api_key: str, model: str, timeout_s: float,
+                 thinking_budget: int = config.GEMINI_THINKING_BUDGET):
         from google import genai
         from google.genai import types
         self._types = types
         self._client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=int(timeout_s * 1000)))
         self._model = model
+        self._thinking_budget = thinking_budget
 
     def start_chat(self, system: str, tools: list[ToolSpec]) -> GeminiChat:
-        return GeminiChat(self._client, self._model, system, tools)
+        return GeminiChat(self._client, self._model, system, tools, self._thinking_budget)
 
     def complete(self, system: str, prompt: str) -> str:
         resp = self._client.models.generate_content(
             model=self._model, contents=prompt,
-            config=self._types.GenerateContentConfig(system_instruction=system, temperature=0))
+            config=self._types.GenerateContentConfig(
+                system_instruction=system, temperature=0,
+                thinking_config=self._types.ThinkingConfig(thinking_budget=self._thinking_budget)))
         content = _content_of(resp)
         text = "".join(p.text for p in (content.parts or []) if getattr(p, "text", None) and not getattr(p, "thought", None))
         if not text.strip():

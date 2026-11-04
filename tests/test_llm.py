@@ -135,3 +135,82 @@ def test_plain_leaves_pydantic_and_generators_alone():
 def test_function_response_accepts_floats_none_nested():
     part = types.Part.from_function_response(name="t", response={"a": 1.5, "b": None, "c": [[1, 2.5], [None]]})
     assert part.function_response.response["c"] == [[1, 2.5], [None]]
+
+
+# ---- thinking budget and transient retry ----
+import time
+
+from google.genai import errors
+
+from app.agent.llm import call_with_retry, is_transient
+
+
+def test_thinking_budget_in_both_configs(monkeypatch):
+    from app import config
+    assert config.GEMINI_THINKING_BUDGET == 1024
+    llm = GeminiLLM("dummy-key", "gemini-2.5-flash", 5)
+    chat = llm.start_chat("sys", [ToolSpec("t", "desc", SCHEMA)])
+    assert chat._config.thinking_config.thinking_budget == 1024
+    seen = {}
+
+    class M:
+        def generate_content(self, model, contents, config):
+            seen["cfg"] = config
+            raise LLMError("stop")
+
+    llm._client = type("C", (), {"models": M()})()
+    with pytest.raises(LLMError):
+        llm.complete("s", "p")
+    assert seen["cfg"].thinking_config.thinking_budget == 1024
+
+
+def test_is_transient():
+    assert is_transient(errors.ServerError(503, {}))
+    assert is_transient(errors.ClientError(429, {}))
+    assert is_transient(errors.ServerError(500, {}))
+    assert is_transient(TimeoutError())
+    assert not is_transient(errors.ClientError(400, {}))
+    assert not is_transient(LLMError("blocked"))
+    assert not is_transient(ValueError("x"))
+
+
+def test_call_with_retry_once_when_time_fits():
+    calls = []
+
+    def fn():
+        calls.append(1)
+        if len(calls) == 1:
+            raise errors.ServerError(503, {})
+        return "ok"
+
+    assert call_with_retry(fn, time.monotonic() + 10, 1.0) == "ok" and len(calls) == 2
+
+
+def test_call_with_retry_not_when_no_time_or_not_transient():
+    calls = []
+
+    def fn():
+        calls.append(1)
+        raise errors.ServerError(503, {})
+
+    with pytest.raises(errors.ServerError):
+        call_with_retry(fn, time.monotonic() + 0.1, 5.0)
+    assert len(calls) == 1
+    calls.clear()
+
+    def bad():
+        calls.append(1)
+        raise ValueError("x")
+
+    with pytest.raises(ValueError):
+        call_with_retry(bad, time.monotonic() + 10, 1.0)
+    assert len(calls) == 1
+    calls.clear()
+
+    def twice():
+        calls.append(1)
+        raise TimeoutError()
+
+    with pytest.raises(TimeoutError):  # at most one retry
+        call_with_retry(twice, time.monotonic() + 10, 1.0)
+    assert len(calls) == 2
