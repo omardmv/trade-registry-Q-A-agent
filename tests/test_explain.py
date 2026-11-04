@@ -1,3 +1,5 @@
+import pytest
+
 from app.compiler.explain import explain
 from app.compiler.spec import parse_spec
 from app.compiler.sql import compile_spec
@@ -142,3 +144,90 @@ def test_deal_ranking_renders_top_n():
     text = _explain({"kind": "deals_aggregate", "measures": ["amount_uzs"], "group_by": "deal", "top": 1,
                      "status_scope": "valid", "filters": {"year": 2023}}, "ru")
     assert "топ-1" in text
+
+
+def test_new_filters_rendered_ru():
+    text = _explain({"kind": "deals_aggregate", "measures": ["deal_count"], "filters": {
+        "categories": ["Нефтепродукты"], "industries": ["Металлургия"], "product_groups": ["Прочие товары"],
+        "delivery_bases": ["FCA"], "packagings": ["навалом"], "hs_codes": ["520100"],
+        "product_variants": ["Сахар белый"], "buyer_regions": ["Buxoro viloyati"],
+        "seller_regions": ["Toshkent shahri"], "buyer_activities": ["Кластер"],
+        "seller_activities": ["Производитель"], "units": ["литр"]}}, "ru")
+    for part in ("категория: Нефтепродукты", "отрасль: Металлургия", "группа товара: Прочие товары",
+                 "базис поставки: FCA", "упаковка: навалом", "код ТН ВЭД: 520100",
+                 "наименование товара в реестре: Сахар белый",
+                 "регион покупателя (по реестру участников): Buxoro viloyati",
+                 "регион продавца (по реестру участников): Toshkent shahri",
+                 "вид деятельности покупателя: Кластер", "вид деятельности продавца: Производитель",
+                 "единица измерения: литр"):
+        assert part in text, part
+
+
+def test_new_filters_rendered_uz():
+    text = _explain({"kind": "deals_aggregate", "measures": ["deal_count"], "filters": {
+        "categories": ["Нефтепродукты"], "buyer_regions": ["Buxoro viloyati"]}}, "uz")
+    assert "toifa: Нефтепродукты" in text and "xaridor hududi (ishtirokchilar reyestri bo‘yicha): Buxoro viloyati" in text
+
+
+def test_order_asc_rendered():
+    text = _explain({"kind": "deals_aggregate", "measures": ["amount_uzs"], "group_by": "seller", "order": "asc"},
+                    "ru")
+    assert "по возрастанию (наименьшие значения)" in text
+    assert "eng kichik" in _explain({"kind": "deals_aggregate", "measures": ["amount_uzs"], "group_by": "seller",
+                                     "order": "asc"}, "uz")
+
+
+def test_share_rendered():
+    text = _explain({"kind": "deals_aggregate", "measures": ["share_pct"],
+                     "share_of": {"field": "contract_form", "value": "Форвард"}, "filters": {"year": 2024}}, "ru")
+    assert "доля сделок, где форма: Форвард, — от всех сделок выборки, включая аннулированные" in text
+    assert "без аннулированных" not in text
+
+
+def test_compare_periods_rendered():
+    text = _explain({"kind": "deals_aggregate", "measures": ["deal_count"],
+                     "compare_periods": [{"year": 2023}, {"year": 2024, "month_from": 1, "month_to": 3}]}, "ru")
+    assert "сравнение периодов: за 2023 год и за 01.2024–03.2024" in text
+    assert "изменение в % к первому периоду" in text
+    assert "за весь период" not in text
+
+
+def test_price_average_both_rendered():
+    text = _explain({"kind": "deals_aggregate", "measures": ["avg_price_uzs_per_kg", "mean_deal_price_uzs_per_t"],
+                     "status_scope": "valid", "filters": {"products": ["Портландцемент"]}}, "ru")
+    assert "средняя цена двумя способами" in text
+    uz = _explain({"kind": "deals_aggregate", "measures": ["avg_price_uzs_per_kg", "mean_deal_price_uzs_per_t"],
+                   "status_scope": "valid"}, "uz")
+    assert "o‘rtacha narx ikki usulda" in uz
+
+
+@pytest.mark.parametrize("measure,phrase", [
+    ("median_price_uzs_per_kg", "медиана"), ("min_unit_price_uzs", "за единицу измерения"),
+    ("avg_price_change_pct", "от стартовой"), ("avg_days_to_payment", "от сделки до оплаты"),
+    ("avg_days_to_delivery", "от оплаты до поставки"), ("avg_delivery_delay_days", "только поставки позже срока"),
+    ("late_delivery_count", "позже срока"), ("late_payment_count", "срок оплаты истёк"),
+    ("undelivered_lots", "не поставлено"), ("distinct_brokers", "с любой стороны"),
+    ("distinct_regions", "различных"), ("mean_deal_price_uzs_per_t", "простое среднее")])
+def test_measure_phrases(measure, phrase):
+    assert phrase in _explain({"kind": "deals_aggregate", "measures": [measure], "status_scope": "valid"}, "ru")
+
+
+def test_usd_extreme_rendered():
+    from app.compiler.spec import parse_spec
+    assert explain(parse_spec({"kind": "usd_rate", "year": 2024, "extreme": "max"}), [], "ru") == \
+        "Расчёт: максимальный курс доллара за 2024 год и дата(ы), когда он был."
+    assert explain(parse_spec({"kind": "usd_rate", "year": 2024, "month": 5, "extreme": "min"}), [], "uz") == \
+        "Hisob: 05.2024 uchun minimal dollar kursi va uning sanasi (sanalari)."
+
+
+def test_registry_count_rendered():
+    from app.compiler.spec import parse_spec
+    text = explain(parse_spec({"kind": "registry_count", "entity": "participants", "activity": "Кластер",
+                               "role": "Продавец", "region": "Toshkent shahri", "vat_payer": True}), [], "ru")
+    assert text == ("Расчёт: участники реестра; вид деятельности: Кластер; роль: Продавец; "
+                    "регион: Toshkent shahri; плательщик НДС: да.")
+    text = explain(parse_spec({"kind": "registry_count", "entity": "contracts", "products": ["Карбамид"],
+                               "contract_form": "Спот", "seller_inn": "975923536", "active_on": "2024-05-01",
+                               "registered_year": 2023}), [], "ru")
+    assert text == ("Расчёт: контракты; товар: Карбамид; форма: Спот; продавец ИНН 975923536; "
+                    "действует на 01.05.2024; зарегистрирован в 2023 году.")

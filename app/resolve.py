@@ -8,7 +8,7 @@ from rapidfuzz import fuzz, process
 from app.db import Database
 from app.text import normalize_name, normalize_text
 
-Kind = Literal["company", "broker", "product", "region", "contract"]
+Kind = Literal["company", "broker", "product", "product_variant", "region", "contract"]
 _CUTOFF = 75.0
 _SHORT_LEN = 6  # one-letter edits between short words are different words
 _SHORT_CUTOFF = 90.0
@@ -56,6 +56,10 @@ class Resolver:
         self._product_rows = db.query(
             "SELECT product_name, product_canonical, product_family, synonyms FROM products", max_rows=_ALL).rows
         self._regions = db.query("SELECT region, region_ru, synonyms FROM regions", max_rows=_ALL).rows
+        self._variants = db.query(
+            """SELECT product_name_full, product_canonical, COUNT(*) FROM deals GROUP BY 1, 2
+               ORDER BY 3 DESC, 1""", max_rows=_ALL).rows
+        self._variant_tokens = [set(normalize_text(r[0]).split()) for r in self._variants]
         self._product_keys, self._product_targets = self._index_products()
         self._region_keys, self._region_targets = self._index_regions()
 
@@ -92,6 +96,7 @@ class Resolver:
             "company": self._company,
             "broker": self._broker,
             "product": self._product,
+            "product_variant": self._product_variant,
             "region": self._region,
             "contract": self._contract,
         }[kind](text, limit)
@@ -176,6 +181,30 @@ class Resolver:
             if key not in best or score > best[key].score:
                 best[key] = Candidate(kind, value, value, float(score), {"product_family": family})
         return sorted(best.values(), key=lambda c: -c.score)[:limit]
+
+    def _product_variant(self, text, limit):
+        """Raw registry spellings (deals.product_name_full) containing every word of the text.
+
+        Grades and marks differ by one character (М00К / М0К), so plain fuzzy similarity is not enough: every
+        query word must be a whole word of the name; if no name has them all, fall back to fuzzy matching but
+        still require every word with a digit to match exactly."""
+        q_tokens = normalize_text(text).split()
+        if not q_tokens:
+            return []
+        q = set(q_tokens)
+        hits = [i for i, toks in enumerate(self._variant_tokens) if q <= toks]
+        if not hits:
+            digits = {t for t in q if any(ch.isdigit() for ch in t)}
+            keys = [normalize_text(r[0]) for r in self._variants]
+            hits = [i for _, _, i in _fuzzy(" ".join(q_tokens), keys, None)
+                    if digits <= self._variant_tokens[i]]
+        hits.sort(key=lambda i: (len(self._variant_tokens[i] - q), -self._variants[i][2]))
+        out = []
+        for i in hits[:limit]:
+            name, canonical, n = self._variants[i]
+            score = 100.0 if self._variant_tokens[i] == q else 90.0
+            out.append(Candidate("product_variant", name, name, score, {"product_canonical": canonical, "deals": n}))
+        return out
 
     def _region(self, text, limit):
         q = normalize_text(text)

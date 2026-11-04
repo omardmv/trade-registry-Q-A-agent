@@ -88,3 +88,19 @@ def test_region_aliases_supported_by_translated_cells(db):
     v = verify_answer(answer, "Сделки по регионам?", [("Buxoro viloyati", 22790), ("Buxoro viloyati", 13459)],
                       known_names=known, alias_groups=groups)
     assert not v.ok and any("namangan" in u.lower() for u in v.unsupported)
+
+
+def test_product_variant_returns_raw_registry_names(resolver):
+    cands = resolver.resolve("product_variant", "сахар белый")
+    assert cands and cands[0].kind == "product_variant" and cands[0].id == "Сахар белый"
+    assert cands[0].extra["product_canonical"] == "Сахар" and cands[0].extra["deals"] > 0
+    assert "САХАР-ПЕСОК" not in [c.id for c in cands]
+
+
+def test_product_variant_tokens_match_all_spellings(resolver):
+    ids = [c.id for c in resolver.resolve("product_variant", "катод медный М00К", limit=20)]
+    assert ids and all("М00К" in i.upper() for i in ids)
+
+
+def test_product_variant_unknown(resolver):
+    assert resolver.resolve("product_variant", "квантовый компьютер") == []

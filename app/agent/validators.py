@@ -23,7 +23,7 @@ _CASE_FOLD = (exp.Lower, exp.Upper)
 _ID_LITERAL = re.compile(r"\d{9}|BK\d{3}")
 
 
-_NAME_KINDS = {"product", "product_family", "region"}
+_NAME_KINDS = {"product", "product_family", "product_variant", "region"}
 _ID_SHAPE = {"inn": r"\d{9}", "broker": r"BK\d{3}", "contract": r"\d{6}", "deal": r"\d{6}"}
 
 

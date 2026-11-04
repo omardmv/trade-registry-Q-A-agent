@@ -221,3 +221,45 @@ def test_empty_unknown_values_ignored():
                 "products": [], "bogus": None, "filters": {"zzz": "", "yy": []}})
     assert s.measures == ["deal_count"]
     _parse({"kind": "usd_rate", "year": 2024, "month": 3, "date": None, "entity": ""})
+
+
+def test_new_filters_parse_and_ground():
+    from app.compiler.spec import entity_values
+    s = parse_spec({"kind": "deals_aggregate", "measures": ["deal_count"], "filters": {
+        "product_variants": ["Сахар белый"], "buyer_regions": ["Buxoro viloyati"], "seller_regions": ["Toshkent shahri"],
+        "categories": ["Нефтепродукты"], "hs_codes": ["520100"], "units": ["литр"]}})
+    assert s.filters.product_variants == ["Сахар белый"] and s.filters.units == ["литр"]
+    ev = entity_values(s)
+    assert ("product_variant", "Сахар белый") in ev
+    assert {("region", "Buxoro viloyati"), ("region", "Toshkent shahri")} <= ev
+    assert not any(k == "category" for k, _ in ev)  # enum-like values are checked against the catalog instead
+
+
+def test_hs_code_shape():
+    with pytest.raises(SpecError, match="hs_code"):
+        parse_spec({"kind": "deals_aggregate", "measures": ["deal_count"], "filters": {"hs_codes": ["abc"]}})
+
+
+def test_check_catalog():
+    from app.compiler.spec import check_catalog
+    cat = {"category": {"Нефтепродукты"}, "activity": {"Кластер"}, "unit": {"литр"}}
+    ok = parse_spec({"kind": "deals_aggregate", "measures": ["deal_count"],
+                     "filters": {"categories": ["Нефтепродукты"], "seller_activities": ["Кластер"]}})
+    check_catalog(ok, cat)
+    bad = parse_spec({"kind": "deals_aggregate", "measures": ["deal_count"], "filters": {"units": ["ведро"]}})
+    with pytest.raises(SpecError, match="allowed: литр"):
+        check_catalog(bad, cat)
+    reg = parse_spec({"kind": "registry_count", "entity": "participants", "activity": "Шахта"})
+    with pytest.raises(SpecError, match="Кластер"):
+        check_catalog(reg, cat)
+
+
+def test_order_values():
+    assert parse_spec({"kind": "deals_aggregate", "measures": ["deal_count"], "group_by": "seller"}).order == "desc"
+    with pytest.raises(SpecError, match="order"):
+        parse_spec({"kind": "deals_aggregate", "measures": ["deal_count"], "group_by": "seller", "order": "up"})
+
+
+def test_new_time_dimensions_have_no_default_top():
+    for dim in ("quarter", "hour"):
+        assert parse_spec({"kind": "deals_aggregate", "measures": ["deal_count"], "group_by": dim}).top is None

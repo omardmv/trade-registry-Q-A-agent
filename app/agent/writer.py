@@ -8,15 +8,17 @@ from typing import Literal
 from app import config
 from app.agent.llm import LLM, ToolSpec, call_with_retry
 from app.agent.validators import grounding_status, missing_message, validate_sql
-from app.compiler.spec import (CONTRACT_FORMS, CONTRACT_TYPES, DIMENSIONS, MEASURES, REGISTRY_ENTITIES, ROLES,
-                               STATUS_SCOPES, STATUSES, TRADE_TYPES, DealsAggregate, Spec, SpecError, UsdRate,
+from app.catalog import load_catalog, render_catalog
+from app.compiler.spec import (CONTRACT_FORMS, CONTRACT_TYPES, DIMENSIONS, FILTER_KEYS, KINDS, MEASURES, ORDERS,
+                               PERIOD_KEYS, REGISTRY_ENTITIES, ROLES, SHARE_FIELDS, STATUS_SCOPES, STATUSES,
+                               TRADE_TYPES, USD_EXTREMES, DealsAggregate, Spec, SpecError, UsdRate, check_catalog,
                                entity_values, parse_spec)
-from app.compiler.sql import compile_spec
+from app.compiler.sql import SCOPE_FREE, compile_spec
 from app.db import Database, QueryError, QueryResult, to_jsonable
 from app.examples import ExampleStore
 from app.resolve import Resolver
 
-SPLIT_AXES = {"status_scope", "measure", "currency", "product_scope", "role"}
+SPLIT_AXES = {"status_scope", "measure", "currency", "product_scope", "role", "price_average"}
 S, I, B = {"type": "STRING"}, {"type": "INTEGER"}, {"type": "BOOLEAN"}
 
 
@@ -28,30 +30,35 @@ def _enum(values):
     return {"type": "STRING", "enum": list(values)}
 
 
-FILTERS_SCHEMA = {"type": "OBJECT", "properties": {
-    "year": I, "month_from": I, "month_to": I,
-    "date_from": {"type": "STRING", "description": "YYYY-MM-DD"},
-    "date_to": {"type": "STRING", "description": "YYYY-MM-DD"},
-    "products": _arr(S), "product_family": S, "regions": _arr(S),
-    "buyer_inns": _arr(S), "seller_inns": _arr(S), "participant_inns": _arr(S),
-    "seller_brokers": _arr(S), "buyer_brokers": _arr(S), "brokers": _arr(S),
-    "contract_id": I, "contract_type": _enum(CONTRACT_TYPES), "contract_form": _enum(CONTRACT_FORMS),
-    "trade_type": _enum(TRADE_TYPES), "statuses": _arr(_enum(STATUSES)),
-}}
+_DATE = {"type": "STRING", "description": "YYYY-MM-DD"}
+_FILTER_TYPES = {"year": I, "month_from": I, "month_to": I, "date_from": _DATE, "date_to": _DATE,
+                 "product_family": S, "contract_id": I, "contract_type": _enum(CONTRACT_TYPES),
+                 "contract_form": _enum(CONTRACT_FORMS), "trade_type": _enum(TRADE_TYPES),
+                 "statuses": _arr(_enum(STATUSES))}
+# every other filter is a list of strings
+FILTERS_SCHEMA = {"type": "OBJECT", "properties": {k: _FILTER_TYPES.get(k, _arr(S)) for k in FILTER_KEYS}}
 
 SPEC_SCHEMA = {"type": "OBJECT", "properties": {
-    "kind": _enum(["deals_aggregate", "deal_lookup", "contract_lookup", "usd_rate", "registry_count"]),
+    "kind": _enum(KINDS),
     "measures": _arr(_enum(MEASURES)), "filters": FILTERS_SCHEMA, "group_by": _enum(DIMENSIONS), "top": I,
     "status_scope": _enum(STATUS_SCOPES),
-    "deal_id": I, "contract_id": I, "date": {"type": "STRING", "description": "YYYY-MM-DD"},
-    "year": I, "month": I,
+    "order": {**_enum(ORDERS), "description": "ranking direction; asc = least / cheapest / fewest"},
+    "share_of": {"type": "OBJECT", "description": "condition for share_pct (numerator)", "properties": {
+        "field": _enum(SHARE_FIELDS), "value": S, "values": _arr(S)}},
+    "compare_periods": {**_arr({"type": "OBJECT", "properties": {k: I for k in PERIOD_KEYS}}),
+                        "description": "exactly two periods to compare (ungrouped deals_aggregate)"},
+    "deal_id": I, "contract_id": I, "inn": S, "broker_code": S, "date": _DATE,
+    "year": I, "month": I, "extreme": _enum(USD_EXTREMES),
     "entity": _enum(REGISTRY_ENTITIES), "role": _enum(ROLES), "vat_payer": B, "region": S, "registered_year": I,
+    "activity": S, "products": _arr(S), "contract_form": _enum(CONTRACT_FORMS), "seller_inn": S, "active_on": _DATE,
 }, "required": ["kind"]}
 
 TOOLS = [
-    ToolSpec("resolve", "Find exact IDs for a company, broker, product, region or contract named in the question.",
+    ToolSpec("resolve", "Find exact IDs for a company, broker, product, region or contract named in the question. "
+                        "product_variant returns raw registry spellings (for a specific grade/mark/spelling).",
              {"type": "OBJECT", "properties": {
-                 "kind": _enum(["company", "broker", "product", "region", "contract"]), "text": S},
+                 "kind": _enum(["company", "broker", "product", "product_variant", "region", "contract"]),
+                 "text": S},
               "required": ["kind", "text"]}),
     ToolSpec("get_examples", "Return verified example questions with their spec or SQL.",
              {"type": "OBJECT", "properties": {"question": S}, "required": ["question"]}),
@@ -112,7 +119,7 @@ _STATUS_WORDS = ("аннулир", "отмен", "состоявш", "испол
 
 def enforce_status_default(question: str, spec: Spec) -> Spec:
     """Ungrouped deal counts/totals default to the split view unless the question names a status."""
-    if not isinstance(spec, DealsAggregate) or spec.group_by or spec.measures == ["cancelled_pct"]:
+    if not isinstance(spec, DealsAggregate) or spec.group_by or all(m in SCOPE_FREE for m in spec.measures):
         return spec
     q = question.lower()
     if any(w in q for w in _STATUS_WORDS):
@@ -167,9 +174,12 @@ class WriterResult:
 class Writer:
     def __init__(self, llm: LLM, db: Database, resolver: Resolver, examples: ExampleStore, schema_prompt: str,
                  max_tool_calls: int = 8, max_fixes: int = 2,
-                 llm_timeout_s: float = config.LLM_TIMEOUT_S):
+                 llm_timeout_s: float = config.LLM_TIMEOUT_S, catalog: dict[str, set[str]] | None = None):
         self.llm, self.db, self.resolver, self.examples = llm, db, resolver, examples
-        self.system = SYSTEM.format(schema=schema_prompt)
+        if catalog is None:
+            catalog = load_catalog(db) if db is not None else {}
+        self.catalog = catalog
+        self.system = SYSTEM.format(schema=schema_prompt + ("\n\n" + render_catalog(catalog) if catalog else ""))
         self.max_tool_calls, self.max_fixes = max_tool_calls, max_fixes
         self.llm_timeout_s = llm_timeout_s
         self._exists_cache: dict[tuple[str, str], bool] = {}
@@ -261,6 +271,7 @@ class Writer:
     def _compile(self, args, allowed, question, deadline) -> WriterResult | str:
         try:
             spec = parse_spec(args.get("spec") or {})
+            check_catalog(spec, self.catalog)
         except (SpecError, KeyError, ValueError, TypeError) as e:
             return str(e)
         spec = enforce_status_default(question, spec)

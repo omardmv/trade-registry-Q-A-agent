@@ -469,3 +469,73 @@ def test_status_word_keeps_model_choice(parts):
 def test_deal_dimension_in_tool_schema():
     from app.agent import writer as w
     assert "deal" in w.SPEC_SCHEMA["properties"]["group_by"]["enum"]
+
+
+def test_tool_schema_covers_every_spec_field():
+    from app.agent import writer as w
+    from app.compiler import spec as sp
+    props = w.SPEC_SCHEMA["properties"]
+    assert set(sp.FILTER_KEYS) <= set(w.FILTERS_SCHEMA["properties"])
+    keys = {k for allowed in sp.ALLOWED_KEYS.values() for k in allowed}
+    assert keys <= set(props)
+    assert set(props["kind"]["enum"]) == set(sp.KINDS)
+    assert set(props["measures"]["items"]["enum"]) == set(sp.MEASURES)
+    assert set(props["group_by"]["enum"]) == set(sp.DIMENSIONS)
+    assert props["order"]["enum"] == ["desc", "asc"]
+    assert set(props["share_of"]["properties"]["field"]["enum"]) == set(sp.SHARE_FIELDS)
+    assert set(props["compare_periods"]["items"]["properties"]) == set(sp.PERIOD_KEYS)
+    assert props["extreme"]["enum"] == ["min", "max"]
+    resolve = next(t for t in w.TOOLS if t.name == "resolve")
+    assert "product_variant" in resolve.parameters["properties"]["kind"]["enum"]
+
+
+def test_unknown_catalog_value_rejected_with_allowed_list(parts):
+    spec = {"kind": "deals_aggregate", "measures": ["deal_count"], "filters": {"categories": ["Космос"]}}
+    writer, llm = make(parts, [call("compile_query", spec=spec, assumptions=[]),
+                               call("declare_unanswerable", reason="x")])
+    writer.run("Сколько сделок по категории космос?", "ru", deadline())
+    error = llm.chat.sent[1][1][0][1]["error"]
+    assert "Космос" in error and "Нефтепродукты" in error
+
+
+def test_catalog_value_accepted(parts):
+    spec = {"kind": "deals_aggregate", "measures": ["deal_count"], "status_scope": "all",
+            "filters": {"buyer_activities": ["Кластер"], "year": 2024}}
+    writer, _ = make(parts, [call("compile_query", spec=spec, assumptions=[])])
+    res = writer.run("Сколько сделок купили кластеры в 2024?", "ru", deadline())
+    assert res.status == "ok"
+
+
+def test_catalog_listed_in_system_prompt(parts):
+    writer, _ = make(parts, [])
+    assert "Транспортная компания" in writer.system and "в мешках по 50 кг" in writer.system
+
+
+def test_product_variant_must_be_resolved(parts):
+    spec = {"kind": "deals_aggregate", "measures": ["deal_count"], "status_scope": "all",
+            "filters": {"product_variants": ["Сахар белый"]}}
+    writer, llm = make(parts, [call("compile_query", spec=spec, assumptions=[]),
+                               call("resolve", kind="product_variant", text="сахар белый"),
+                               call("compile_query", spec=spec, assumptions=[])])
+    res = writer.run("Сколько сделок по сахару белому?", "ru", deadline())
+    assert "resolve" in llm.chat.sent[1][1][0][1]["error"]
+    assert res.status == "ok" and "Сахар белый" in res.resolved_names
+
+
+def test_buyer_region_must_be_resolved(parts):
+    spec = {"kind": "deals_aggregate", "measures": ["amount_uzs"], "status_scope": "valid",
+            "filters": {"buyer_regions": ["Buxoro viloyati"], "year": 2023}}
+    writer, llm = make(parts, [call("compile_query", spec=spec, assumptions=[]),
+                               call("resolve", kind="region", text="Бухара"),
+                               call("compile_query", spec=spec, assumptions=[])])
+    res = writer.run("На какую сумму купили покупатели из Бухары в 2023?", "ru", deadline())
+    assert "Buxoro viloyati" in llm.chat.sent[1][1][0][1]["error"]
+    assert res.status == "ok"
+
+
+def test_share_pct_alone_not_forced_to_split(parts):
+    spec = {"kind": "deals_aggregate", "measures": ["share_pct"],
+            "share_of": {"field": "contract_form", "value": "Форвард"}, "filters": {"year": 2024}}
+    writer, _ = make(parts, [call("compile_query", spec=spec, assumptions=[])])
+    res = writer.run("Какая доля форвардных сделок в 2024 году?", "ru", deadline())
+    assert res.status == "ok" and res.result.columns == ["share_pct"]

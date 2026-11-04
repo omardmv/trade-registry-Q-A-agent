@@ -1,15 +1,12 @@
 """Compile validated specs into SQL from fixed templates. All SQL here is reviewed and unit-tested."""
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
-from app.compiler.spec import (ContractLookup, DealLookup, DealsAggregate, Filters, RegistryCount, Spec,
-                               UsdRate)
+from app.compiler.spec import (BrokerLookup, ContractLookup, DealLookup, DealsAggregate, Filters, ParticipantLookup,
+                               RegistryCount, Spec, UsdRate)
 
-_VALID = " FILTER (WHERE NOT d.is_cancelled)"
-_MASS = " FILTER (WHERE d.volume_tonnes IS NOT NULL)"
-_MASS_VALID = " FILTER (WHERE d.volume_tonnes IS NOT NULL AND NOT d.is_cancelled)"
-
-# measure -> (expression template, alias). {f} = optional status FILTER clause; {n} = FILTER for money that
-# must only count mass deals (volume_tonnes known), combined with the status filter.
+# measure -> (expression template, alias). Placeholders are FILTER clauses that combine the status filter (when the
+# valid view is computed) with: {f} nothing else; {n} mass deals only (volume_tonnes known, for money that is divided
+# by tonnes); {l} late deliveries only. {s} is the share_of condition.
 MEASURE_SQL = {
     "deal_count": ("COUNT(*){f}", "deals"),
     "amount_uzs": ("SUM(d.amount_uzs){f}", "total_uzs"),
@@ -25,7 +22,33 @@ MEASURE_SQL = {
     "lots_bought": ("SUM(d.quantity){f}", "lots_bought"),
     "lots_delivered": ("SUM(d.delivered_lots){f}", "lots_delivered"),
     "cancelled_pct": ("ROUND(100.0 * COUNT(*) FILTER (WHERE d.is_cancelled) / COUNT(*), 2)", "cancelled_pct"),
+    "distinct_products": ("COUNT(DISTINCT d.product_canonical){f}", "products"),
+    "distinct_regions": ("COUNT(DISTINCT d.region){f}", "regions"),
+    "distinct_seller_brokers": ("COUNT(DISTINCT d.seller_broker){f}", "seller_brokers"),
+    "distinct_buyer_brokers": ("COUNT(DISTINCT d.buyer_broker){f}", "buyer_brokers"),
+    "distinct_brokers": ("len(list_distinct(flatten(LIST([d.seller_broker, d.buyer_broker]){f})))", "brokers"),
+    "share_pct": ("ROUND(100.0 * COUNT(*) FILTER (WHERE {s}) / NULLIF(COUNT(*), 0), 2)", "share_pct"),
+    "median_price_uzs_per_kg": ("MEDIAN(d.amount_uzs / (d.volume_tonnes * 1000)){n}", "median_price_uzs_per_kg"),
+    "mean_deal_price_uzs_per_t": ("AVG(d.amount_uzs / d.volume_tonnes){n}", "mean_price_uzs_per_t"),
+    "min_unit_price_uzs": ("MIN(d.amount_uzs / d.volume){f}", "min_unit_price_uzs"),
+    "max_unit_price_uzs": ("MAX(d.amount_uzs / d.volume){f}", "max_unit_price_uzs"),
+    "avg_price_change_pct": ("AVG(d.price_vs_start_pct){f}", "avg_price_change_pct"),
+    "avg_days_to_payment": ("AVG(d.days_to_payment){f}", "avg_days_to_payment"),
+    "avg_days_to_delivery": ("AVG(d.days_to_delivery){f}", "avg_days_to_delivery"),
+    "avg_delivery_delay_days": ("AVG(d.delivery_late_days){l}", "avg_delivery_delay_days"),
+    "late_delivery_count": ("COUNT(*){l}", "late_deliveries"),
+    "late_payment_count": ("COUNT(*) FILTER (WHERE d.payment_late)", "late_payments"),
+    "undelivered_lots": ("SUM(d.quantity - COALESCE(d.delivered_lots, 0)){f}", "undelivered_lots"),
+    "delivered_volume": ("SUM(d.delivered_lots * d.lot){f}", "delivered_volume"),
+    "undelivered_volume": ("SUM((d.quantity - COALESCE(d.delivered_lots, 0)) * d.lot){f}", "undelivered_volume"),
 }
+# Measures computed over every deal of the filtered scope, whatever the status view (their meaning needs the
+# cancelled deals: a share of all deals, the cancelled share, unpaid-after-term deals).
+SCOPE_FREE = ("cancelled_pct", "share_pct", "late_payment_count")
+# Measures in units of measure: grouped by unit, rankings partitioned by unit.
+PER_UNIT = ("volume", "delivered_volume", "undelivered_volume", "min_unit_price_uzs", "max_unit_price_uzs")
+_UZS_MEASURES = ("amount_uzs", "avg_amount_uzs", "avg_price_uzs_per_kg", "max_amount_uzs", "median_price_uzs_per_kg",
+                 "mean_deal_price_uzs_per_t", "min_unit_price_uzs", "max_unit_price_uzs")
 
 
 @dataclass(frozen=True)
@@ -34,6 +57,10 @@ class Dim:
     group: tuple[str, ...]
     join: str = ""
     order_asc: bool = False   # time series: order by key ascending
+
+
+def _col(column: str, alias: str | None = None) -> Dim:
+    return Dim((f"d.{column} AS {alias or column}",), (f"d.{column}",))
 
 
 DIMS = {
@@ -47,21 +74,48 @@ DIMS = {
                         ("d.buyer_broker", "bb.name"), "LEFT JOIN brokers bb ON bb.broker_code = d.buyer_broker"),
     "broker": Dim(("d.broker_code AS broker_code", "bk.name AS broker_name"), ("d.broker_code", "bk.name"),
                   "LEFT JOIN brokers bk ON bk.broker_code = d.broker_code"),
-    "region": Dim(("d.region AS region",), ("d.region",)),
-    "product": Dim(("d.product_canonical AS product",), ("d.product_canonical",)),
-    "product_family": Dim(("d.product_family AS product_family",), ("d.product_family",)),
+    "region": _col("region"),
+    "product": _col("product_canonical", "product"),
+    "product_family": _col("product_family"),
     "month": Dim(("d.year AS year", "d.month AS month"), ("d.year", "d.month"), order_asc=True),
     "year": Dim(("d.year AS year",), ("d.year",), order_asc=True),
-    "contract_type": Dim(("d.contract_type AS contract_type",), ("d.contract_type",)),
-    "contract_form": Dim(("d.contract_form AS contract_form",), ("d.contract_form",)),
-    "trade_type": Dim(("d.trade_type AS trade_type",), ("d.trade_type",)),
-    "status": Dim(("d.status AS status",), ("d.status",)),
-    "unit": Dim(("d.unit AS unit",), ("d.unit",)),
-    "contract": Dim(("d.contract_id AS contract_id",), ("d.contract_id",)),
-    "deal": Dim(("d.deal_id AS deal_id", "d.deal_date AS deal_date", "d.product_canonical AS product"),
-                ("d.deal_id", "d.deal_date", "d.product_canonical")),
+    "quarter": Dim(("d.year AS year", "d.quarter AS quarter"), ("d.year", "d.quarter"), order_asc=True),
+    "hour": Dim(("d.deal_hour AS hour",), ("d.deal_hour",), order_asc=True),
+    "contract_type": _col("contract_type"),
+    "contract_form": _col("contract_form"),
+    "trade_type": _col("trade_type"),
+    "status": _col("status"),
+    "unit": _col("unit"),
+    "contract": _col("contract_id"),
+    "deal": Dim(("d.deal_id AS deal_id", "d.deal_date AS deal_date", "d.product_canonical AS product",
+                 "d.seller_inn AS seller_inn", "ps.name AS seller_name", "d.buyer_inn AS buyer_inn",
+                 "pb.name AS buyer_name", "d.unit_price AS unit_price", "d.currency AS currency", "d.unit AS unit"),
+                ("d.deal_id", "d.deal_date", "d.product_canonical", "d.seller_inn", "ps.name", "d.buyer_inn",
+                 "pb.name", "d.unit_price", "d.currency", "d.unit"),
+                "LEFT JOIN participants ps ON ps.inn = d.seller_inn LEFT JOIN participants pb ON pb.inn = d.buyer_inn"),
+    "category": _col("category"),
+    "industry": _col("industry"),
+    "product_group": _col("product_group"),
+    "delivery_basis": _col("delivery_basis"),
+    "packaging": _col("packaging"),
+    "hs_code": _col("hs_code"),
+    "product_variant": _col("product_name_full", "product_variant"),
+    "buyer_region": _col("buyer_region"),
+    "seller_region": _col("seller_region"),
+    "buyer_activity": _col("buyer_activity"),
+    "seller_activity": _col("seller_activity"),
 }
 _UNIT = Dim(("d.unit AS unit",), ("d.unit",))
+
+# list filter -> deals column (plain IN)
+_LIST_FILTERS = (("products", "product_canonical"), ("product_variants", "product_name_full"), ("regions", "region"),
+                 ("buyer_inns", "buyer_inn"), ("seller_inns", "seller_inn"), ("seller_brokers", "seller_broker"),
+                 ("buyer_brokers", "buyer_broker"), ("statuses", "status"), ("categories", "category"),
+                 ("industries", "industry"), ("product_groups", "product_group"),
+                 ("delivery_bases", "delivery_basis"), ("packagings", "packaging"), ("hs_codes", "hs_code"),
+                 ("buyer_regions", "buyer_region"), ("seller_regions", "seller_region"),
+                 ("buyer_activities", "buyer_activity"), ("seller_activities", "seller_activity"),
+                 ("units", "unit"))
 
 
 @dataclass
@@ -75,7 +129,7 @@ def lit(value: str) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
-def _in(column: str, values: list[str]) -> str:
+def _in(column: str, values) -> str:
     return f"{column} IN ({', '.join(lit(v) for v in values)})"
 
 
@@ -89,22 +143,10 @@ def where_clauses(f: Filters, a: str = "d") -> list[str]:
         w.append(f"{a}.deal_date >= DATE {lit(f.date_from.isoformat())}")
     if f.date_to is not None:
         w.append(f"{a}.deal_date <= DATE {lit(f.date_to.isoformat())}")
-    if f.products:
-        w.append(_in(f"{a}.product_canonical", f.products))
     if f.product_family:
         w.append(f"{a}.product_family = {lit(f.product_family)}")
-    if f.regions:
-        w.append(_in(f"{a}.region", f.regions))
-    if f.buyer_inns:
-        w.append(_in(f"{a}.buyer_inn", f.buyer_inns))
-    if f.seller_inns:
-        w.append(_in(f"{a}.seller_inn", f.seller_inns))
     if f.participant_inns:
         w.append(f"({_in(f'{a}.buyer_inn', f.participant_inns)} OR {_in(f'{a}.seller_inn', f.participant_inns)})")
-    if f.seller_brokers:
-        w.append(_in(f"{a}.seller_broker", f.seller_brokers))
-    if f.buyer_brokers:
-        w.append(_in(f"{a}.buyer_broker", f.buyer_brokers))
     if f.brokers:
         w.append(f"({_in(f'{a}.seller_broker', f.brokers)} OR {_in(f'{a}.buyer_broker', f.brokers)})")
     if f.contract_id is not None:
@@ -115,39 +157,68 @@ def where_clauses(f: Filters, a: str = "d") -> list[str]:
         w.append(f"{a}.contract_form = {lit(f.contract_form)}")
     if f.trade_type:
         w.append(f"{a}.trade_type = {lit(f.trade_type)}")
-    if f.statuses:
-        w.append(_in(f"{a}.status", f.statuses))
+    for key, column in _LIST_FILTERS:
+        values = getattr(f, key)
+        if values:
+            w.append(_in(f"{a}.{column}", values))
     return w
 
 
-def _expr(measure: str, valid: bool) -> str:
+def _share_condition(s: DealsAggregate) -> str:
+    if s.share_of is None:
+        return "FALSE"
+    return _in(f"d.{s.share_of.field}", s.share_of.values)
+
+
+def _filter_clause(conds: list[str]) -> str:
+    return f" FILTER (WHERE {' AND '.join(conds)})" if conds else ""
+
+
+def _expr(measure: str, valid: bool, s: DealsAggregate | None = None) -> str:
     expr = MEASURE_SQL[measure][0]
-    if measure == "cancelled_pct":
-        return expr
-    return expr.format(f=_VALID if valid else "", n=_MASS_VALID if valid else _MASS)
+    status = [] if measure in SCOPE_FREE or not valid else ["NOT d.is_cancelled"]
+    return expr.format(f=_filter_clause(status), n=_filter_clause(["d.volume_tonnes IS NOT NULL"] + status),
+                       l=_filter_clause(["d.delivery_late_days > 0"] + status),
+                       s=_share_condition(s) if s is not None else "FALSE")
 
 
-def _measure_cols(measures: list[str], split: bool, valid_filter: bool = False) -> list[str]:
-    cols = []
-    for m in measures:
+def _measure_pairs(s: DealsAggregate, split: bool, valid_filter: bool = False) -> list[tuple[str, str]]:
+    """(expression, alias) of every output measure column."""
+    out = []
+    for m in s.measures:
         alias = MEASURE_SQL[m][1]
-        if valid_filter:         # valid scope without a WHERE: cancelled_pct needs the cancelled rows
-            cols.append(f"{_expr(m, m != 'cancelled_pct')} AS {alias}")
-        elif split and m != "cancelled_pct":
-            cols.append(f"{_expr(m, False)} AS {alias}_all")
-            cols.append(f"{_expr(m, True)} AS {alias}_valid")
+        if valid_filter:         # valid scope without a WHERE: scope-free measures need the cancelled rows
+            out.append((_expr(m, True, s), alias))
+        elif split and m not in SCOPE_FREE:
+            out.append((_expr(m, False, s), f"{alias}_all"))
+            out.append((_expr(m, True, s), f"{alias}_valid"))
         else:
-            cols.append(f"{_expr(m, False)} AS {alias}")
-    return cols
+            out.append((_expr(m, False, s), alias))
+    return out
+
+
+def _measure_cols(s: DealsAggregate, split: bool, valid_filter: bool = False) -> list[str]:
+    return [f"{e} AS {a}" for e, a in _measure_pairs(s, split, valid_filter)]
 
 
 def _currency_notes(measures: list[str]) -> list[str]:
     notes = []
-    if any(m in ("amount_uzs", "avg_amount_uzs", "avg_price_uzs_per_kg", "max_amount_uzs") for m in measures):
+    if any(m in _UZS_MEASURES for m in measures):
         notes.append("uzs_converted")
     if "amount_usd" in measures:
         notes.append("usd_converted")
     return notes
+
+
+def _scope(s: DealsAggregate) -> str:
+    scope = s.status_scope
+    if s.group_by is not None and scope == "split":
+        scope = "valid"          # rankings are computed on deals that took place
+    if s.filters.statuses:
+        scope = "all"            # explicit status filter overrides the default
+    if scope != "all" and all(m in SCOPE_FREE for m in s.measures):
+        scope = "all"            # nothing else to restrict or split; the share needs every deal
+    return scope
 
 
 def _compile_aggregate(s: DealsAggregate) -> Compiled:
@@ -155,16 +226,12 @@ def _compile_aggregate(s: DealsAggregate) -> Compiled:
     splits = []
     if "amount_uzs" in s.measures and "amount_usd" in s.measures:
         splits.append("currency")
+    if "avg_price_uzs_per_kg" in s.measures and "mean_deal_price_uzs_per_t" in s.measures:
+        splits.append("price_average")
     where = where_clauses(s.filters)
     grouped = s.group_by is not None
-    scope = s.status_scope
-    if grouped and scope == "split":
-        scope = "valid"          # rankings are computed on deals that took place
-    if s.filters.statuses:
-        scope = "all"            # explicit status filter overrides the default
-    if scope == "valid" and s.measures == ["cancelled_pct"]:
-        scope = "all"            # nothing else to restrict; the share needs every deal
-    valid_filter = scope == "valid" and "cancelled_pct" in s.measures
+    scope = _scope(s)
+    valid_filter = scope == "valid" and any(m in SCOPE_FREE for m in s.measures)
     if scope == "valid":
         if not valid_filter:
             where.append("NOT d.is_cancelled")
@@ -174,17 +241,25 @@ def _compile_aggregate(s: DealsAggregate) -> Compiled:
     else:
         notes.append("status_split")
         splits.append("status_scope")
+    if s.order == "asc":
+        notes.append("order_asc")
     split_cols = scope == "split"
     dims: list[Dim] = []
     if grouped and s.group_by != "participant":
         dims.append(DIMS[s.group_by])
-    if "volume" in s.measures:
-        dims.append(_UNIT)
+    per_unit_measures = [m for m in s.measures if m in PER_UNIT]
+    if per_unit_measures:
+        if not any(sel.endswith(" AS unit") for dim in dims for sel in dim.select):
+            dims.append(_UNIT)
         notes.append("volume_by_unit")
     where_sql = (" WHERE " + " AND ".join(where)) if where else ""
-    measure_cols = _measure_cols(s.measures, split_cols, valid_filter)
+    measure_cols = _measure_cols(s, split_cols, valid_filter)
 
-    per_unit = grouped and "volume" in s.measures
+    if s.compare_periods:
+        notes.append("compare_periods")
+        return Compiled(_compare_periods_sql(s, scope, valid_filter, dims), splits, notes)
+
+    per_unit = grouped and bool(per_unit_measures)
     if s.group_by == "participant":
         splits.append("role")
         notes.append("role_split")
@@ -228,7 +303,7 @@ def _compile_aggregate(s: DealsAggregate) -> Compiled:
                f"ORDER BY {', '.join(group)}")
         return Compiled(sql, splits, notes)
 
-    if not grouped:          # volume-by-unit only
+    if not grouped:          # per-unit measures only
         sql = f"SELECT {', '.join(select + measure_cols)} {from_sql} GROUP BY {', '.join(group)} ORDER BY 1"
         return Compiled(sql, splits, notes)
 
@@ -245,22 +320,49 @@ def _compile_aggregate(s: DealsAggregate) -> Compiled:
     return Compiled(sql, splits, notes)
 
 
+def _compare_periods_sql(s: DealsAggregate, scope: str, valid_filter: bool, dims: list[Dim]) -> str:
+    """One row per period (and unit for per-unit measures) plus the change versus the first period, in %."""
+    pairs = _measure_pairs(s, scope == "split", valid_filter)
+    unit = bool(dims)                      # only the unit dimension is possible here (no group_by)
+    branches = []
+    for i, p in enumerate(s.compare_periods, 1):
+        where = where_clauses(replace(s.filters, year=p.year, month_from=p.month_from, month_to=p.month_to))
+        if scope == "valid" and not valid_filter:
+            where.append("NOT d.is_cancelled")
+        mf = "CAST(NULL AS INTEGER)" if p.month_from is None else str(int(p.month_from))
+        mt = "CAST(NULL AS INTEGER)" if p.month_to is None else str(int(p.month_to))
+        cols = [f"{i} AS period_no", f"{int(p.year)} AS year", f"{mf} AS month_from", f"{mt} AS month_to"]
+        cols += (["d.unit AS unit"] if unit else []) + [f"{e} AS {a}" for e, a in pairs]
+        branch = f"SELECT {', '.join(cols)} FROM deals d WHERE {' AND '.join(where)}"
+        if unit:
+            branch += " GROUP BY d.unit"
+        branches.append(f"({branch})")
+    aliases = [a for _, a in pairs]
+    window = "PARTITION BY unit ORDER BY period_no" if unit else "ORDER BY period_no"
+    change = [f"ROUND(100.0 * ({a} / NULLIF(LAG({a}) OVER ({window}), 0) - 1), 2) AS "
+              f"{'change_pct' if len(aliases) == 1 else a + '_change_pct'}" for a in aliases]
+    head = ["year", "month_from", "month_to"] + (["unit"] if unit else []) + aliases + change
+    order = "period_no, unit" if unit else "period_no"
+    return f"SELECT {', '.join(head)} FROM ({' UNION ALL '.join(branches)}) p ORDER BY {order}"
+
+
 def _rank_alias(measure: str, split: bool) -> str:
     alias = MEASURE_SQL[measure][1]
-    return f"{alias}_valid" if split and measure != "cancelled_pct" else alias
+    return f"{alias}_valid" if split and measure not in SCOPE_FREE else alias
 
 
 def _ranked_select(cols: list[str], from_sql: str, group: list[str], s: DealsAggregate, measure: str,
                    split: bool, per_unit: bool, valid_filter: bool = False) -> str:
     rank_alias = _rank_alias(measure, split)
+    direction = "ASC" if s.order == "asc" else "DESC"
     tie = ", ".join(group)           # group keys break ties deterministically
     base = f"SELECT {', '.join(cols)} {from_sql} GROUP BY {', '.join(group)}"
     if per_unit:
         # volumes of different units are not comparable: rank within each unit
-        rank_expr = _expr(measure, (split or valid_filter) and measure != "cancelled_pct")
-        return (f"({base} QUALIFY ROW_NUMBER() OVER (PARTITION BY d.unit ORDER BY {rank_expr} DESC NULLS LAST, "
-                f"{tie}) <= {int(s.top)} ORDER BY d.unit, {rank_alias} DESC NULLS LAST, {tie})")
-    return f"({base} ORDER BY {rank_alias} DESC NULLS LAST, {tie} LIMIT {int(s.top)})"
+        rank_expr = _expr(measure, (split or valid_filter) and measure not in SCOPE_FREE, s)
+        return (f"({base} QUALIFY ROW_NUMBER() OVER (PARTITION BY d.unit ORDER BY {rank_expr} {direction} NULLS LAST, "
+                f"{tie}) <= {int(s.top)} ORDER BY d.unit, {rank_alias} {direction} NULLS LAST, {tie})")
+    return f"({base} ORDER BY {rank_alias} {direction} NULLS LAST, {tie} LIMIT {int(s.top)})"
 
 
 def _compile_deal(s: DealLookup) -> Compiled:

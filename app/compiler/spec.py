@@ -9,10 +9,28 @@ RATES_START, RATES_END = dt.date(2022, 1, 1), dt.date(2026, 10, 31)
 
 MEASURES = ("deal_count", "amount_uzs", "amount_usd", "volume_tonnes", "volume", "avg_amount_uzs",
             "avg_price_uzs_per_kg", "max_amount_uzs", "distinct_buyers", "distinct_sellers",
-            "lots_bought", "lots_delivered", "cancelled_pct")
+            "lots_bought", "lots_delivered", "cancelled_pct",
+            "distinct_products", "distinct_regions", "distinct_seller_brokers", "distinct_buyer_brokers",
+            "distinct_brokers", "share_pct", "median_price_uzs_per_kg", "mean_deal_price_uzs_per_t",
+            "min_unit_price_uzs", "max_unit_price_uzs", "avg_price_change_pct", "avg_days_to_payment",
+            "avg_days_to_delivery", "avg_delivery_delay_days", "late_delivery_count", "late_payment_count",
+            "undelivered_lots", "delivered_volume", "undelivered_volume")
+DISTINCT_MEASURES = tuple(m for m in MEASURES if m.startswith("distinct_"))
+PERCENT_MEASURES = ("share_pct", "cancelled_pct")
 DIMENSIONS = ("buyer", "seller", "participant", "seller_broker", "buyer_broker", "broker", "region",
               "product", "product_family", "month", "year", "contract_type", "contract_form",
-              "trade_type", "status", "unit", "contract", "deal")
+              "trade_type", "status", "unit", "contract", "deal",
+              "category", "industry", "product_group", "delivery_basis", "packaging", "hs_code",
+              "product_variant", "quarter", "hour", "buyer_region", "seller_region", "buyer_activity",
+              "seller_activity")
+TIME_DIMENSIONS = ("month", "year", "quarter", "hour")
+ORDERS = ("desc", "asc")
+SHARE_FIELDS = ("contract_form", "contract_type", "trade_type", "status")
+# Filters whose values are validated against the database's distinct values (see app/catalog.py):
+# filter key -> catalog field.
+CATALOG_FILTERS = {"categories": "category", "industries": "industry", "product_groups": "product_group",
+                   "delivery_bases": "delivery_basis", "packagings": "packaging", "hs_codes": "hs_code",
+                   "buyer_activities": "activity", "seller_activities": "activity", "units": "unit"}
 STATUSES = ("Новый", "Не подписан", "Заключен", "Ждёт оплату", "Оплачен", "Исполнен",
             "Исполнен(Частично)", "Аннулирован(Не оплачен)")
 CONTRACT_TYPES = ("Внутренний", "Экспортный")
@@ -48,6 +66,32 @@ class Filters:
     contract_form: str | None = None
     trade_type: str | None = None
     statuses: list[str] = field(default_factory=list)
+    categories: list[str] = field(default_factory=list)
+    industries: list[str] = field(default_factory=list)
+    product_groups: list[str] = field(default_factory=list)
+    delivery_bases: list[str] = field(default_factory=list)
+    packagings: list[str] = field(default_factory=list)
+    hs_codes: list[str] = field(default_factory=list)
+    product_variants: list[str] = field(default_factory=list)
+    buyer_regions: list[str] = field(default_factory=list)
+    seller_regions: list[str] = field(default_factory=list)
+    buyer_activities: list[str] = field(default_factory=list)
+    seller_activities: list[str] = field(default_factory=list)
+    units: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ShareOf:
+    """Numerator condition of share_pct: deals whose `field` is one of `values`."""
+    field: str
+    values: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class Period:
+    year: int
+    month_from: int | None = None
+    month_to: int | None = None
 
 
 @dataclass
@@ -57,6 +101,9 @@ class DealsAggregate:
     group_by: str | None = None
     top: int | None = None
     status_scope: str = "split"
+    order: str = "desc"
+    share_of: ShareOf | None = None
+    compare_periods: list[Period] = field(default_factory=list)
 
 
 @dataclass
@@ -70,10 +117,21 @@ class ContractLookup:
 
 
 @dataclass
+class ParticipantLookup:
+    inn: str
+
+
+@dataclass
+class BrokerLookup:
+    broker_code: str
+
+
+@dataclass
 class UsdRate:
     date: dt.date | None = None
     year: int | None = None
     month: int | None = None
+    extreme: str | None = None
 
 
 @dataclass
@@ -83,9 +141,14 @@ class RegistryCount:
     vat_payer: bool | None = None
     region: str | None = None
     registered_year: int | None = None
+    activity: str | None = None
+    products: list[str] = field(default_factory=list)
+    contract_form: str | None = None
+    seller_inn: str | None = None
+    active_on: dt.date | None = None
 
 
-Spec = DealsAggregate | DealLookup | ContractLookup | UsdRate | RegistryCount
+Spec = DealsAggregate | DealLookup | ContractLookup | ParticipantLookup | BrokerLookup | UsdRate | RegistryCount
 
 
 def _opt_int(d: dict, key: str) -> int | None:
@@ -174,12 +237,19 @@ def _check_year(year: int | None) -> None:
 
 FILTER_KEYS = tuple(f.name for f in dc_fields(Filters))
 ALLOWED_KEYS = {
-    "deals_aggregate": ("kind", "measures", "filters", "group_by", "top", "status_scope"),
+    "deals_aggregate": ("kind", "measures", "filters", "group_by", "top", "status_scope", "order", "share_of",
+                        "compare_periods"),
     "deal_lookup": ("kind", "deal_id"),
     "contract_lookup": ("kind", "contract_id"),
-    "usd_rate": ("kind", "date", "year", "month"),
-    "registry_count": ("kind", "entity", "role", "vat_payer", "region", "registered_year"),
+    "participant_lookup": ("kind", "inn"),
+    "broker_lookup": ("kind", "broker_code"),
+    "usd_rate": ("kind", "date", "year", "month", "extreme"),
+    "registry_count": ("kind", "entity", "role", "vat_payer", "region", "registered_year", "activity",
+                       "products", "contract_form", "seller_inn", "active_on"),
 }
+KINDS = tuple(ALLOWED_KEYS)
+USD_EXTREMES = ("min", "max")
+PERIOD_KEYS = ("year", "month_from", "month_to")
 _MISPLACED = ("date", "year", "month", "month_from", "month_to", "date_from", "date_to") + FILTER_KEYS
 
 
@@ -219,7 +289,17 @@ def _parse_filters(d: dict) -> Filters:
         contract_form=_opt_enum(d, "contract_form", CONTRACT_FORMS),
         trade_type=_opt_enum(d, "trade_type", TRADE_TYPES),
         statuses=[_enum(s, STATUSES, "status") for s in _str_list(d, "statuses")],
+        categories=_str_list(d, "categories"), industries=_str_list(d, "industries"),
+        product_groups=_str_list(d, "product_groups"), delivery_bases=_str_list(d, "delivery_bases"),
+        packagings=_str_list(d, "packagings"), hs_codes=_str_list(d, "hs_codes"),
+        product_variants=_str_list(d, "product_variants"),
+        buyer_regions=_str_list(d, "buyer_regions"), seller_regions=_str_list(d, "seller_regions"),
+        buyer_activities=_str_list(d, "buyer_activities"), seller_activities=_str_list(d, "seller_activities"),
+        units=_str_list(d, "units"),
     )
+    for code in f.hs_codes:
+        if not re.fullmatch(r"\d{4,10}", code):
+            raise SpecError(f"hs_code must be digits, got {code!r}")
     _check_year(f.year)
     has_month = f.month_from is not None or f.month_to is not None
     has_dates = f.date_from is not None or f.date_to is not None
@@ -261,6 +341,34 @@ def _parse_filters(d: dict) -> Filters:
     return f
 
 
+def _parse_share_of(v) -> ShareOf:
+    if not isinstance(v, dict):
+        raise SpecError(f"share_of must be an object {{field, value}} or {{field, values}}, got {v!r}")
+    _reject_unknown(v, ("field", "value", "values"), "share_of")
+    fld = v.get("field")
+    if fld == "statuses":
+        fld = "status"
+    _enum(fld, SHARE_FIELDS, "share_of.field")
+    values = _str_list(v, "values") + _str_list(v, "value")
+    if not values:
+        raise SpecError("share_of needs value (or values)")
+    allowed = {"contract_form": CONTRACT_FORMS, "contract_type": CONTRACT_TYPES, "trade_type": TRADE_TYPES,
+               "status": STATUSES}[fld]
+    for x in values:
+        _enum(x, allowed, f"share_of value for {fld}")
+    return ShareOf(fld, tuple(dict.fromkeys(values)))
+
+
+def _parse_period(v) -> Period:
+    if not isinstance(v, dict):
+        raise SpecError(f"each compare_periods item must be an object {{year[, month_from, month_to]}}, got {v!r}")
+    _reject_unknown(v, PERIOD_KEYS, "compare_periods item")
+    if _opt_int(v, "year") is None:
+        raise SpecError("each compare_periods item needs a year")
+    f = _parse_filters({k: v[k] for k in PERIOD_KEYS if k in v})
+    return Period(f.year, f.month_from, f.month_to)
+
+
 def _parse_aggregate(d: dict) -> DealsAggregate:
     measures = _str_list(d, "measures")
     if not measures:
@@ -273,14 +381,38 @@ def _parse_aggregate(d: dict) -> DealsAggregate:
     if group_by is not None:
         _enum(group_by, DIMENSIONS, "group_by")
     top = _opt_int(d, "top")
-    if group_by and top is None and group_by not in ("month", "year"):
+    if group_by and top is None and group_by not in TIME_DIMENSIONS:
         top = 3
     if top is not None and not 1 <= top <= 20:
         raise SpecError("top must be 1..20")
     scope = d.get("status_scope") or "split"
     _enum(scope, STATUS_SCOPES, "status_scope")
+    order = d.get("order") or "desc"
+    _enum(order, ORDERS, "order")
+    if order == "asc" and group_by is None:
+        raise SpecError("order applies to rankings only: set group_by (e.g. deal, seller, product) with order")
+    share_raw = d.get("share_of")
+    share_of = None if _empty(share_raw) else _parse_share_of(share_raw)
+    if "share_pct" in measures and share_of is None:
+        raise SpecError("share_pct needs share_of {field, value}: the condition whose share is computed, "
+                        f"field one of {', '.join(SHARE_FIELDS)}")
+    if share_of is not None and "share_pct" not in measures:
+        raise SpecError("share_of is only used with the share_pct measure")
     filters = d.get("filters")
-    return DealsAggregate(measures, _parse_filters({} if filters is None else filters), group_by, top, scope)
+    f = _parse_filters({} if filters is None else filters)
+    periods_raw = d.get("compare_periods")
+    periods: list[Period] = []
+    if not _empty(periods_raw):
+        if not isinstance(periods_raw, (list, tuple)) or len(periods_raw) != 2:
+            raise SpecError("compare_periods must be a list of exactly two periods")
+        periods = [_parse_period(p) for p in periods_raw]
+        if group_by is not None:
+            raise SpecError("compare_periods works only without group_by")
+        if any(x is not None for x in (f.year, f.month_from, f.date_from, f.date_to)):
+            raise SpecError("with compare_periods put the periods only in compare_periods, not in filters")
+        if periods[0] == periods[1]:
+            raise SpecError("compare_periods needs two different periods")
+    return DealsAggregate(measures, f, group_by, top, scope, order, share_of, periods)
 
 
 def parse_spec(d: dict) -> Spec:
@@ -301,12 +433,25 @@ def parse_spec(d: dict) -> Spec:
         if contract_id is None:
             raise SpecError("contract_id is required")
         return ContractLookup(contract_id)
+    if kind == "participant_lookup":
+        inn = str(d.get("inn") or "").strip()
+        if not re.fullmatch(r"\d{9}", inn):
+            raise SpecError(f"inn must be 9 digits, got {d.get('inn')!r}")
+        return ParticipantLookup(inn)
+    if kind == "broker_lookup":
+        code = str(d.get("broker_code") or "").strip().upper()
+        if not re.fullmatch(r"BK\d{3}", code):
+            raise SpecError(f"broker_code must look like BK001, got {d.get('broker_code')!r}")
+        return BrokerLookup(code)
     if kind == "usd_rate":
-        spec = UsdRate(_opt_date(d, "date"), _opt_int(d, "year"), _opt_int(d, "month"))
+        spec = UsdRate(_opt_date(d, "date"), _opt_int(d, "year"), _opt_int(d, "month"),
+                       _opt_enum(d, "extreme", USD_EXTREMES))
         if spec.date is not None and not RATES_START <= spec.date <= RATES_END:
             raise _outside(spec.date.isoformat())
         if spec.date is not None and (spec.year is not None or spec.month is not None):
             raise SpecError("use either date or year/month")
+        if spec.date is not None and spec.extreme is not None:
+            raise SpecError("extreme (min/max) needs year or year+month, not a date")
         if spec.month is not None and spec.year is None:
             raise SpecError("a month needs a year")
         if spec.month is not None and not 1 <= spec.month <= 12:
@@ -323,34 +468,70 @@ def parse_spec(d: dict) -> Spec:
         vat = _opt_bool(d, "vat_payer")
         year = _opt_int(d, "registered_year")
         _check_year(year)
+        activity = _opt_str(d, "activity")
+        products = _str_list(d, "products")
+        form = _opt_enum(d, "contract_form", CONTRACT_FORMS)
+        seller_inn = _opt_str(d, "seller_inn")
+        active_on = _opt_date(d, "active_on")
         if entity != "participants":
-            for name, val in (("role", role), ("vat_payer", vat)):
+            for name, val in (("role", role), ("vat_payer", vat), ("activity", activity)):
                 if val is not None:
                     raise SpecError(f"{name} is only allowed when entity is participants, not {entity}")
-        if entity != "contracts" and year is not None:
-            raise SpecError(f"registered_year is only allowed when entity is contracts, not {entity}")
-        return RegistryCount(entity, role, vat, _opt_str(d, "region"), year)
-    raise SpecError(f"unknown kind {kind!r}; use deals_aggregate, deal_lookup, contract_lookup, "
-                    "usd_rate or registry_count")
+        if entity != "contracts":
+            for name, val in (("registered_year", year), ("products", products or None),
+                              ("contract_form", form), ("seller_inn", seller_inn), ("active_on", active_on)):
+                if val is not None:
+                    raise SpecError(f"{name} is only allowed when entity is contracts, not {entity}")
+        if seller_inn is not None and not re.fullmatch(r"\d{9}", seller_inn):
+            raise SpecError(f"INN must be 9 digits, got {seller_inn!r}")
+        return RegistryCount(entity, role, vat, _opt_str(d, "region"), year, activity, products, form,
+                             seller_inn, active_on)
+    raise SpecError(f"unknown kind {kind!r}; use {', '.join(KINDS)}")
+
+
+def check_catalog(spec: Spec, catalog: dict[str, set[str]] | None) -> None:
+    """Reject enum-like values (category, industry, activity, unit, ...) that the database does not contain."""
+    if not catalog:
+        return
+    pairs: list[tuple[str, str, str]] = []  # (spec key, catalog field, value)
+    if isinstance(spec, DealsAggregate):
+        for key, fld in CATALOG_FILTERS.items():
+            pairs += [(key, fld, v) for v in getattr(spec.filters, key)]
+    elif isinstance(spec, RegistryCount) and spec.activity is not None:
+        pairs.append(("activity", "activity", spec.activity))
+    for key, fld, value in pairs:
+        known = catalog.get(fld)
+        if known is not None and value not in known:
+            raise SpecError(f"unknown {key} value {value!r}; allowed: {', '.join(sorted(known))}")
 
 
 def entity_values(spec: Spec) -> set[tuple[str, str]]:
-    """(kind, value) pairs that must be grounded; kinds: product, region, inn, broker, contract, deal."""
+    """(kind, value) pairs that must be grounded; kinds: product, product_family, product_variant, region, inn,
+    broker, contract, deal."""
     out: set[tuple[str, str]] = set()
     if isinstance(spec, DealsAggregate):
         f = spec.filters
         out |= {("product", v) for v in f.products}
-        out |= {("region", v) for v in f.regions}
+        out |= {("product_variant", v) for v in f.product_variants}
+        out |= {("region", v) for v in f.regions + f.buyer_regions + f.seller_regions}
         out |= {("inn", v) for v in f.buyer_inns + f.seller_inns + f.participant_inns}
         out |= {("broker", v) for v in f.seller_brokers + f.buyer_brokers + f.brokers}
         if f.product_family:
             out.add(("product_family", f.product_family))
         if f.contract_id is not None:
             out.add(("contract", str(f.contract_id)))
-    elif isinstance(spec, RegistryCount) and spec.region:
-        out.add(("region", spec.region))
+    elif isinstance(spec, RegistryCount):
+        if spec.region:
+            out.add(("region", spec.region))
+        out |= {("product", v) for v in spec.products}
+        if spec.seller_inn:
+            out.add(("inn", spec.seller_inn))
     elif isinstance(spec, ContractLookup):
         out.add(("contract", str(spec.contract_id)))
     elif isinstance(spec, DealLookup):
         out.add(("deal", str(spec.deal_id)))
+    elif isinstance(spec, ParticipantLookup):
+        out.add(("inn", spec.inn))
+    elif isinstance(spec, BrokerLookup):
+        out.add(("broker", spec.broker_code))
     return out
