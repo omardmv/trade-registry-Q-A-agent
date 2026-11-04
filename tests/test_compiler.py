@@ -105,7 +105,7 @@ def test_participant_volume_keeps_unit(db):
     assert "unit" in res.columns
 
 
-def test_cancelled_pct_grouped_uses_all_statuses(db):
+def test_cancelled_pct_alone_grouped_uses_all_statuses(db):
     c, res = run(db, {"kind": "deals_aggregate", "measures": ["cancelled_pct"], "group_by": "region", "top": 3})
     expected = db.query("""SELECT region, ROUND(100.0 * COUNT(*) FILTER (WHERE is_cancelled) / COUNT(*), 2)
                            FROM deals GROUP BY region ORDER BY 2 DESC NULLS LAST, region LIMIT 3""").rows
@@ -178,6 +178,31 @@ def test_literal_double_space_preserved():
 
 
 def test_ranked_ties_are_deterministic(db):
-    c, _ = run(db, {"kind": "deals_aggregate", "measures": ["deal_count"], "group_by": "region", "top": 3,
-                    "status_scope": "valid"})
+    c, res = run(db, {"kind": "deals_aggregate", "measures": ["deal_count"], "group_by": "region", "top": 3,
+                      "status_scope": "valid"})
     assert "DESC NULLS LAST, d.region" in c.sql
+    assert db.query(c.sql).rows == res.rows
+
+
+def test_cancelled_pct_keeps_valid_scope_for_other_measures(db):
+    c, res = run(db, {"kind": "deals_aggregate", "measures": ["amount_uzs", "cancelled_pct"],
+                      "group_by": "region", "top": 1})
+    top = db.query("""SELECT region, SUM(amount_uzs) FILTER (WHERE NOT is_cancelled) t FROM deals
+                      GROUP BY region ORDER BY t DESC NULLS LAST, region LIMIT 1""").rows[0]
+    rate = scalar(db, f"""SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE is_cancelled) / COUNT(*), 2) FROM deals
+                          WHERE region = '{top[0]}'""")
+    row = dict(zip(res.columns, res.rows[0]))
+    assert row["region"] == top[0]
+    assert row["total_uzs"] == pytest.approx(top[1])
+    assert row["cancelled_pct"] == rate
+    assert "excluded_cancelled" in c.notes and "all_statuses" not in c.notes
+
+
+def test_cancelled_pct_with_count_keeps_status_split(db):
+    _, res = run(db, {"kind": "deals_aggregate", "measures": ["deal_count", "cancelled_pct"],
+                      "filters": {"year": 2025}})
+    row = dict(zip(res.columns, res.rows[0]))
+    assert row["deals_all"] == scalar(db, "SELECT COUNT(*) FROM deals WHERE year=2025")
+    assert row["deals_valid"] == scalar(db, "SELECT COUNT(*) FROM deals WHERE year=2025 AND NOT is_cancelled")
+    assert row["cancelled_pct"] == scalar(db, """SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE is_cancelled)
+                                                 / COUNT(*), 2) FROM deals WHERE year=2025""")

@@ -125,11 +125,13 @@ def _expr(measure: str, valid: bool) -> str:
     return expr.format(f=_VALID if valid else "", n=_MASS_VALID if valid else _MASS)
 
 
-def _measure_cols(measures: list[str], split: bool) -> list[str]:
+def _measure_cols(measures: list[str], split: bool, valid_filter: bool = False) -> list[str]:
     cols = []
     for m in measures:
         alias = MEASURE_SQL[m][1]
-        if split and m != "cancelled_pct":
+        if valid_filter:         # valid scope without a WHERE: cancelled_pct needs the cancelled rows
+            cols.append(f"{_expr(m, m != 'cancelled_pct')} AS {alias}")
+        elif split and m != "cancelled_pct":
             cols.append(f"{_expr(m, False)} AS {alias}_all")
             cols.append(f"{_expr(m, True)} AS {alias}_valid")
         else:
@@ -156,10 +158,14 @@ def _compile_aggregate(s: DealsAggregate) -> Compiled:
     scope = s.status_scope
     if grouped and scope == "split":
         scope = "valid"          # rankings are computed on deals that took place
-    if s.filters.statuses or "cancelled_pct" in s.measures:
-        scope = "all"            # explicit status filter / cancelled share need cancelled deals
+    if s.filters.statuses:
+        scope = "all"            # explicit status filter overrides the default
+    if scope == "valid" and s.measures == ["cancelled_pct"]:
+        scope = "all"            # nothing else to restrict; the share needs every deal
+    valid_filter = scope == "valid" and "cancelled_pct" in s.measures
     if scope == "valid":
-        where.append("NOT d.is_cancelled")
+        if not valid_filter:
+            where.append("NOT d.is_cancelled")
         notes.append("excluded_cancelled")
     elif scope == "all":
         notes.append("all_statuses")
@@ -174,7 +180,7 @@ def _compile_aggregate(s: DealsAggregate) -> Compiled:
         dims.append(_UNIT)
         notes.append("volume_by_unit")
     where_sql = (" WHERE " + " AND ".join(where)) if where else ""
-    measure_cols = _measure_cols(s.measures, split_cols)
+    measure_cols = _measure_cols(s.measures, split_cols, valid_filter)
 
     per_unit = grouped and "volume" in s.measures
     if s.group_by == "participant":
@@ -194,7 +200,7 @@ def _compile_aggregate(s: DealsAggregate) -> Compiled:
                 parts.append(_ranked_select(
                     head + [f"d.{dim} AS inn", f"{alias}.name AS name"] + unit_sel + measure_cols,
                     f"FROM deals d LEFT JOIN participants {alias} ON {alias}.inn = d.{dim}{where_sql}",
-                    [f"d.{dim}", f"{alias}.name"] + unit_grp, s, m, split_cols, per_unit))
+                    [f"d.{dim}", f"{alias}.name"] + unit_grp, s, m, split_cols, per_unit, valid_filter))
         notes.append(f"ranked_top_{s.top}")
         return Compiled(" UNION ALL ".join(parts), splits, notes)
 
@@ -204,7 +210,7 @@ def _compile_aggregate(s: DealsAggregate) -> Compiled:
     source = "FROM deals d"
     if s.group_by == "broker":
         notes.append("broker_both_sides")
-        inner = where_clauses(s.filters, "x") + (["NOT x.is_cancelled"] if scope == "valid" else [])
+        inner = where_clauses(s.filters, "x") + (["NOT x.is_cancelled"] if scope == "valid" and not valid_filter else [])
         inner_where = (" WHERE " + " AND ".join(inner)) if inner else ""
         # UNION (not ALL): x.* carries deal_id, so a deal with the same broker on both sides collapses to one row
         source = ("FROM (SELECT x.*, x.seller_broker AS broker_code FROM deals x" + inner_where +
@@ -231,9 +237,9 @@ def _compile_aggregate(s: DealsAggregate) -> Compiled:
         for m in s.measures:
             rank = _rank_alias(m, split_cols)
             parts.append(_ranked_select([f"'by_{rank}' AS ranking"] + select + measure_cols, from_sql, group, s,
-                                        m, split_cols, per_unit))
+                                        m, split_cols, per_unit, valid_filter))
         return Compiled(" UNION ALL ".join(parts), splits, notes)
-    sql = _ranked_select(select + measure_cols, from_sql, group, s, s.measures[0], split_cols, per_unit)
+    sql = _ranked_select(select + measure_cols, from_sql, group, s, s.measures[0], split_cols, per_unit, valid_filter)
     return Compiled(sql, splits, notes)
 
 
@@ -243,13 +249,13 @@ def _rank_alias(measure: str, split: bool) -> str:
 
 
 def _ranked_select(cols: list[str], from_sql: str, group: list[str], s: DealsAggregate, measure: str,
-                   split: bool, per_unit: bool) -> str:
+                   split: bool, per_unit: bool, valid_filter: bool = False) -> str:
     rank_alias = _rank_alias(measure, split)
     tie = ", ".join(group)           # group keys break ties deterministically
     base = f"SELECT {', '.join(cols)} {from_sql} GROUP BY {', '.join(group)}"
     if per_unit:
         # volumes of different units are not comparable: rank within each unit
-        rank_expr = _expr(measure, split and measure != "cancelled_pct")
+        rank_expr = _expr(measure, (split or valid_filter) and measure != "cancelled_pct")
         return (f"({base} QUALIFY ROW_NUMBER() OVER (PARTITION BY d.unit ORDER BY {rank_expr} DESC NULLS LAST, "
                 f"{tie}) <= {int(s.top)} ORDER BY d.unit, {rank_alias} DESC NULLS LAST, {tie})")
     return f"({base} ORDER BY {rank_alias} DESC NULLS LAST, {tie} LIMIT {int(s.top)})"
