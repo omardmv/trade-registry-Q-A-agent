@@ -1,0 +1,65 @@
+- question: "Сколько сделок было заключено в июле 2024 года?"
+  spec: {kind: deals_aggregate, measures: [deal_count], filters: {year: 2024, month_from: 7}}
+- question: "Сколько сделок было в марте 2024 года?"
+  spec: {kind: deals_aggregate, measures: [deal_count], filters: {year: 2024, month_from: 3}}
+- question: "2023-yil mart oyida nechta bitim tuzilgan?"
+  spec: {kind: deals_aggregate, measures: [deal_count], filters: {year: 2023, month_from: 3}}
+- question: "Сколько сделок было во втором квартале 2025 года?"
+  spec: {kind: deals_aggregate, measures: [deal_count], filters: {year: 2025, month_from: 4, month_to: 6}}
+- question: "Какая общая сумма сделок в 2023 году?"
+  spec: {kind: deals_aggregate, measures: [amount_uzs], filters: {year: 2023}}
+- question: "Какова стоимость экспортных сделок в долларах за 2024 год?"
+  spec: {kind: deals_aggregate, measures: [amount_usd], filters: {year: 2024, contract_type: Экспортный}}
+- question: "Какая компания купила больше всего карбамида?"
+  note: "resolve(product, карбамид) → Карбамид; мерило не указано → объём и сумма"
+  spec: {kind: deals_aggregate, measures: [volume_tonnes, amount_uzs], group_by: buyer, filters: {products: [Карбамид]}}
+- question: "Paxta xom ashyosini eng ko‘p sotib olgan kompaniya qaysi?"
+  note: "resolve(product, paxta xom ashyosi) → Хлопок-сырец"
+  spec: {kind: deals_aggregate, measures: [volume_tonnes, amount_uzs], group_by: buyer, filters: {products: [Хлопок-сырец]}}
+- question: "Кто больше всех продал цемента по сумме в 2023 году?"
+  spec: {kind: deals_aggregate, measures: [amount_uzs], group_by: seller, top: 3, filters: {year: 2023, products: [Портландцемент]}}
+- question: "Какая компания больше всего торговала в 2023 году?"
+  note: "роль не указана → покупатели и продавцы отдельно"
+  spec: {kind: deals_aggregate, measures: [amount_uzs], group_by: participant, filters: {year: 2023}}
+- question: "Кто был брокером по сделке 412000?"
+  spec: {kind: deal_lookup, deal_id: 412000}
+- question: "101800-shartnoma bo‘yicha sotuvchi va brokerlar kim?"
+  spec: {kind: contract_lookup, contract_id: 101800}
+- question: "Какой брокер обслужил сделки на наибольшую сумму в 2024 году?"
+  spec: {kind: deals_aggregate, measures: [amount_uzs], group_by: broker, filters: {year: 2024}}
+- question: "BK045 broker 2025-yilda nechta bitimda qatnashgan?"
+  spec: {kind: deals_aggregate, measures: [deal_count], filters: {year: 2025, brokers: [BK045]}}
+- question: "Какой брокер покупателей провёл больше всего сделок в 2023?"
+  spec: {kind: deals_aggregate, measures: [deal_count], group_by: buyer_broker, filters: {year: 2023}}
+- question: "Какой был курс доллара 01.03.2025?"
+  spec: {kind: usd_rate, date: "2025-03-01"}
+- question: "2024-yil fevral oyida o‘rtacha dollar kursi qancha bo‘lgan?"
+  spec: {kind: usd_rate, year: 2024, month: 2}
+- question: "Сколько дизельного топлива продано в 2023 году?"
+  note: "дизель в литрах → volume по unit"
+  spec: {kind: deals_aggregate, measures: [volume], filters: {year: 2023, products: [Дизельное топливо]}}
+- question: "Средняя цена хлопка-сырца за килограмм в 2024 году?"
+  spec: {kind: deals_aggregate, measures: [avg_price_uzs_per_kg], status_scope: valid, filters: {year: 2024, products: [Хлопок-сырец]}}
+- question: "Какая доля сделок была аннулирована в 2023 году?"
+  spec: {kind: deals_aggregate, measures: [cancelled_pct, deal_count], status_scope: all, filters: {year: 2023}}
+- question: "Qaysi viloyatda 2025-yilda eng ko‘p bitim tuzilgan?"
+  spec: {kind: deals_aggregate, measures: [deal_count], group_by: region, filters: {year: 2025}}
+- question: "Сколько сделок по цементу было в Самаркандской области в 2024?"
+  spec: {kind: deals_aggregate, measures: [deal_count], filters: {year: 2024, products: [Портландцемент], regions: [Samarqand viloyati]}}
+- question: "Сколько продано хлопковой продукции (масло, шрот, пряжа, сырец) в 2025 по сумме?"
+  spec: {kind: deals_aggregate, measures: [amount_uzs], group_by: product, top: 10, filters: {year: 2025, product_family: Хлопок}}
+- question: "Как менялось число сделок по месяцам в 2024 году?"
+  spec: {kind: deals_aggregate, measures: [deal_count], group_by: month, status_scope: valid, filters: {year: 2024}}
+- question: "Сколько сделок исполнено частично в 2023 году и сколько лотов поставлено?"
+  spec: {kind: deals_aggregate, measures: [deal_count, lots_delivered], status_scope: all, filters: {year: 2023, statuses: ["Исполнен(Частично)"]}}
+- question: "Сколько покупателей зарегистрировано в реестре?"
+  spec: {kind: registry_count, entity: participants, role: Покупатель}
+- question: "Сколько сделок было в 2021 году?"
+  action: declare_unanswerable
+  note: "данные начинаются 03.01.2022"
+- question: "Какая прибыль у компании Pudexiz Plast?"
+  action: declare_unanswerable
+  note: "прибыли в данных нет"
+- question: "Какой средний срок поставки по форвардным контрактам?"
+  note: "нет шаблона → submit_sql"
+  sql: "SELECT AVG(delivery_term_days) AS avg_delivery_term_days, COUNT(*) AS contracts FROM contracts WHERE contract_form = 'Форвард'"

@@ -1,0 +1,131 @@
+data_coverage: >-
+  Сделки (deals) с 03.01.2022 по 30.10.2026, состояния — на конец дня 30.10.2026. Курс USD (usd_rates) —
+  каждый день с 01.01.2022 по 31.10.2026. Данных о прибыли, сотрудниках, контактах, рейтингах, других
+  биржах, других валютах и прогнозах нет.
+
+tables:
+  deals:
+    description: "Сделки биржи (bitimlar), одна строка = одна сделка, 500 000 строк."
+    columns:
+      deal_id: "BIGINT. Номер сделки / bitim raqami."
+      deal_date: "DATE. Дата сделки."
+      deal_time: "TIME. Время сделки (Ташкент)."
+      year: "INT. Год сделки."
+      month: "INT. Месяц сделки 1..12."
+      trade_type: "Тип торгов: Английский аукцион | Обратный аукцион | Двусторонний аукцион."
+      quantity: "DOUBLE. Куплено лотов."
+      lot: "DOUBLE. Единиц измерения в одном лоте."
+      unit: "Единица измерения: тонна, килограмм, литр, метр, куб.метр, кв.метр, штука."
+      volume: "DOUBLE. Объём в единицах измерения = quantity × lot. Суммировать только внутри одной unit."
+      volume_tonnes: "DOUBLE. Объём в тоннах для тонна/килограмм, иначе NULL."
+      amount: "DOUBLE. Сумма сделки в валюте контракта (UZS или USD). НЕ суммировать без учёта currency."
+      currency: "UZS | USD (валюта контракта; USD у экспортных контрактов)."
+      usd_rate: "DOUBLE. Курс сум за 1 USD на дату сделки."
+      amount_uzs: "DOUBLE. Сумма в сумах (USD × курс на дату сделки)."
+      amount_usd: "DOUBLE. Сумма в долларах (UZS ÷ курс на дату сделки)."
+      unit_price: "DOUBLE. Цена за единицу в валюте контракта."
+      start_price: "DOUBLE. Стартовая цена за единицу в валюте контракта."
+      contract_id: "INT. Номер контракта → contracts."
+      product_name_full: "Наименование товара как в реестре (свободный текст продавца, не для фильтров)."
+      product_canonical: "Канонический товар (фильтровать только по значениям из resolve)."
+      product_family: "Группа товара, напр. «Хлопок» = хлопок-сырец + шрот + масло + пряжа."
+      region: "Регион склада продавца, узбекская латиница (Toshkent shahri, Samarqand viloyati ...)."
+      contract_type: "Внутренний | Экспортный."
+      contract_form: "Спот | Форвард | Фьючерс."
+      status: "Состояние сделки (см. rules)."
+      is_cancelled: "BOOLEAN. TRUE = Аннулирован(Не оплачен): сделка не состоялась."
+      seller_inn: "ИНН продавца (STIR) → participants.inn."
+      buyer_inn: "ИНН покупателя → participants.inn."
+      seller_broker: "Код брокера продавца → brokers.broker_code."
+      buyer_broker: "Код брокера покупателя → brokers.broker_code."
+      payment_date: "DATE. Дата оплаты, NULL если не оплачено."
+      delivery_date: "DATE. Дата поставки, NULL если не поставлено."
+      delivered_lots: "DOUBLE. Фактически поставлено лотов."
+  contracts:
+    description: "Карточки контрактов (shartnomalar), 6 616 строк."
+    columns:
+      contract_id: "INT. Номер контракта."
+      product_name: "Наименование продукта как записал продавец."
+      product_canonical: "Канонический товар."
+      product_family: "Группа товара."
+      unit: "Единица измерения."
+      lot: "Единиц в лоте."
+      currency: "UZS | USD."
+      base_price: "Базисная цена за единицу на дату регистрации."
+      deposit_pct: "Залог, % от суммы сделки."
+      region: "Регион склада, узбекская латиница."
+      trade_type: "Тип торгов."
+      contract_type: "Внутренний | Экспортный."
+      contract_form: "Спот | Форвард | Фьючерс."
+      payment_term_days: "INT. Срок оплаты, календарных дней от даты сделки."
+      delivery_term_days: "INT. Срок поставки, календарных дней от даты оплаты."
+      seller_inn: "ИНН продавца."
+      registered_date: "DATE. Дата регистрации."
+      valid_until: "DATE. Действует до."
+  participants:
+    description: "Компании — продавцы и покупатели (ishtirokchilar), 14 392 строки."
+    columns:
+      inn: "ИНН (STIR), 9 цифр."
+      name: "Наименование как в реестре (для вывода, не для фильтров)."
+      region: "Регион, узбекская латиница."
+      activity: "Вид деятельности."
+      role: "Покупатель | Продавец."
+      vat_payer: "BOOLEAN. Плательщик НДС."
+      deals_as_buyer: "INT. Сделок в роли покупателя."
+      deals_as_seller: "INT. Сделок в роли продавца."
+  brokers:
+    description: "Брокерские конторы, 120 строк."
+    columns:
+      broker_code: "Код брокера, BK001..BK120."
+      name: "Наименование."
+      inn: "ИНН конторы."
+      region: "Регион."
+  usd_rates:
+    description: "Курс: сум за 1 USD на каждый календарный день."
+    columns:
+      rate_date: "DATE."
+      rate: "DOUBLE."
+
+rules:
+  - "Сделка «состоялась», если NOT is_cancelled. Аннулирован(Не оплачен) — не оплачена в срок и аннулирована."
+  - "Состояния: Новый (заключена 30.10.2026), Не подписан, Заключен (форвард/фьючерс подписан), Ждёт оплату (спот подписан), Оплачен (не поставлен), Исполнен (оплачен и поставлен), Исполнен(Частично), Аннулирован(Не оплачен)."
+  - "Деньги: всегда amount_uzs или amount_usd; amount — только вместе с currency."
+  - "Объём: volume_tonnes для массовых товаров; иначе volume с группировкой по unit."
+  - "Цена за кг = SUM(amount_uzs) / (SUM(volume_tonnes) × 1000)."
+  - "Компании, брокеры, товары, регионы — только по ID/значениям из resolve(); по названиям не фильтровать."
+  - "В выдаче рядом с ИНН/кодом всегда выводить наименование (join participants/brokers)."
+  - "Производные числа (проценты, средние, доли) считать в SQL отдельными колонками."
+  - "Если resolve() вернул товар (product) и группу (product_family) с одинаковым score — фильтровать по конкретному товару (products=[...]), а группу использовать только когда вопрос о всей группе товаров."
+
+ambiguities:
+  status_scope:
+    when: "счёт или сумма сделок без явного указания состояния"
+    default: "показать все сделки и отдельно без аннулированных (status_scope=split); рейтинги — без аннулированных"
+  measure:
+    when: "«больше всего», «крупнейший», «eng ko‘p» без указания мерила"
+    default: "два мерила: объём (volume_tonnes, для немассовых товаров — deal_count) и сумма (amount_uzs)"
+  currency:
+    when: "сумма без указания валюты"
+    default: "в сумах (amount_uzs); «в долларах» → amount_usd"
+  product_scope:
+    when: "«хлопок», «paxta» без уточнения"
+    default: "хлопок-сырец (products=[Хлопок-сырец]); если вопрос о всей хлопковой продукции — product_family=Хлопок с group_by=product"
+  role:
+    when: "«торговала больше всего», «eng ko‘p savdo qilgan» без указания покупатель/продавец"
+    default: "group_by=participant (отдельно покупатели и продавцы)"
+
+glossary:
+  - "bitim, savdo / сделка, торги → deals"
+  - "shartnoma / контракт → contracts"
+  - "xaridor, sotib olgan / покупатель, купил → buyer"
+  - "sotuvchi, sotgan / продавец, продал → seller"
+  - "korxona, kompaniya, tashkilot / компания, предприятие → participants"
+  - "STIR / ИНН → inn"
+  - "summa, qiymat / сумма, стоимость → amount_uzs | amount_usd"
+  - "hajm, miqdor, tonna / объём, количество, тонн → volume_tonnes | volume"
+  - "narx / цена → unit_price | avg_price_uzs_per_kg"
+  - "eksport / экспорт → contract_type=Экспортный; ichki / внутренний → Внутренний"
+  - "bekor qilingan / аннулирован → is_cancelled"
+  - "viloyat, hudud / регион, область → region"
+  - "kurs / курс → usd_rates"
+  - "chorak / квартал: I = месяцы 1–3, II = 4–6, III = 7–9, IV = 10–12"
