@@ -25,6 +25,11 @@ TIMEOUT = {
     "uz-Cyrl": "Белгиланган вақт ичида жавоб бериб бўлмади. Саволни соддароқ бериб кўринг.",
 }
 RESULT_HEADER = {"ru": "Результат запроса:", "uz": "So‘rov natijasi:", "uz-Cyrl": "Сўров натижаси:"}
+PARTIAL = {
+    "ru": "Показаны первые {n} строк.",
+    "uz": "Dastlabki {n} ta qator ko‘rsatilgan.",
+    "uz-Cyrl": "Дастлабки {n} та қатор кўрсатилган.",
+}
 
 
 def _lang(lang: str) -> str:
@@ -42,6 +47,10 @@ def failed(lang: str) -> str:
 
 def timeout(lang: str) -> str:
     return TIMEOUT[_lang(lang)]
+
+
+def partial_note(lang: str, n: int) -> str:
+    return PARTIAL[_lang(lang)].format(n=n)
 
 
 def table_answer(lang: str, columns: list[str], rows: list[tuple], explanation: str = "") -> str:
