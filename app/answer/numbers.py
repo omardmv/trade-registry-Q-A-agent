@@ -16,15 +16,23 @@ _SCALE_RE = "|".join(p for p, _ in _SCALES)
 NUMBER_RE = re.compile(
     rf"(?:(?<![\w.,])(?P<sign>[-\u2212]))?(?<![\w.,])(?P<int>\d{{1,3}}(?:{_SEP}\d{{3}})+|\d+)"
     rf"(?:[.,](?P<dec>\d+))?(?:{_SEP}?(?P<scale>{_SCALE_RE})\.?)?", re.I)
-_PERCENT_AFTER = re.compile(r"\s*%")
+_PERCENT_AFTER = re.compile(r"\s*(?:%|процент\w*|foiz|фоиз\w*)", re.I)
+# an ordinal before a month name / "число" / "kun" is a date day, not structure: it must be supported
+_DATE_WORD = (r"(?!\s+(?:январ|феврал|март|апрел|ма[йя]|июн|июл|август|сентябр|октябр|ноябр|декабр|числ"
+              r"|yanvar|fevral|mart|aprel|may|iyun|iyul|avgust|sent[yа]?abr|okt[yа]?abr|noyabr|dekabr|kun)"
+              r"\w*)")
 # structural numbers (list markers, ranks, ordinals) are not facts
 _STRUCTURAL_RES = [
     re.compile(r"^[ \t]*\d{1,2}[.)]\s", re.M),
     re.compile(r"(?:топ|top)-?\d+", re.I),
-    re.compile(r"\b\d{1,2}-(?:е|й|я|го|му|м|ое|ый)\b", re.I),
-    re.compile(r"\b\d{1,2}-(?:chi|o‘rin|o'rin)", re.I),
+    re.compile(r"\b\d{1,2}-(?:е|й|я|го|му|м|ое|ый)\b" + _DATE_WORD, re.I),
+    re.compile(r"\b\d{1,2}-(?:chi|o‘rin|o'rin)" + _DATE_WORD, re.I),
     re.compile(r"\b\d{1,2}\s+(?:место|o‘rin|o'rin)", re.I),
 ]
+# product / grade codes: АИ-92, AGROMIR-2, КС-65, 21х32мм, "ПЦ 400"
+CODE_RE = re.compile(
+    r"(?<!\w)(?:[^\W\d_]+[-\u2010]?\d[\w,.хx]*|\d+[хx]\d+\w*|[^\W\d_]{1,4}[ \u00a0\u202f]\d+)(?![\w])", re.I)
+MONTH_YEAR_RE = re.compile(r"(?<![\d.])(0[1-9]|1[0-2])\.(20\d\d)\b(?!\.\d)")
 DATE_RE = re.compile(r"\b\d{2}\.\d{2}\.\d{4}\b|\b\d{4}-\d{2}-\d{2}\b")
 ID_RE = re.compile(r"(?<!\d)\d{9}(?!\d)|\bBK\d{3}\b", re.I)
 QUOTED_RE = re.compile(r"[«“\"]([^»”\"]{2,80})[»”\"]")

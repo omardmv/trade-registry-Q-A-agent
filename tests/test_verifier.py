@@ -235,3 +235,52 @@ def test_template_has_no_extra_numbers_beyond_ellipsis():
     text = table_answer("ru", ["n"], rows)
     assert text.splitlines()[-1] == "…"
     assert verify_answer(text, "?", rows).ok
+
+
+# ---- re-review: code tokens, ordinal dates, percent words, month-year, row_count, time ----
+
+@pytest.mark.parametrize("answer,question,rows,extra,row_count,ok", [
+    ("Покупатель «AGROMIR-2»", "?", [('ООО «AGROMIR-2»',)], "", None, True),
+    ("Лидер — «Agromir-2» — 45,6 млн сум.", "?", [('ООО «AGROMIR-2»', 45_600_000.0)], "", None, True),
+    ("1. «Agromir-2» (STIR 915688255) — 45,6 mln so‘m", "?",
+     [("915688255", 'ООО «AGROMIR-2»', 45.6e6)], "", None, True),
+    ("Бензин АИ-92 продан на 1 234 сум", "?", [("Бензин АИ-92 премиум", 1234)], "", None, True),
+    ("Кормосмесь КС-65 — 25 тонн", "?", [("Комбикорм КС-65 гранулы", 25)], "", None, True),
+    ("Товар ПЦ 400: 5 сделок", "?", [("Цемент ПЦ 400 Д20", 5)], "", None, True),
+    ("Профиль 21х32мм — 5 сделок", "?", [("Профиль 21х32мм труба", 5)], "", None, True),
+    ("Продукт АИ-92 — 5 сделок", "Про АИ-92?", [(5,)], "", None, True),
+    ("Средняя цена 92 сум", "?", [("Бензин АИ-92 премиум",)], "", None, False),
+    ("Бензин АИ-95 продан", "?", [("Бензин АИ-92 премиум",)], "", None, False),
+    ("Бензин АИ-92 продан на 77 сум", "?", [("Бензин АИ-92 премиум", 1234)], "", None, False),
+    ("«Alfa» 7 сделок", "?", [("Alfa", 5)], "", None, False),
+    # ordinal + month / kun
+    ("Сделка 17-го октября 2025 года", "?", [(dt.date(2025, 10, 15),)], "", None, False),
+    ("Сделка 17-го октября 2025 года", "?", [(dt.date(2025, 10, 17),)], "", None, True),
+    ("Сделка 17-го числа", "?", [(dt.date(2025, 10, 15),)], "", None, False),
+    ("17-chi oktabr kuni", "?", [(dt.date(2025, 10, 15),)], "", None, False),
+    ("17-chi oktabr kuni", "17 oktabr", [], "", None, True),
+    ("Сделка 17-го октября 2025 года", "?", [(dt.date(2025, 10, 15),)], "Расчёт 17 октября", None, True),
+    ("Участвовал 3-й брокер", "?", [("BK001",)], "", None, True),
+    # percent words
+    ("Доля 7 процентов", "?", [(6.6,)], "", None, False),
+    ("Ulushi 7 foiz", "?", [(6.6,)], "", None, False),
+    ("Доля 7 процентов", "?", [(7.0,)], "", None, True),
+    # month-year
+    ("- 01.2025: 8 123", "?", [(2025, 1, 8123)], "", None, True),
+    ("- 01.2025: 8 123", "?", [(2025, 2, 8123)], "", None, False),
+    ("- 01.2025: 8 123", "?", [(dt.date(2025, 1, 15), 8123)], "", None, True),
+    ("- 01.2025: 8 123", "?", [(dt.date(2025, 2, 15), 8123)], "", None, False),
+    ("- 01.2025: 8 123", "за 01.2025", [(8123,)], "", None, True),
+    ("- 01.2025: 8 123", "?", [(8123,)], "период 01.2025", None, True),
+    ("- 01.2025: 8 123", "?", [(8123,)], "", None, False),
+    # row_count
+    ("Найдено 3 покупателя", "?", [("A",), ("B",), ("C",)], "", 3, True),
+    ("Найдено 3 покупателя", "?", [("A",), ("B",), ("C",)], "", None, False),
+    ("Найдено 4 покупателя", "?", [("A",), ("B",), ("C",)], "", 3, False),
+    # time cells
+    ("Сделка в 09:05", "?", [(dt.time(9, 5, 7),)], "", None, True),
+    ("Сделка в 09:06", "?", [(dt.time(9, 5, 7),)], "", None, False),
+])
+def test_rereview_probes(answer, question, rows, extra, row_count, ok):
+    r = verify_answer(answer, question, rows, extra_text=extra, row_count=row_count)
+    assert r.ok is ok, r.unsupported

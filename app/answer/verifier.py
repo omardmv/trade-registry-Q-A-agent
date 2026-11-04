@@ -5,7 +5,8 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 
 from app.answer.numbers import (
-    extract_dates, extract_ids, extract_numbers, extract_quoted, format_cell, strip_structural,
+    CODE_RE, DATE_RE, MONTH_YEAR_RE, extract_dates, extract_ids, extract_numbers, extract_quoted, format_cell,
+    strip_structural,
 )
 from app.text import normalize_name
 
@@ -35,12 +36,30 @@ def _delete_cells(text: str, cells: set[str], only_with_quotes: bool = False) ->
     return rx.sub(_PLACEHOLDER if only_with_quotes else " ", text)
 
 
-def verify_answer(answer: str, question: str, rows: list[tuple], extra_text: str = "") -> Verification:
-    numbers: list[float] = []
+def _month_years(text: str) -> set[tuple[int, int]]:
+    found = {(int(m), int(y)) for m, y in MONTH_YEAR_RE.findall(DATE_RE.sub(" ", text))}
+    for d in extract_dates(text):
+        if "-" in d:
+            y, m, _ = d.split("-")
+        else:
+            _, m, y = d.split(".")
+        found.add((int(m), int(y)))
+    return found
+
+
+def verify_answer(answer: str, question: str, rows: list[tuple], extra_text: str = "",
+                  row_count: int | None = None) -> Verification:
+    numbers: list[float] = [] if row_count is None else [float(row_count)]
+    month_years: set[tuple[int, int]] = set()
     dates: set[str] = set(_ALWAYS_DATES)
     cells: set[str] = set()
     ids: set[str] = set()
     for row in rows:
+        row_nums = {float(c) for c in row if isinstance(c, (int, float, Decimal)) and not isinstance(c, bool)}
+        for y in row_nums:
+            for m in row_nums:
+                if y == int(y) and m == int(m) and 1 <= m <= 12:
+                    month_years.add((int(m), int(y)))
         for cell in row:
             if cell is None or isinstance(cell, bool):
                 continue
@@ -48,15 +67,20 @@ def verify_answer(answer: str, question: str, rows: list[tuple], extra_text: str
                 numbers.append(float(cell))
             elif isinstance(cell, dt.date):
                 dates |= {cell.strftime("%d.%m.%Y"), cell.isoformat()[:10]}
+                month_years.add((cell.month, cell.year))
                 numbers += [cell.day, cell.month, cell.year]
             else:
                 for text in {str(cell), format_cell(cell)}:
                     cells.add(text)
+                if isinstance(cell, dt.time):
+                    cells.add(cell.strftime("%H:%M"))
                 dates |= set(extract_dates(str(cell)))
+                month_years |= _month_years(str(cell))
                 ids |= set(extract_ids(str(cell)))
     for context in (question, extra_text):
         numbers += [t.value for t in extract_numbers(context)]
         dates |= set(extract_dates(context))
+        month_years |= _month_years(context)
         ids |= set(extract_ids(context))
     name_hay = [_padded(c) for c in cells] + [_padded(question), _padded(extra_text)]
 
@@ -67,12 +91,33 @@ def verify_answer(answer: str, question: str, rows: list[tuple], extra_text: str
     for ident in extract_ids(answer):
         if ident not in ids:
             unsupported.append(ident)
-    scrubbed = strip_structural(_delete_cells(answer, cells))
-    for tok in extract_numbers(scrubbed):
-        if not any(abs(tok.value - v) <= tok.tolerance + 1e-9 * abs(v) for v in numbers):
-            unsupported.append(tok.text)
+    quote_ok: list[str] = []
     for quoted in extract_quoted(_delete_cells(answer, cells, only_with_quotes=True)):
         norm = normalize_name(quoted)
         if not norm or not any(f" {norm} " in hay for hay in name_hay):
             unsupported.append(quoted)
+        else:
+            quote_ok.append(quoted)
+
+    scrubbed = _delete_cells(answer, cells)
+    for quoted in sorted(set(quote_ok), key=len, reverse=True):
+        scrubbed = scrubbed.replace(quoted, " ")
+
+    def _month_year(m: re.Match) -> str:
+        if (int(m.group(1)), int(m.group(2))) not in month_years:
+            unsupported.append(m.group(0))
+        return " "
+
+    scrubbed = MONTH_YEAR_RE.sub(_month_year, scrubbed)
+
+    def _code(m: re.Match) -> str:
+        norm = normalize_name(m.group(0))
+        if norm and any(f" {norm} " in hay for hay in name_hay):
+            return " "
+        return m.group(0)
+
+    scrubbed = strip_structural(CODE_RE.sub(_code, scrubbed))
+    for tok in extract_numbers(scrubbed):
+        if not any(abs(tok.value - v) <= tok.tolerance + 1e-9 * abs(v) for v in numbers):
+            unsupported.append(tok.text)
     return Verification(not unsupported, unsupported)
