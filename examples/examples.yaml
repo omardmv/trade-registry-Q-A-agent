@@ -20,7 +20,7 @@
   spec: {kind: deals_aggregate, measures: [amount_uzs], group_by: seller, top: 3, filters: {year: 2023, products: [Портландцемент]}}
 - question: "Какая компания больше всего торговала в 2023 году?"
   note: "роль не указана → покупатели и продавцы отдельно"
-  spec: {kind: deals_aggregate, measures: [amount_uzs], group_by: participant, filters: {year: 2023}}
+  spec: {kind: deals_aggregate, measures: [deal_count, amount_uzs], group_by: participant, filters: {year: 2023}}
 - question: "Кто был брокером по сделке 412000?"
   spec: {kind: deal_lookup, deal_id: 412000}
 - question: "101800-shartnoma bo‘yicha sotuvchi va brokerlar kim?"
@@ -49,14 +49,18 @@
 - question: "Сколько продано хлопковой продукции (масло, шрот, пряжа, сырец) в 2025 по сумме?"
   spec: {kind: deals_aggregate, measures: [amount_uzs], group_by: product, top: 10, filters: {year: 2025, product_family: Хлопок}}
 - question: "Как менялось число сделок по месяцам в 2024 году?"
-  spec: {kind: deals_aggregate, measures: [deal_count], group_by: month, status_scope: valid, filters: {year: 2024}}
+  spec: {kind: deals_aggregate, measures: [deal_count], group_by: month, filters: {year: 2024}}
 - question: "Сколько сделок исполнено частично в 2023 году и сколько лотов поставлено?"
   spec: {kind: deals_aggregate, measures: [deal_count, lots_delivered], status_scope: all, filters: {year: 2023, statuses: ["Исполнен(Частично)"]}}
 - question: "Сколько покупателей зарегистрировано в реестре?"
   spec: {kind: registry_count, entity: participants, role: Покупатель}
-- question: "Сколько сделок было в 2021 году?"
+- question: "Какие сделки заключались на бирже до 2022 года, например в 2019-м?"
   action: declare_unanswerable
   note: "данные начинаются 03.01.2022"
+- question: "Сколько сделок было в 2022 году?"
+  spec: {kind: deals_aggregate, measures: [deal_count], filters: {year: 2022}}
+- question: "2026-yilda nechta bitim tuzilgan?"
+  spec: {kind: deals_aggregate, measures: [deal_count], filters: {year: 2026}}
 - question: "Какая прибыль у компании Pudexiz Plast?"
   action: declare_unanswerable
   note: "прибыли в данных нет"

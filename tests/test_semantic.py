@@ -1,5 +1,6 @@
 from app import config
 from app.compiler.spec import parse_spec
+from app.compiler.sql import compile_spec
 from app.examples import ExampleStore
 from app.semantic import load_semantic, render_schema_prompt
 
@@ -41,3 +42,28 @@ def test_search_finds_similar_question():
     assert top.spec["measures"] == ["deal_count"]
     top_uz = store.search("paxtani eng ko‘p sotib olgan kim?", k=1)[0]
     assert top_uz.spec["group_by"] == "buyer"
+
+
+ANSWERABLE_COUNT_QUESTIONS = [
+    "Сколько сделок было в 2022 году?",
+    "Сколько сделок было в январе 2022 года?",
+    "Сколько сделок было в 2026 году?",
+    "Сколько сделок было в мае 2023 года?",
+    "2025-yilda nechta bitim tuzilgan?",
+]
+
+
+def test_in_range_count_questions_retrieve_answerable_example():
+    store = ExampleStore.from_yaml(config.EXAMPLES_PATH)
+    for question in ANSWERABLE_COUNT_QUESTIONS:
+        top = store.search(question, k=1)[0]
+        assert top.action != "declare_unanswerable", question
+        assert top.spec is not None, question
+
+
+def test_every_example_spec_compiles_and_explains(db):
+    store = ExampleStore.from_yaml(config.EXAMPLES_PATH)
+    for ex in store.examples:
+        if ex.spec is not None:
+            compiled = compile_spec(parse_spec(ex.spec))
+            db.explain(compiled.sql)
