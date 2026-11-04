@@ -36,6 +36,7 @@ _CONTEXT_RE = {"status": re.compile(r"статус|состояни|holat|ҳол
 # plural (company-type) forms: whole tokens, or token prefixes for Uzbek plural + case endings
 # ("ishlab chiqaruvchilar", "ishlab chiqaruvchilardan")
 _PLURAL_FORMS = {("activity", "Производитель"): {"proizvoditeli", "proizvoditeley"}}
+_COUNT_WORDS = {"nechta", "qancha"}   # normalize_text transliterates Cyrillic нечта / қанча
 _PLURAL_PREFIXES = {("activity", "Производитель"): ("chiqaruvchilar",)}
 # Status names are past participles of everyday verbs: exact tokens only. Unit words only take endings
 # ("литр" ~ "литрах").
@@ -60,6 +61,16 @@ _SHARE_RE = re.compile(r"(?<!\w)(?:дол[яиюей]|процент\w*|foiz\w*|
 _PERCENT_MEASURES = {"share_pct", "cancelled_pct", "avg_price_change_pct"}
 _SHARE_BASIS_RE = {"amount_uzs": re.compile(r"оборот|сумм|summa|qiymat|pul(?!\w)", re.IGNORECASE),
                    "volume_t": re.compile(r"объ[её]м|тонн|hajm|tonna", re.IGNORECASE)}
+# basis word attached to the share word ("процент ... по сумме", "foiz ... summa bo'yicha")
+_SHARE_WORD = r"(?:дол[яиюей]|процент\w*|foiz\w*|ulush\w*|фоиз\w*|улуш\w*)"
+_BASIS_PHRASE = {"amount_uzs": r"(?:по\s+(?:сумм\w*|оборот\w*)|summa\s+bo.yicha|qiymat\s+bo.yicha)",
+                 "volume_t": r"(?:по\s+объ[её]м\w*|hajm\s+bo.yicha)"}
+_ATTACHED_BASIS_RE = {b: re.compile(rf"(?<!\w){_SHARE_WORD}(?:\W+\w+){{0,6}}?\W+{ph}", re.IGNORECASE)
+                      for b, ph in _BASIS_PHRASE.items()}
+_GRADE_RE = re.compile(
+    r"\b\d+[- ]?(?:сорт\w*|класс\w*)\b|\b(?:I|II|III|IV|первый|второй|третий|высш\w*)\s+сорт\w*"
+    r"|\b\d+[- ]?nav\w*|(?<!\w)(?:АИ-?\s?\d+|М00К|М0К|ПЦ\s?\d+|ЦЕМ\s?[IV]+)(?!\w)",
+    re.IGNORECASE)
 _NEGATION_RE = re.compile(r"(?<!\w)(?:кроме|без|не|bundan\s+tashqari|tashqari|emas)(?!\w)", re.IGNORECASE)
 _EACH_RE = re.compile(r"по\s+кажд\w*|по\s+всем|har\s+bir", re.IGNORECASE)
 _MIN_MAX_MEASURES = {"min_unit_price_uzs", "max_unit_price_uzs"}
@@ -140,7 +151,11 @@ def _context_ok(v: _Value, question: str, q_tokens: list[str], span: tuple[int, 
         return True
     plural = _PLURAL_FORMS.get((v.field, v.value), set())
     prefixes = _PLURAL_PREFIXES.get((v.field, v.value), ())
-    return any(t in plural or t.startswith(prefixes) for t in q_tokens[span[0]:span[1]] if t)
+    if any(t in plural or t.startswith(prefixes) for t in q_tokens[span[0]:span[1]] if t):
+        return True
+    # singular right after a count word: "nechta ishlab chiqaruvchi ..." = how many companies of this type
+    return (v.field, v.value) in _PLURAL_FORMS and any(
+        t in _COUNT_WORDS for t in q_tokens[max(0, span[0] - 2):span[0]])
 
 
 def mentioned_values(question: str, index: list[_Value], ignore_names=()) -> list[_Value]:
@@ -255,6 +270,10 @@ def missing_condition_error(question: str, spec: Spec, index: list[_Value], igno
         if _SHARE_RE.search(q):
             return ("registry_count returns counts only, not a share / percentage: call declare_unanswerable")
         return None
+    if _GRADE_RE.search(question) and spec.filters.products and not spec.filters.product_variant_query:
+        return ("the question names a grade / mark of the product: put the product phrase with the grade / mark "
+                "into filters.product_variant_query (e.g. «хлопок-сырец 1 сорт»; resolve(kind=product_variant) "
+                "first) instead of filters.products")
     ranked = spec.group_by not in (None, "broker_side") and not (spec.group_by in TIME_DIMENSIONS and spec.top is None)
     least_ok = _EACH_RE.search(q) or any(m in _MIN_MAX_MEASURES for m in spec.measures)
     if ranked and spec.order != "asc" and not least_ok and _LEAST_RE.search(q):
@@ -270,7 +289,8 @@ def missing_condition_error(question: str, spec: Spec, index: list[_Value], igno
                         f"share_of.basis=\"{basis}\"")
     if _SHARE_RE.search(q) and "cancelled_pct" in spec.measures:
         for basis, rx in _SHARE_BASIS_RE.items():
-            if rx.search(q) and not _BASIS_MEASURES[basis] & set(spec.measures):
+            if rx.search(q) and (_ATTACHED_BASIS_RE[basis].search(q)
+                                 or not _BASIS_MEASURES[basis] & set(spec.measures)):
                 return ("the question asks for a share of money / volume, but cancelled_pct is a share of the deal "
                         "count: use share_pct with share_of {field: \"status\", value: \"Аннулирован(Не оплачен)\", "
                         f"basis: \"{basis}\"}} (basis amount_uzs for money, volume_t for tonnes)")

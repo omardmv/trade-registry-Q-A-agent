@@ -168,3 +168,40 @@ def test_compare_periods_past_data_end_needs_equal_months():
         parse_spec(agg(["deal_count"], compare_periods=[{"year": 2025}, {"year": 2026}]))
     parse_spec(agg(["deal_count"], compare_periods=[{"year": 2025, "month_from": 1, "month_to": 10},
                                                      {"year": 2026, "month_from": 1, "month_to": 10}]))
+
+
+# 5. review round 3: Uzbek singular after count word, attached share basis, grade cues -----------------------------
+
+@pytest.mark.parametrize("q", ["Nechta ishlab chiqaruvchi ro'yxatdan o'tgan?", "Нечта ишлаб чиқарувчи рўйхатдан ўтган?",
+                               "Qancha ishlab chiqaruvchi ro'yxatdan o'tgan?", "Қанча ишлаб чиқарувчи рўйхатдан ўтган?",
+                               "Nechta yirik ishlab chiqaruvchi ro'yxatdan o'tgan?"])
+def test_uzbek_singular_after_count_word_needs_activity(index, q):
+    e = missing_condition_error(q, parse_spec({"kind": "registry_count", "entity": "participants"}), index)
+    assert e and "Производитель" in e
+    ok = parse_spec({"kind": "registry_count", "entity": "participants", "activity": "Производитель"})
+    assert missing_condition_error(q, ok, index) is None
+
+
+def test_cancelled_pct_attached_basis_blocked_but_and_amount_allowed(index):
+    spec = parse_spec(agg(["cancelled_pct", "amount_uzs"], filters={"year": 2025}))
+    e = missing_condition_error("Какой процент сделок аннулирован в 2025 году по сумме?", spec, index)
+    assert e and "share_pct" in e and "amount_uzs" in e
+    assert missing_condition_error("Какой процент сделок аннулирован в 2025 году и на какую сумму?", spec, index) is None
+    e = missing_condition_error("Какой процент сделок аннулирован в 2025 году по объёму?", spec, index)
+    assert e and "volume_t" in e
+
+
+def test_grade_cue_needs_variant_query(index):
+    q = "Сколько тонн хлопка-сырца 1 сорта продано в 2025?"
+    bad = parse_spec(agg(["volume_tonnes"], filters={"year": 2025, "products": ["Хлопок-сырец"]}))
+    e = missing_condition_error(q, bad, index)
+    assert e and "product_variant_query" in e
+    good = parse_spec(agg(["volume_tonnes"], filters={"year": 2025, "products": ["Хлопок-сырец"],
+                                                      "product_variant_query": "хлопок-сырец 1 сорт"}))
+    assert missing_condition_error(q, good, index) is None
+    q2 = "Сколько бензина АИ-92 продано в 2025?"
+    bad2 = parse_spec(agg(["volume_tonnes"], filters={"year": 2025, "products": ["Бензин автомобильный"]}))
+    e = missing_condition_error(q2, bad2, index)
+    assert e and "product_variant_query" in e
+    plain = "Сколько тонн хлопка-сырца продано в 2025?"
+    assert missing_condition_error(plain, bad, index) is None
