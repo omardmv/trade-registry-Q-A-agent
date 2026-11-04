@@ -1,8 +1,9 @@
 """Compile validated specs into SQL from fixed templates. All SQL here is reviewed and unit-tested."""
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 
 from app.compiler.spec import (BrokerLookup, ContractLookup, DealLookup, DealsAggregate, Filters, ParticipantLookup,
-                               RegistryCount, Spec, UsdRate)
+                               RegistryCount, Spec, SpecError, UsdRate)
 
 # measure -> (expression template, alias). Placeholders are FILTER clauses that combine the status filter (when the
 # valid view is computed) with: {f} nothing else; {n} mass deals only (volume_tonnes known, for money that is divided
@@ -108,7 +109,7 @@ DIMS = {
 _UNIT = Dim(("d.unit AS unit",), ("d.unit",))
 
 # list filter -> deals column (plain IN)
-_LIST_FILTERS = (("products", "product_canonical"), ("product_variants", "product_name_full"), ("regions", "region"),
+_LIST_FILTERS = (("products", "product_canonical"), ("regions", "region"),
                  ("buyer_inns", "buyer_inn"), ("seller_inns", "seller_inn"), ("seller_brokers", "seller_broker"),
                  ("buyer_brokers", "buyer_broker"), ("statuses", "status"), ("categories", "category"),
                  ("industries", "industry"), ("product_groups", "product_group"),
@@ -133,7 +134,8 @@ def _in(column: str, values) -> str:
     return f"{column} IN ({', '.join(lit(v) for v in values)})"
 
 
-def where_clauses(f: Filters, a: str = "d") -> list[str]:
+def where_clauses(f: Filters, a: str = "d", variant_names: list[str] | None = None) -> list[str]:
+    """variant_names: the expansion of f.product_variant_query (required when it is set)."""
     w = []
     if f.year is not None:
         w.append(f"{a}.year = {int(f.year)}")
@@ -161,7 +163,28 @@ def where_clauses(f: Filters, a: str = "d") -> list[str]:
         values = getattr(f, key)
         if values:
             w.append(_in(f"{a}.{column}", values))
+    if f.product_variant_query:
+        if not variant_names:
+            raise SpecError(f"product_variant_query {f.product_variant_query!r} was not expanded")
+        w.append(_in(f"{a}.product_name_full", variant_names))
     return w
+
+
+VariantMatcher = Callable[[str], list[str]]
+
+
+def expand_variants(f: Filters, variants: VariantMatcher | None) -> list[str] | None:
+    """Every raw spelling (deals.product_name_full) that filters.product_variant_query matches, with the same
+    deterministic matcher as resolve(kind=product_variant) (Resolver.variant_names)."""
+    if not f.product_variant_query:
+        return None
+    if variants is None:
+        raise SpecError("product_variant_query needs the product spelling matcher")
+    names = list(dict.fromkeys(variants(f.product_variant_query)))
+    if not names:
+        raise SpecError(f"no product spelling matches {f.product_variant_query!r}; call declare_unanswerable or "
+                        "use products")
+    return names
 
 
 def _share_condition(s: DealsAggregate) -> str:
@@ -182,9 +205,11 @@ PERCENT_POINT_MEASURES = ("share_pct", "cancelled_pct", "avg_price_change_pct")
 def _expr(measure: str, valid: bool, s: DealsAggregate | None = None) -> str:
     expr = MEASURE_SQL[measure][0]
     if measure == "share_pct" and s is not None and s.share_of is not None and s.share_of.basis != "deals":
-        # money / tonnes shares are over deals that took place, unless a status filter defines the rows
+        # money / tonnes shares are over deals that took place, unless a status filter defines the rows or the
+        # share itself is of a status
         col = _SHARE_BASIS_COL[s.share_of.basis]
-        conds = [] if s.filters.statuses else ["NOT d.is_cancelled"]
+        # a share of a status needs every status in the denominator
+        conds = [] if s.filters.statuses or s.share_of.field == "status" else ["NOT d.is_cancelled"]
         num = _filter_clause([_share_condition(s)] + conds)
         return f"ROUND(100.0 * SUM({col}){num} / NULLIF(SUM({col}){_filter_clause(conds)}, 0), 2)"
     status = [] if measure in SCOPE_FREE or not valid else ["NOT d.is_cancelled"]
@@ -232,14 +257,17 @@ def _scope(s: DealsAggregate) -> str:
     return scope
 
 
-def _compile_aggregate(s: DealsAggregate) -> Compiled:
+def _compile_aggregate(s: DealsAggregate, variants: VariantMatcher | None = None) -> Compiled:
+    names = expand_variants(s.filters, variants)
     notes = _currency_notes(s.measures)
+    if names:
+        notes.append(f"variant_spellings_{len(names)}")
     splits = []
     if "amount_uzs" in s.measures and "amount_usd" in s.measures:
         splits.append("currency")
     if "avg_price_uzs_per_kg" in s.measures and "mean_deal_price_uzs_per_t" in s.measures:
         splits.append("price_average")
-    where = where_clauses(s.filters)
+    where = where_clauses(s.filters, variant_names=names)
     grouped = s.group_by is not None
     scope = _scope(s)
     valid_filter = scope == "valid" and any(m in SCOPE_FREE for m in s.measures)
@@ -268,11 +296,11 @@ def _compile_aggregate(s: DealsAggregate) -> Compiled:
 
     if s.compare_periods:
         notes.append("compare_periods")
-        return Compiled(_compare_periods_sql(s, scope, valid_filter, dims), splits, notes)
+        return Compiled(_compare_periods_sql(s, scope, valid_filter, dims, names), splits, notes)
 
     if s.group_by == "broker_side":
         notes.append("broker_side_split")
-        return Compiled(_broker_side_sql(s, scope, valid_filter, split_cols, measure_cols), splits, notes)
+        return Compiled(_broker_side_sql(s, scope, valid_filter, split_cols, measure_cols, names), splits, notes)
 
     per_unit = grouped and bool(per_unit_measures)
     if s.group_by == "participant":
@@ -302,7 +330,7 @@ def _compile_aggregate(s: DealsAggregate) -> Compiled:
     source = "FROM deals d"
     if s.group_by == "broker":
         notes.append("broker_both_sides")
-        inner = where_clauses(s.filters, "x") + (["NOT x.is_cancelled"] if scope == "valid" and not valid_filter else [])
+        inner = where_clauses(s.filters, "x", names) + (["NOT x.is_cancelled"] if scope == "valid" and not valid_filter else [])
         inner_where = (" WHERE " + " AND ".join(inner)) if inner else ""
         # UNION (not ALL): x.* carries deal_id, so a deal with the same broker on both sides collapses to one row
         source = ("FROM (SELECT x.*, x.seller_broker AS broker_code FROM deals x" + inner_where +
@@ -335,14 +363,15 @@ def _compile_aggregate(s: DealsAggregate) -> Compiled:
     return Compiled(sql, splits, notes)
 
 
-def _broker_side_sql(s: DealsAggregate, scope: str, valid_filter: bool, split: bool, measure_cols: list[str]) -> str:
+def _broker_side_sql(s: DealsAggregate, scope: str, valid_filter: bool, split: bool, measure_cols: list[str],
+                     names: list[str] | None = None) -> str:
     """The filtered brokers counted separately as seller broker and as buyer broker (a deal with the broker on both
     sides appears in both rows)."""
     unit = any(m in PER_UNIT for m in s.measures)
     parts = []
     for side, col, alias in (("seller", "seller_broker", "bs"), ("buyer", "buyer_broker", "bb")):
         f = replace(s.filters, brokers=[], **{f"{col}s": list(s.filters.brokers)})
-        where = where_clauses(f)
+        where = where_clauses(f, variant_names=names)
         if scope == "valid" and not valid_filter:
             where.append("NOT d.is_cancelled")
         sel = [f"'{side}' AS side", f"d.{col} AS broker_code", f"{alias}.name AS broker_name"]
@@ -356,13 +385,15 @@ def _broker_side_sql(s: DealsAggregate, scope: str, valid_filter: bool, split: b
     return " UNION ALL ".join(parts)
 
 
-def _compare_periods_sql(s: DealsAggregate, scope: str, valid_filter: bool, dims: list[Dim]) -> str:
+def _compare_periods_sql(s: DealsAggregate, scope: str, valid_filter: bool, dims: list[Dim],
+                         names: list[str] | None = None) -> str:
     """One row per period (and unit for per-unit measures) plus the change versus the first period, in %."""
     pairs = _measure_pairs(s, scope == "split", valid_filter)
     unit = bool(dims)                      # only the unit dimension is possible here (no group_by)
     branches = []
     for i, p in enumerate(s.compare_periods, 1):
-        where = where_clauses(replace(s.filters, year=p.year, month_from=p.month_from, month_to=p.month_to))
+        where = where_clauses(replace(s.filters, year=p.year, month_from=p.month_from, month_to=p.month_to),
+                              variant_names=names)
         if scope == "valid" and not valid_filter:
             where.append("NOT d.is_cancelled")
         mf = "CAST(NULL AS INTEGER)" if p.month_from is None else str(int(p.month_from))
@@ -508,9 +539,10 @@ def _compile_registry(s: RegistryCount) -> Compiled:
     return Compiled(f"SELECT COUNT(*) AS {s.entity} FROM {s.entity}{where_sql}")
 
 
-def compile_spec(spec: Spec) -> Compiled:
+def compile_spec(spec: Spec, variants: VariantMatcher | None = None) -> Compiled:
+    """variants: the product spelling matcher (Resolver.variant_names); needed only for product_variant_query."""
     if isinstance(spec, DealsAggregate):
-        return _compile_aggregate(spec)
+        return _compile_aggregate(spec, variants)
     if isinstance(spec, DealLookup):
         return _compile_deal(spec)
     if isinstance(spec, ContractLookup):

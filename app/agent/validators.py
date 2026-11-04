@@ -12,7 +12,11 @@ NAME_COLUMNS = {"name", "name_norm", "product_name", "warehouse_address"}
 MONEY_COLUMNS = {"amount", "start_price", "unit_price", "base_price"}
 RESOLVED_COLUMNS = {"product_canonical", "product_family", "region", "seller_inn", "buyer_inn", "inn",
                     "seller_broker", "buyer_broker", "broker_code", "contract_id", "deal_id",
-                    "buyer_region", "seller_region", "product_name_full"}
+                    "buyer_region", "seller_region"}
+# raw product spellings: never filtered in free SQL (a hand-picked list silently covers part of a product);
+# compile_query expands filters.product_variant_query to every matching spelling instead
+SPELLING_COLUMNS = {"product_name_full", "product_name"}
+_SPELLING_ERR = "filter product spellings with compile_query filters.product_variant_query"
 # enum-like columns: compared only with = / IN against values of the database catalog (app/catalog.py)
 CATALOG_COLUMNS = {"category": "category", "industry": "industry", "product_group": "product_group",
                    "delivery_basis": "delivery_basis", "packaging": "packaging", "activity": "activity",
@@ -28,7 +32,7 @@ _CASE_FOLD = (exp.Lower, exp.Upper)
 _ID_LITERAL = re.compile(r"\d{9}|BK\d{3}")
 
 
-_NAME_KINDS = {"product", "product_family", "product_variant", "region"}
+_NAME_KINDS = {"product", "product_family", "product_variant", "product_variant_query", "region"}
 _ID_SHAPE = {"inn": r"\d{9}", "broker": r"BK\d{3}", "contract": r"\d{6}", "deal": r"\d{6}"}
 
 
@@ -65,8 +69,7 @@ def missing_message(value: str) -> str:
 _COLUMN_KIND = {"product_canonical": "product", "product_family": "product_family", "region": "region",
                 "seller_inn": "inn", "buyer_inn": "inn", "inn": "inn",
                 "seller_broker": "broker", "buyer_broker": "broker", "broker_code": "broker",
-                "contract_id": "contract", "deal_id": "deal", "buyer_region": "region", "seller_region": "region",
-                "product_name_full": "product_variant"}
+                "contract_id": "contract", "deal_id": "deal", "buyer_region": "region", "seller_region": "region"}
 
 
 @dataclass
@@ -136,6 +139,9 @@ def validate_sql(sql: str, allowed: set[tuple[str, str]], question: str, db: Dat
             errors.append(_WHOLE_ROW_ERR)
             continue
         bare = _is_bare_item(col)
+        if bases(col) & SPELLING_COLUMNS and not (bare or _is_count_arg(col) or _is_join_equality(col)):
+            errors.append(_SPELLING_ERR)
+            continue
         hit = bases(col) & NAME_COLUMNS
         if hit and not bare and not _is_join_equality(col):
             errors.append(f"do not filter by {sorted(hit)[0]} text; call resolve() and filter by inn / "

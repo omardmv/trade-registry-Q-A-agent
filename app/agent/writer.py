@@ -19,6 +19,7 @@ from app.db import Database, QueryError, QueryResult, to_jsonable
 from app.examples import ExampleStore
 from app.resolve import Resolver
 
+VARIANT_SAMPLES = 15
 SPLIT_AXES = {"status_scope", "measure", "currency", "product_scope", "role", "price_average"}
 S, I, B = {"type": "STRING"}, {"type": "INTEGER"}, {"type": "BOOLEAN"}
 
@@ -35,7 +36,10 @@ _DATE = {"type": "STRING", "description": "YYYY-MM-DD"}
 _FILTER_TYPES = {"year": I, "month_from": I, "month_to": I, "date_from": _DATE, "date_to": _DATE,
                  "product_family": S, "contract_id": I, "contract_type": _enum(CONTRACT_TYPES),
                  "contract_form": _enum(CONTRACT_FORMS), "trade_type": _enum(TRADE_TYPES),
-                 "statuses": _arr(_enum(STATUSES))}
+                 "statuses": _arr(_enum(STATUSES)),
+                 "product_variant_query": {"type": "STRING", "description":
+                                           "the exact text passed to resolve(kind=product_variant); expanded to "
+                                           "every matching registry spelling"}}
 # every other filter is a list of strings
 FILTERS_SCHEMA = {"type": "OBJECT", "properties": {k: _FILTER_TYPES.get(k, _arr(S)) for k in FILTER_KEYS}}
 
@@ -57,7 +61,8 @@ SPEC_SCHEMA = {"type": "OBJECT", "properties": {
 
 TOOLS = [
     ToolSpec("resolve", "Find exact IDs for a company, broker, product, region or contract named in the question. "
-                        "product_variant returns raw registry spellings (for a specific grade/mark/spelling).",
+                        "product_variant (a specific grade/mark/spelling) returns how many raw registry spellings "
+                        "match plus samples; then put the same text into filters.product_variant_query.",
              {"type": "OBJECT", "properties": {
                  "kind": _enum(["company", "broker", "product", "product_variant", "region", "contract"]),
                  "text": S},
@@ -89,9 +94,10 @@ Steps:
    product unless the question is about the whole product group. For follow-up questions, re-run resolve()
    for entities from the previous question; IDs in the previous SQL are not pre-approved. If nothing relevant comes back, call declare_unanswerable. If several candidates are equally
    close, include all of them (max 5) and group by that entity so each is shown separately.
-   For a specific spelling, grade or mark of a product ("сахар белый", "АИ-92", "М00К") use
-   resolve(kind=product_variant) and filters.product_variants; "(спот)/(форвард)/(фьючерс)" in a product name is
-   contract_form, not a variant. Enum-like values (category, activity, unit, ...) come from the Value catalog.
+   For a specific spelling, grade or mark of a product ("сахар белый", "АИ-92", "М00К") call
+   resolve(kind=product_variant, text=<phrase>) and put the same phrase into filters.product_variant_query (the
+   compiler counts every matching spelling; never list spellings, never filter product names in SQL);
+   "(спот)/(форвард)/(фьючерс)" in a product name is contract_form, not a variant. Enum-like values (category, activity, unit, ...) come from the Value catalog.
 3. Call get_examples() once.
 4. Prefer compile_query(spec). Use submit_sql only if no spec kind/measure/dimension can express the question.
 5. Ambiguity: follow the Ambiguity registry. Compute the variants in ONE query: status_scope=split for counts
@@ -155,22 +161,6 @@ def period_error(question: str, spec: Spec) -> str | None:
     return None
 
 
-def variant_subset_error(spec: Spec, groups: list[tuple[str, frozenset]]) -> str | None:
-    """product_variants must be a union of complete resolve(product_variant) results: a filter that keeps only part
-    of the spellings found for a text would silently cover part of the product."""
-    if not isinstance(spec, DealsAggregate) or not spec.filters.product_variants or not groups:
-        return None
-    chosen = set(spec.filters.product_variants)
-    covered = set().union(*(g for _, g in groups if g <= chosen))
-    partial = chosen - covered
-    if not partial:
-        return None
-    text, group = next((t, g) for t, g in groups if g & partial)
-    return (f"filters.product_variants has {len(chosen & group)} of the {len(group)} spellings that "
-            f"resolve(product_variant, {text!r}) returned; include all of them, or resolve a more specific text "
-            "and use its complete result")
-
-
 def _json(value):
     """Recursively make a value JSON-safe (dates -> ISO strings, Decimal -> float)."""
     if isinstance(value, dict):
@@ -222,8 +212,8 @@ class Writer:
     def run(self, question: str, lang: str, deadline: float, previous: dict | None = None) -> WriterResult:
         allowed: set[tuple[str, str]] = set()
         names: list[str] = []
-        # per-question state: product_variant groups returned by resolve (text, ids); first guard error, if any
-        state: dict = {"variants": [], "guard": None}
+        # per-question state: the first guard error, if any
+        state: dict = {"guard": None}
         trace: list[dict] = []
         calls = fixes = 0
         nudged = False
@@ -297,7 +287,7 @@ class Writer:
         return max(1.0, min(cap, deadline - time.monotonic()))
 
     def _compile(self, args, allowed, question, deadline, names=(), state=None) -> WriterResult | str:
-        state = state if state is not None else {"variants": [], "guard": None}
+        state = state if state is not None else {"guard": None}
         try:
             spec = parse_spec(args.get("spec") or {})
             check_catalog(spec, self.catalog)
@@ -309,8 +299,6 @@ class Writer:
         if (err := missing_condition_error(question, spec, self._guard_index, names)) is not None:
             state["guard"] = state["guard"] or err
             return err
-        if (err := variant_subset_error(spec, state["variants"])) is not None:
-            return err
         statuses = {(k, v): grounding_status(v, k, allowed, question, self._exists)
                     for k, v in entity_values(spec)}
         absent = sorted(v for (k, v), st in statuses.items() if st == "missing")
@@ -320,7 +308,7 @@ class Writer:
         if missing:
             return f"values {missing} were not returned by resolve() in this request; call resolve() first"
         try:
-            compiled = compile_spec(spec)
+            compiled = compile_spec(spec, variants=self.resolver.variant_names)
             result = self.db.query(compiled.sql, timeout_s=self._timeout(deadline, 10.0))
         except (SpecError, KeyError, ValueError, TypeError) as e:
             return f"could not compile spec: {e}"
@@ -347,11 +335,31 @@ class Writer:
         return WriterResult("ok", "sql", v.sql, result, None, splits, [],
                             [str(a) for a in args.get("assumptions") or []])
 
+    def _resolve_variant(self, text: str, allowed, names) -> dict:
+        """Compact product_variant result: counts and samples, never the full list of spellings. The phrase itself
+        is what gets grounded: the compiler expands filters.product_variant_query with the same matcher."""
+        text = text.strip()
+        cands = self.resolver.resolve("product_variant", text)
+        if not cands:
+            return {"matched_spellings": 0, "note": "no registry spelling matches this text; use products (resolve "
+                                                    "kind=product) or call declare_unanswerable"}
+        allowed.add(("product_variant_query", text))
+        products = list(dict.fromkeys(c.extra["product_canonical"] for c in cands))
+        samples = [c.id for c in cands[:VARIANT_SAMPLES]]
+        if names is not None:
+            for value in [text, *products, *samples]:
+                if value not in names:
+                    names.append(value)
+        return {"text": text, "matched_spellings": len(cands), "deals": sum(c.extra["deals"] for c in cands),
+                "products": products[:10], "sample_spellings": samples,
+                "note": f"put exactly this text into filters.product_variant_query: {text!r}; the compiler counts all "
+                        f"{len(cands)} spellings. If the matches are wrong, resolve a more specific text"}
+
     def _tool(self, name, args, allowed, question, deadline, names=None, state=None) -> dict:
         if name == "resolve":
+            if args["kind"] == "product_variant":
+                return self._resolve_variant(str(args["text"]), allowed, names)
             cands = self.resolver.resolve(args["kind"], str(args["text"]))
-            if args["kind"] == "product_variant" and state is not None and cands:
-                state["variants"].append((str(args["text"]), frozenset(c.id for c in cands)))
             allowed.update((_KIND.get(c.kind, c.kind), c.id) for c in cands)
             if names is not None:
                 for c in cands:

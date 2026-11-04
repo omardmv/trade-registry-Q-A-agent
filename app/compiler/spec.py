@@ -73,7 +73,7 @@ class Filters:
     delivery_bases: list[str] = field(default_factory=list)
     packagings: list[str] = field(default_factory=list)
     hs_codes: list[str] = field(default_factory=list)
-    product_variants: list[str] = field(default_factory=list)
+    product_variant_query: str | None = None   # phrase expanded by the compiler to every matching raw spelling
     buyer_regions: list[str] = field(default_factory=list)
     seller_regions: list[str] = field(default_factory=list)
     buyer_activities: list[str] = field(default_factory=list)
@@ -275,6 +275,10 @@ def _reject_unknown(d: dict, allowed: tuple[str, ...], where: str, kind: str | N
 def _parse_filters(d: dict) -> Filters:
     if not isinstance(d, dict):
         raise SpecError(f"filters must be an object, got {d!r}")
+    if not _empty(d.get("product_variants")):
+        raise SpecError("filters.product_variants is not supported: put the phrase you passed to "
+                        "resolve(kind=product_variant) into filters.product_variant_query; the compiler expands it to "
+                        "every matching spelling")
     _reject_unknown(d, FILTER_KEYS, "filters")
     f = Filters(
         year=_opt_int(d, "year"), month_from=_opt_int(d, "month_from"), month_to=_opt_int(d, "month_to"),
@@ -294,7 +298,7 @@ def _parse_filters(d: dict) -> Filters:
         categories=_str_list(d, "categories"), industries=_str_list(d, "industries"),
         product_groups=_str_list(d, "product_groups"), delivery_bases=_str_list(d, "delivery_bases"),
         packagings=_str_list(d, "packagings"), hs_codes=_str_list(d, "hs_codes"),
-        product_variants=_str_list(d, "product_variants"),
+        product_variant_query=(_opt_str(d, "product_variant_query") or "").strip() or None,
         buyer_regions=_str_list(d, "buyer_regions"), seller_regions=_str_list(d, "seller_regions"),
         buyer_activities=_str_list(d, "buyer_activities"), seller_activities=_str_list(d, "seller_activities"),
         units=_str_list(d, "units"),
@@ -522,13 +526,14 @@ def check_catalog(spec: Spec, catalog: dict[str, set[str]] | None) -> None:
 
 
 def entity_values(spec: Spec) -> set[tuple[str, str]]:
-    """(kind, value) pairs that must be grounded; kinds: product, product_family, product_variant, region, inn,
-    broker, contract, deal."""
+    """(kind, value) pairs that must be grounded; kinds: product, product_family, product_variant_query (a phrase
+    passed to resolve(kind=product_variant) in this request), region, inn, broker, contract, deal."""
     out: set[tuple[str, str]] = set()
     if isinstance(spec, DealsAggregate):
         f = spec.filters
         out |= {("product", v) for v in f.products}
-        out |= {("product_variant", v) for v in f.product_variants}
+        if f.product_variant_query:
+            out.add(("product_variant_query", f.product_variant_query))
         out |= {("region", v) for v in f.regions + f.buyer_regions + f.seller_regions}
         out |= {("inn", v) for v in f.buyer_inns + f.seller_inns + f.participant_inns}
         out |= {("broker", v) for v in f.seller_brokers + f.buyer_brokers + f.brokers}

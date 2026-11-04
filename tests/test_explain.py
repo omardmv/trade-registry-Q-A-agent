@@ -7,7 +7,7 @@ from app.compiler.sql import compile_spec
 
 def _explain(d, lang):
     spec = parse_spec(d)
-    return explain(spec, compile_spec(spec).notes, lang)
+    return explain(spec, compile_spec(spec, variants=lambda t: [t]).notes, lang)
 
 
 def test_ru_count_split():
@@ -150,12 +150,12 @@ def test_new_filters_rendered_ru():
     text = _explain({"kind": "deals_aggregate", "measures": ["deal_count"], "filters": {
         "categories": ["Нефтепродукты"], "industries": ["Металлургия"], "product_groups": ["Прочие товары"],
         "delivery_bases": ["FCA"], "packagings": ["навалом"], "hs_codes": ["520100"],
-        "product_variants": ["Сахар белый"], "buyer_regions": ["Buxoro viloyati"],
+        "product_variant_query": "сахар белый", "buyer_regions": ["Buxoro viloyati"],
         "seller_regions": ["Toshkent shahri"], "buyer_activities": ["Кластер"],
         "seller_activities": ["Производитель"], "units": ["литр"]}}, "ru")
     for part in ("категория: Нефтепродукты", "отрасль: Металлургия", "группа товара: Прочие товары",
                  "базис поставки: FCA", "упаковка: навалом", "код ТН ВЭД: 520100",
-                 "наименование товара в реестре: Сахар белый",
+                 "товар: варианты названия «сахар белый» (1 написаний)",
                  "регион покупателя (по реестру участников): Buxoro viloyati",
                  "регион продавца (по реестру участников): Toshkent shahri",
                  "вид деятельности покупателя: Кластер", "вид деятельности продавца: Производитель",
@@ -261,7 +261,8 @@ def test_median_mean_say_tonne_kg_only():
 
 def test_compare_periods_partial_2026_flagged():
     text = _explain({"kind": "deals_aggregate", "measures": ["deal_count"],
-                     "compare_periods": [{"year": 2025}, {"year": 2026}]}, "ru")
+                     "compare_periods": [{"year": 2025, "month_from": 1, "month_to": 10},
+                                         {"year": 2026, "month_from": 1, "month_to": 10}]}, "ru")
     assert "(данные до 30.10.2026)" in text
 
 

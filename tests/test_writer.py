@@ -513,7 +513,7 @@ def test_catalog_listed_in_system_prompt(parts):
 
 def test_product_variant_must_be_resolved(parts):
     spec = {"kind": "deals_aggregate", "measures": ["deal_count"], "status_scope": "all",
-            "filters": {"product_variants": ["Сахар белый"]}}
+            "filters": {"product_variant_query": "сахар белый"}}
     writer, llm = make(parts, [call("compile_query", spec=spec, assumptions=[]),
                                call("resolve", kind="product_variant", text="сахар белый"),
                                call("compile_query", spec=spec, assumptions=[])])
@@ -618,15 +618,13 @@ def test_free_sql_wording_cues(parts, q, bad, good):
     assert sql_missing_condition_error(q, good, writer._guard_index) is None
 
 
-def test_variant_filter_must_cover_all_resolved_spellings(parts, db):
-    cands = parts[1].resolve("product_variant", "Хлопок-сырец 1 сорт")
-    ids = [c.id for c in cands]
+def test_variant_query_must_be_the_resolved_phrase(parts):
     spec = {"kind": "deals_aggregate", "measures": ["deal_count"], "status_scope": "all",
-            "filters": {"product_variants": ids[:3]}}
-    full = {**spec, "filters": {"product_variants": ids}}
+            "filters": {"product_variant_query": "Хлопок-сырец 2 сорт"}}
+    good = {**spec, "filters": {"product_variant_query": "Хлопок-сырец 1 сорт"}}
     writer, llm = make(parts, [call("resolve", kind="product_variant", text="Хлопок-сырец 1 сорт"),
                                call("compile_query", spec=spec, assumptions=[]),
-                               call("compile_query", spec=full, assumptions=[])])
+                               call("compile_query", spec=good, assumptions=[])])
     res = writer.run("Сколько сделок по хлопку-сырцу 1 сорта?", "ru", deadline())
-    assert f"3 of the {len(ids)}" in llm.chat.sent[2][1][0][1]["error"]
-    assert res.status == "ok"
+    assert "resolve" in llm.chat.sent[2][1][0][1]["error"]
+    assert res.status == "ok" and "variant_spellings_122" in res.notes

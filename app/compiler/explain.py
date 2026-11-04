@@ -28,7 +28,7 @@ _T = {
         "usd_max": "максимальный",
         "category": "категория: {v}", "industry": "отрасль: {v}", "product_group": "группа товара: {v}",
         "delivery_basis": "базис поставки: {v}", "packaging": "упаковка: {v}", "hs_code": "код ТН ВЭД: {v}",
-        "product_variant": "наименование товара в реестре: {v}",
+        "product_variant": "товар: варианты названия «{v}» ({n} написаний)",
         "buyer_region": "регион покупателя (по реестру участников): {v}",
         "seller_region": "регион продавца (по реестру участников): {v}",
         "buyer_activity": "вид деятельности покупателя: {v}", "seller_activity": "вид деятельности продавца: {v}",
@@ -38,6 +38,12 @@ _T = {
         "share_field_status": "состояние: {v}",
         "share_amount_uzs": "доля суммы (в сумах) сделок, где {c}, — от суммы всех сделок выборки без аннулированных",
         "share_volume_t": "доля объёма (в тоннах) сделок, где {c}, — от объёма всех сделок выборки без аннулированных",
+        "share_rows_amount_uzs": "доля суммы (в сумах) сделок, где {c}, — от суммы всех сделок выборки",
+        "share_rows_volume_t": "доля объёма (в тоннах) сделок, где {c}, — от объёма всех сделок выборки",
+        "share_status_amount_uzs": "доля суммы (в сумах) сделок, где {c}, — от суммы всех сделок выборки, включая "
+                                   "аннулированные",
+        "share_status_volume_t": "доля объёма (в тоннах) сделок, где {c}, — от объёма всех сделок выборки, "
+                                 "включая аннулированные",
         "share_others_valid": "остальные показатели — без аннулированных",
         "compare_points": "доли — изменение в процентных пунктах",
         "compare": "сравнение периодов: {p1} и {p2}; изменение в % к первому периоду",
@@ -96,7 +102,7 @@ _T = {
         "usd_max": "maksimal",
         "category": "toifa: {v}", "industry": "sanoat tarmog‘i: {v}", "product_group": "tovar guruhi: {v}",
         "delivery_basis": "yetkazib berish bazisi: {v}", "packaging": "qadoq: {v}", "hs_code": "TN VED kodi: {v}",
-        "product_variant": "reyestrdagi tovar nomi: {v}",
+        "product_variant": "tovar: «{v}» nomining variantlari ({n} ta yozilishi)",
         "buyer_region": "xaridor hududi (ishtirokchilar reyestri bo‘yicha): {v}",
         "seller_region": "sotuvchi hududi (ishtirokchilar reyestri bo‘yicha): {v}",
         "buyer_activity": "xaridor faoliyat turi: {v}", "seller_activity": "sotuvchi faoliyat turi: {v}",
@@ -109,6 +115,14 @@ _T = {
                             "bitimlar summasidan",
         "share_volume_t": "{c} bo‘lgan bitimlar hajmining (tonnada) ulushi — tanlovdagi bekor qilinmagan "
                           "bitimlar hajmidan",
+        "share_rows_amount_uzs": "{c} bo‘lgan bitimlar summasining (so‘mda) ulushi — tanlovdagi barcha bitimlar "
+                                 "summasidan",
+        "share_rows_volume_t": "{c} bo‘lgan bitimlar hajmining (tonnada) ulushi — tanlovdagi barcha bitimlar "
+                               "hajmidan",
+        "share_status_amount_uzs": "{c} bo‘lgan bitimlar summasining (so‘mda) ulushi — tanlovdagi barcha "
+                                   "bitimlar summasidan, bekor qilinganlar ham",
+        "share_status_volume_t": "{c} bo‘lgan bitimlar hajmining (tonnada) ulushi — tanlovdagi barcha bitimlar "
+                                 "hajmidan, bekor qilinganlar ham",
         "share_others_valid": "qolgan ko‘rsatkichlar — bekor qilinganlarsiz",
         "compare_points": "ulushlar — o‘zgarish foiz punktlarida",
         "compare": "davrlar taqqoslanadi: {p1} va {p2}; birinchi davrga nisbatan o‘zgarish, %",
@@ -150,7 +164,7 @@ _NOTE_KEYS = ("excluded_cancelled", "all_statuses", "status_split", "uzs_convert
 # Status phrases describe the row set; a cancelled_pct-only query always runs over all deals.
 _STATUS_NOTES = ("excluded_cancelled", "all_statuses", "status_split")
 # list filter -> phrase key
-_LIST_PHRASES = (("product", "products"), ("product_variant", "product_variants"), ("region", "regions"),
+_LIST_PHRASES = (("product", "products"), ("region", "regions"),
                  ("buyer", "buyer_inns"), ("seller", "seller_inns"), ("participant", "participant_inns"),
                  ("broker", "brokers"), ("seller_broker", "seller_brokers"), ("buyer_broker", "buyer_brokers"),
                  ("status", "statuses"), ("category", "categories"), ("industry", "industries"),
@@ -237,7 +251,15 @@ def _measure_phrases(spec: DealsAggregate, t: dict) -> list[str]:
             out.append(phrase)
     if spec.share_of is not None:
         key = _SHARE_KEYS[spec.share_of.field]
-        tpl = t["share"] if spec.share_of.basis == "deals" else t[f"share_{spec.share_of.basis}"]
+        basis = spec.share_of.basis
+        if basis == "deals":
+            tpl = t["share"]
+        elif spec.filters.statuses:
+            tpl = t[f"share_rows_{basis}"]     # the status filter (stated above) defines the denominator
+        elif spec.share_of.field == "status":
+            tpl = t[f"share_status_{basis}"]   # a share of a status: every status in the denominator
+        else:
+            tpl = t[f"share_{basis}"]
         out.append(tpl.format(c=t[key].format(v=", ".join(spec.share_of.values))))
     return out
 
@@ -270,6 +292,9 @@ def explain(spec: Spec, notes: list[str], lang: str) -> str:
         values = getattr(f, attr)
         if values:
             parts.append(t[key].format(v=", ".join(values)))
+    if f.product_variant_query:
+        n = next((x.removeprefix("variant_spellings_") for x in notes if x.startswith("variant_spellings_")), "?")
+        parts.append(t["product_variant"].format(v=f.product_variant_query, n=n))
     for key, value in (("family", f.product_family), ("contract", f.contract_id),
                        ("contract_type", f.contract_type), ("contract_form", f.contract_form),
                        ("trade_type", f.trade_type)):
@@ -286,7 +311,8 @@ def explain(spec: Spec, notes: list[str], lang: str) -> str:
             continue
         elif scope_free_only and note in _STATUS_NOTES:
             continue
-        elif note == "excluded_cancelled" and spec.share_of is not None and spec.share_of.basis == "deals":
+        elif note == "excluded_cancelled" and spec.share_of is not None and (
+                spec.share_of.basis == "deals" or spec.share_of.field == "status"):
             parts.append(t["share_others_valid"])  # the share itself counts every deal (stated above)
         elif note == "all_statuses" and f.statuses:
             continue  # the status filter phrase already describes the scope

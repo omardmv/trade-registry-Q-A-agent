@@ -141,8 +141,10 @@ def test_contract_attribute_filters(db, key, col, value):
 
 
 def test_product_variant_filter(db):
-    _, res = run(db, agg(["deal_count"], status_scope="all", filters={"product_variants": ["Сахар белый"]}))
-    assert res.rows[0][0] == scalar(db, "SELECT COUNT(*) FROM deals WHERE product_name_full = 'Сахар белый'")
+    from app.resolve import Resolver
+    c = compile_spec(parse_spec(agg(["deal_count"], status_scope="all",
+                                    filters={"product_variant_query": "сахар белый"})), Resolver(db).variant_names)
+    assert db.query(c.sql).rows[0][0] == scalar(db, "SELECT COUNT(*) FROM deals WHERE product_name_full = 'Сахар белый'")
 
 
 @pytest.mark.parametrize("key,side,col,value", [
@@ -157,8 +159,8 @@ def test_participant_attribute_filters(db, key, side, col, value):
 
 
 def test_new_filter_literals_escaped():
-    c = compile_spec(parse_spec(agg(["deal_count"], filters={"product_variants": ["x' OR 1=1 --"],
-                                                            "categories": ["a'b"]})))
+    c = compile_spec(parse_spec(agg(["deal_count"], filters={"product_variant_query": "x",
+                                                            "categories": ["a'b"]})), lambda t: ["x' OR 1=1 --"])
     assert "'x'' OR 1=1 --'" in c.sql and "'a''b'" in c.sql
 
 

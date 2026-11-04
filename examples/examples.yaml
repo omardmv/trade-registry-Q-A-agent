@@ -103,8 +103,11 @@
   note: "категория из каталога значений"
   spec: {kind: deals_aggregate, measures: [deal_count], filters: {year: 2025, categories: [Нефтепродукты]}}
 - question: "Сколько тонн сахара-песка (именно это наименование) продано в 2024 году?"
-  note: "конкретное написание → resolve(product_variant) → САХАР-ПЕСОК"
-  spec: {kind: deals_aggregate, measures: [volume_tonnes], filters: {year: 2024, product_variants: [САХАР-ПЕСОК]}}
+  note: "конкретное написание → resolve(kind=product_variant, text=сахар-песок) → filters.product_variant_query (компилятор берёт все подходящие написания)"
+  spec: {kind: deals_aggregate, measures: [volume_tonnes], filters: {year: 2024, product_variant_query: сахар-песок}}
+- question: "Сколько тонн хлопка-сырца 1 сорта продано в 2025 году?"
+  note: "сорт → resolve(kind=product_variant, text=Хлопок-сырец 1 сорт) → та же фраза в product_variant_query; все написания 1 сорта (Сорт 1 сорт, первый сорт, I сорт ...) учитываются компилятором"
+  spec: {kind: deals_aggregate, measures: [volume_tonnes], filters: {year: 2025, product_variant_query: Хлопок-сырец 1 сорт}}
 - question: "Сколько тонн хлопка-сырца (спот) продано в 2024 году?"
   note: "«(спот)» в названии → contract_form=Спот"
   spec: {kind: deals_aggregate, measures: [volume_tonnes], filters: {year: 2024, products: [Хлопок-сырец], contract_form: Спот}}

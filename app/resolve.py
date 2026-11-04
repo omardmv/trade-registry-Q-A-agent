@@ -224,16 +224,16 @@ class Resolver:
                 best[key] = Candidate(kind, value, value, float(score), {"product_family": family})
         return sorted(best.values(), key=lambda c: -c.score)[:limit]
 
-    def _product_variant(self, text, limit=None):
-        """Every raw registry spelling (deals.product_name_full) that contains the words of the text in order.
+    def _variant_hits(self, text: str) -> tuple[list[int], set[str]]:
+        """Indexes of every raw registry spelling (deals.product_name_full) that matches the text, best first.
 
         Grades are folded into single tokens ("1 сорт" = "Сорт 1 сорт" = "первый сорт" -> sort:1), so "1 класс" never
-        matches a "1 сорт" query; marks differ by one character (М00К / М0К) and must match exactly. If no spelling
-        has the words in order, the word set is used. The result is never truncated: a variant filter must cover
-        all spellings that match, so `limit` is ignored."""
+        matches a "1 сорт" query; marks differ by one character (М00К / М0К) and must match exactly. Spellings that
+        contain the words in order win; if none does, the word set is used, then fuzzy matching with exact digits.
+        Never truncated: this is the matcher that filters.product_variant_query is expanded with."""
         q_seq = canonical_variant_tokens(text)
         if not q_seq:
-            return []
+            return [], set()
         q = set(q_seq)
         hits = [i for i, seq in enumerate(self._variant_seqs) if _in_order(q_seq, seq)]
         if not hits:
@@ -243,6 +243,17 @@ class Resolver:
             keys = [" ".join(seq) for seq in self._variant_seqs]
             hits = [i for _, _, i in _fuzzy(" ".join(q_seq), keys, None) if digits <= self._variant_tokens[i]]
         hits.sort(key=lambda i: (len(self._variant_tokens[i] - q), -self._variants[i][2]))
+        return hits, q
+
+    def variant_names(self, text: str) -> list[str]:
+        """Every raw spelling that resolve("product_variant", text) matches (the expansion of
+        filters.product_variant_query)."""
+        hits, _ = self._variant_hits((text or "").strip())
+        return [self._variants[i][0] for i in hits]
+
+    def _product_variant(self, text, limit=None):
+        """Every matching raw spelling as a candidate (see _variant_hits); `limit` is ignored."""
+        hits, q = self._variant_hits(text)
         out = []
         for i in hits:
             name, canonical, n = self._variants[i]

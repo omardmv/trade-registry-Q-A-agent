@@ -62,11 +62,16 @@ def test_in_range_count_questions_retrieve_answerable_example():
 
 
 def test_every_example_spec_compiles_and_explains(db):
+    from app.compiler.explain import explain
+    from app.resolve import Resolver
+    variants = Resolver(db).variant_names
     store = ExampleStore.from_yaml(config.EXAMPLES_PATH)
     for ex in store.examples:
         if ex.spec is not None:
-            compiled = compile_spec(parse_spec(ex.spec))
+            spec = parse_spec(ex.spec)
+            compiled = compile_spec(spec, variants)
             db.explain(compiled.sql)
+            explain(spec, compiled.notes, "ru")
 
 
 def test_example_entities_exist_and_queries_return_data(db):
@@ -82,10 +87,10 @@ def test_example_entities_exist_and_queries_return_data(db):
         for kind, value in entity_values(spec):
             if kind in ("inn", "broker", "contract", "deal"):
                 assert resolver.exists(kind, value), (ex.question, value)
-            elif kind == "product_variant":
-                assert db.query("SELECT 1 FROM deals WHERE product_name_full = ? LIMIT 1", [value]).rows, value
+            elif kind == "product_variant_query":
+                assert resolver.variant_names(value), value
             else:
                 col = {"product": "product_canonical", "product_family": "product_family", "region": "region"}[kind]
                 assert db.query(f"SELECT 1 FROM contracts WHERE {col} = ? LIMIT 1", [value]).rows, (ex.question, value)
-        res = db.query(compile_spec(spec).sql)
+        res = db.query(compile_spec(spec, resolver.variant_names).sql)
         assert res.rows and any(c is not None for c in res.rows[0]), ex.question

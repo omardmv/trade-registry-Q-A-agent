@@ -226,11 +226,11 @@ def test_empty_unknown_values_ignored():
 def test_new_filters_parse_and_ground():
     from app.compiler.spec import entity_values
     s = parse_spec({"kind": "deals_aggregate", "measures": ["deal_count"], "filters": {
-        "product_variants": ["Сахар белый"], "buyer_regions": ["Buxoro viloyati"], "seller_regions": ["Toshkent shahri"],
+        "product_variant_query": " сахар белый ", "buyer_regions": ["Buxoro viloyati"], "seller_regions": ["Toshkent shahri"],
         "categories": ["Нефтепродукты"], "hs_codes": ["520100"], "units": ["литр"]}})
-    assert s.filters.product_variants == ["Сахар белый"] and s.filters.units == ["литр"]
+    assert s.filters.product_variant_query == "сахар белый" and s.filters.units == ["литр"]
     ev = entity_values(s)
-    assert ("product_variant", "Сахар белый") in ev
+    assert ("product_variant_query", "сахар белый") in ev
     assert {("region", "Buxoro viloyati"), ("region", "Toshkent shahri")} <= ev
     assert not any(k == "category" for k, _ in ev)  # enum-like values are checked against the catalog instead
 

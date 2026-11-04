@@ -480,8 +480,11 @@ def test_catalog_columns_checked_against_catalog():
     assert v("SELECT unit, SUM(volume) FROM deals WHERE seller_activity = 'Кластер' GROUP BY unit", catalog=CAT).ok
 
 
-def test_product_name_full_needs_resolved_variant():
+def test_product_name_full_never_filtered():
     sql = "SELECT COUNT(*) FROM deals WHERE product_name_full = 'Сахар белый'"
     assert not v(sql).ok
-    assert v(sql, allowed={("product_variant", "Сахар белый")}).ok
+    r = v(sql, allowed={("product_variant", "Сахар белый")})
+    assert not r.ok and "filters.product_variant_query" in r.errors[0]
+    assert not v("SELECT COUNT(*) FROM (SELECT product_name_full AS p FROM deals) t WHERE p = 'Сахар белый'").ok
     assert v("SELECT product_name_full, COUNT(*) FROM deals GROUP BY 1").ok
+    assert v("SELECT COUNT(DISTINCT product_name_full) FROM deals").ok
