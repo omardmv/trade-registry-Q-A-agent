@@ -139,6 +139,30 @@ result (same top company by volume and value), the answer states it once.
 Intent pre-step: questions outside the dataset (profit, CEO, years outside 2022–2026, other exchanges,
 forecasts) get a fixed "no data" reply without SQL.
 
+### 3.4a Structured query compiler (primary path)
+
+To make SQL correct by construction, the writer's **primary** tool is `compile_query(spec)`: Gemini fills a
+structured spec and deterministic code compiles it to SQL from hand-verified templates. Free SQL
+(`submit_sql`) is the fallback only for questions no spec can express.
+
+Spec kinds:
+
+- `deals_aggregate` — measures (≤2) over `deals` with filters, optional `group_by` dimension and `top` N.
+  Measures: `deal_count, amount_uzs, amount_usd, volume_tonnes, volume, avg_amount_uzs,
+  avg_price_uzs_per_kg, max_amount_uzs, distinct_buyers, distinct_sellers, lots_bought, lots_delivered,
+  cancelled_pct`. Dimensions: `buyer, seller, participant (both roles → role split), seller_broker,
+  buyer_broker, broker (either side), region, product, product_family, month, year, contract_type,
+  contract_form, trade_type, status, unit, contract`. Filters: period (year, month range, date range), product,
+  product family, region, buyer/seller/either INN, seller/buyer/either broker, contract, contract type/form,
+  trade type, status. `status_scope`: `all | valid | split`.
+- `deal_lookup` (deal_id), `contract_lookup` (contract_id), `usd_rate` (date or period),
+  `registry_count` (participants / brokers / contracts with simple filters).
+
+Guarantees: all entity values in a spec must come from `resolve()` (same rule as SQL); every template is
+covered by unit tests and the eval set; the compiler also emits a deterministic one-line explanation of what
+was computed ("учтены сделки за 10.2025, без аннулированных"), appended to the answer, so a wrong
+interpretation is visible.
+
 ### 3.5 Validators and fixer
 
 Validators on submitted SQL (sqlglot parse, DuckDB dialect):
