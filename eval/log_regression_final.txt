@@ -1,0 +1,6 @@
+bigset4: exact 10/10 | loose 11/17 | trap 8/10 | no_data 13/13 | TOTAL 42/50 | fabricated on no-data: 0
+bigset6: exact 10/10 | loose 10/17 | trap 9/10 | no_data 13/13 | TOTAL 42/50 | fabricated on no-data: 0
+bigset7: exact 12/12 | trap 9/12 | loose 19/20 | no_data 16/16 | TOTAL 56/60 | fabricated on no-data: 0
+bigset8: exact 12/12 | loose 18/20 | trap 10/12 | no_data 16/16 | TOTAL 56/60 | fabricated on no-data: 0
+== stability set8
+unstable: 0/60

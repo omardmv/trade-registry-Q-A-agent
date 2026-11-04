@@ -860,8 +860,10 @@ def answer(question: str, use_llm=True) -> Answer:
     try:
         a = _answer(question, use_llm)
     except Exception as ex:
+        # never crash in front of the user: a safe "please rephrase" answer, with the error kept in the trace
         TR.step("error", error=repr(ex)[:500])
-        raise
+        lang = lang_of(question)
+        a = Answer(lang, T["unclear"][lang], route="error", confidence="none", no_data=True)
     a.ms = (time.perf_counter() - t0) * 1000
     TR.step("answer", route=a.route, confidence=a.confidence, no_data=a.no_data, text=a.text, total_ms=round(a.ms, 1))
     tr.data.update(mode=MODE, route=a.route, no_data=a.no_data, total_ms=round(a.ms, 1))
@@ -878,8 +880,10 @@ def _answer(question, use_llm):
     TR.step("rule_entities", products=e.products, regions=e.regions, inns=e.inns, brokers=e.brokers,
             period=e.period_label, years=e.years, unknown_product=e.unknown_product, out_of_range=e.out_of_range)
     if MODE == "gemini" and use_llm:
-        a = _gemini_answer(question, t, e, lang)
+        import copy
+        a = _gemini_answer(question, t, copy.deepcopy(e), lang)    # fallback below keeps its own, untouched entities
         if a is not None: return a
+        TR.step("fallback", reason="gemini path returned no answer")
     # company named in words -> its INN
     if not e.inns:
         c = find_company(_core(question) and " " + _core(question) + " ")
@@ -1233,6 +1237,17 @@ def _gemini_answer(question, t, e, lang):
             if p.get("activity") and p.get("activity") != "none": t2 += f" §act={p['activity']}§ "
             sql, r, txt, n = tpl_directory(t2, e, lang); return wrap(sql, r, txt, n, "gemini:" + kind)
         out = S.run_plan(p, t, e, lang)
+        if out is None and not p.get("_repaired"):
+            # verify-and-repair: tell the model exactly what is missing, ask once more
+            problem = S.plan_problem(p)
+            TR.step("repair", problem=problem)
+            from .values import V as _V2
+            p2 = G.plan(question, [], _V2().regions, bases=_V2().products, lang=lang, feedback=problem, previous=p)
+            if p2:
+                p2["_repaired"] = True
+                for k in ("product_bases",): p2[k] = p.get(k)          # keep the already verified entities
+                out = S.run_plan(p2, t, e, lang)
+                if out is not None: p = p2
         if out is None: return None
         s, sql, rows, txt, notes = out
         if s is None: return wrap(sql, rows, txt, notes, "gemini:contracts:" + str(p.get("metric")))

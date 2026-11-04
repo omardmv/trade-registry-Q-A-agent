@@ -16,9 +16,9 @@ ANNUL = "Аннулирован(Не оплачен)"
 STATS = ("avg", "median", "min", "max", "stddev", "sum")
 METRICS = ("lots", "price_change", "count", "amount", "volume", "avg_price", "price_stat", "amount_stat", "distinct", "delay", "delivered",
            "undelivered", "deal", "rate", "company", "broker_info", "directory", "both_roles")
-DIMS = ("hour", "product_group", "product_category", "industry", "delivery_basis", "packaging", "tnved", "side", "region", "seller", "buyer", "seller_broker", "buyer_broker", "any_broker", "product", "month", "year",
+DIMS = ("unit", "hour", "product_group", "product_category", "industry", "delivery_basis", "packaging", "tnved", "side", "region", "seller", "buyer", "seller_broker", "buyer_broker", "any_broker", "product", "month", "year",
         "quarter", "status", "contract_form", "contract_type", "auction_type", "buyer_region", "seller_region")
-DISTINCT_OF = ("seller", "buyer", "company", "broker", "product", "region")
+DISTINCT_OF = ("seller", "buyer", "company", "broker", "seller_broker", "buyer_broker", "product", "region")
 DELAY_OF = ("payment", "delivery", "delivery_after_payment")
 
 
@@ -139,8 +139,9 @@ def metric_sql(s: Spec):
         f = {"avg": "avg", "median": "median", "min": "min", "max": "max", "stddev": "stddev_samp", "sum": "sum"}[s.stat or "avg"]
         return [f"round({f}(amount_uzs))", "count(*)"], ["сум", "сделок"], [], "по сумме сделки в сумах (экспорт пересчитан по курсу)"
     if m == "distinct":
-        col = {"seller": "seller_inn", "buyer": "buyer_inn", "product": "product_base", "region": "region"}.get(s.of)
-        if col: return [f"count(DISTINCT {col})"], [{"seller": "продавцов", "buyer": "покупателей", "product": "наименований товара", "region": "регионов"}[s.of]], [], "считаются различные значения, встречающиеся в сделках"
+        col = {"seller": "seller_inn", "buyer": "buyer_inn", "product": "product_base", "region": "region", "seller_broker": "seller_broker", "buyer_broker": "buyer_broker"}.get(s.of)
+        if col: return [f"count(DISTINCT {col})"], [{"seller": "продавцов", "buyer": "покупателей", "product": "наименований товара", "region": "регионов",
+                                                     "seller_broker": "брокеров продавца", "buyer_broker": "брокеров покупателя"}[s.of]], [], "считаются различные значения, встречающиеся в сделках"
         return None  # company / broker handled as union below
     if m == "delay":
         expr, extra, nn = {"payment": ("paid_date - deal_date", ["paid_date IS NOT NULL"], "от сделки до оплаты"),
@@ -178,6 +179,7 @@ def dim_sql(d):
         "contract_form": ("contract_form", "NULL", "", None),
         "contract_type": ("contract_type", "NULL", "", None),
         "auction_type": ("auction_type", "NULL", "", None),
+        "unit": ("unit", "NULL", "", None),
         "hour": ("substr(deal_time, 1, 2) || ':00–' || substr(deal_time, 1, 2) || ':59'", "CAST(substr(deal_time, 1, 2) AS INT)", "", None),
     }[d]
 
@@ -619,7 +621,12 @@ def filters_from_plan(p, e, t, s):
     shc = p.get("share_condition") if s.share else None
     def put(kind, sql, note):
         (F.cond if (not s.share or shc == kind) else F.where).append(sql); F.notes.append(note)
-    st = p.get("status")
+    sts = [x for x in (p.get("statuses") or []) if isinstance(x, str)]
+    if len(sts) >= 2:
+        put("status", "status IN (" + ",".join(C.sqlq(x) for x in sts) + ")", "статусы: " + ", ".join(sts) + " (состояние на конец дня 30.10.2026)"); F.has_status = True
+    elif p.get("include_annulled") is True:
+        F.has_status = True; F.notes.append("включая аннулированные сделки (по условию вопроса)")
+    st = p.get("status") if len(sts) < 2 else None
     if st and st != "none":
         sql, note = STATUS_SQL.get(st, (f"status={C.sqlq(st)}", f"статус: {st}"))
         put("status", sql, note + " (состояние на конец дня 30.10.2026)"); F.has_status = True
@@ -830,3 +837,14 @@ def run_contracts(p, t, e, lang):
     v = C.fmt(rows[0][0], 0 if m == "contracts" else 2)
     txt = f"{head}: {v}" + ("" if m == "contracts" else f" ({C.fmt(rows[0][1])} " + ("контрактов" if L == 0 else "ta shartnoma") + ")") + "."
     return None, sql, rows, txt, notes
+
+
+def plan_problem(p):
+    """Human-readable reason why a plan could not be compiled (sent back to the model)."""
+    if p.get("share") and not ((p.get("status") or "none") != "none" or p.get("statuses") or p.get("late") not in (None, "none")
+                                or (p.get("contract_type") or "none") != "none" or (p.get("contract_form") or "none") != "none"
+                                or p.get("share_condition") in ("region", "product", "delivery_basis", "packaging", "product_category", "industry")):
+        return "share=true needs the numerator filter: set status (or statuses for several), late, contract_type, contract_form or the share_condition entity."
+    if p.get("compare") not in (None, "none"):
+        return "compare needs two values: put both regions / products (mentioned_products) / years in the plan."
+    return "the plan is incomplete for the question; check metric, group_by and filters."

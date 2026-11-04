@@ -612,7 +612,7 @@
     "id": "i046",
     "lang": "uz",
     "kind": "no_data",
-    "question": "ipak-xomashyo (shёлк-сырец) savdosi UZEXda bo'lganmi, jami necha tonna sotilgan?",
+    "question": "ipak-xomashyo (ipak qurti ipagi) savdosi UZEXda bo'lganmi, jami necha tonna sotilgan?",
     "gold_sql": "SELECT COUNT(*) FROM deals_enriched WHERE product_base LIKE '%шелк%' OR product_base LIKE '%шёлк%' OR product_base LIKE '%ipak%'",
     "gold": [
       [

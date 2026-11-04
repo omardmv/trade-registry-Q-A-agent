@@ -40,11 +40,12 @@ def _schema():
                                                "contracts", "base_price", "deposit", "pay_term", "delivery_term"]},
         "extra_metrics": arr({"type": "STRING", "enum": ["count", "amount", "volume", "avg_price", "amount_stat", "price_change", "delay"]}),
         "stat": {"type": "STRING", "enum": ["none", "avg", "median", "min", "max", "stddev"]},
-        "distinct_of": {"type": "STRING", "enum": ["none", "seller", "buyer", "company", "broker", "product", "region"]},
+        "distinct_of": {"type": "STRING", "enum": ["none", "seller", "buyer", "company", "broker", "seller_broker", "buyer_broker", "product", "region"]},
+        "statuses": {"type": "ARRAY", "items": {"type": "STRING", "enum": VV.enums["status"]}}, "include_annulled": B,
         "delay_of": {"type": "STRING", "enum": ["none", "payment", "delivery", "delivery_after_payment"]},
         "deal_by": {"type": "STRING", "enum": ["none", "amount", "price"]},
         "group_by": {"type": "STRING", "enum": ["none", "region", "seller", "buyer", "seller_broker", "buyer_broker", "any_broker", "product",
-                                                 "month", "year", "quarter", "hour", "status", "contract_form", "contract_type", "side",
+                                                 "month", "year", "quarter", "hour", "unit", "status", "contract_form", "contract_type", "side",
                                                  "product_group", "product_category", "industry", "delivery_basis", "packaging", "tnved", "auction_type"]},
         "order": {"type": "STRING", "enum": ["desc", "asc"]}, "limit": I,
         "share": B, "share_condition": {"type": "STRING", "enum": ["none", "status", "contract_type", "contract_form", "auction_type", "late", "region",
@@ -133,8 +134,8 @@ share: true for percentages; share_condition = the attribute that defines the nu
 compare: region/product/year when two of them are compared ("A or B, where more"). Put both values in regions/products/years.
 usd: true only if the answer must be in US dollars. tonnes: true if tonnes are asked. unit: set if the question names a unit (metres, litres...).
 mentioned_products: EVERY specific commodity/product the question names, one object each:
-  as_written = exactly as in the question (any language/script); registry_term = how this Russian registry would name it, in Russian,
-  keeping any grade/brand/form the question names (e.g. "bug'doy" -> "пшеница", "qand"/"shakar" -> "сахар", "солярка" -> "дизельное топливо",
+  as_written = exactly as in the question (any language/script); registry_term = how this Russian registry would name it, in Russian:
+  the GENERIC product name (e.g. "известь", "арматура", "кирпич") unless the question itself names a grade/brand/form — then keep it (e.g. "bug'doy" -> "пшеница", "qand"/"shakar" -> "сахар", "солярка" -> "дизельное топливо",
   "аи 92" -> "бензин аи-92", "paxta (spot)" -> "хлопок-сырец спот", "кукуруза" -> "кукуруза" even though it may not exist).
   Not generic words ("товар", "продукция") and not categories ("нефтепродукты" is a product_category).
 mentioned_places: EVERY region/city/country the question names, exactly as written (e.g. "в Самарканде", "Москва"). [] if none.
@@ -150,6 +151,8 @@ regions: registry regions (Latin Uzbek names) that the places in the question be
 company_names: companies named in words, exactly as written (any script). inns: 9-digit numbers. brokers: codes like BK045.
 side: seller/buyer when the question says the company/broker sold or bought; any otherwise.
 date_from/date_to: ISO dates of the asked period (spelled-out years like "ikki ming yigirma to'rtinchi" = 2024; Q4 = Oct–Dec), "" if none.
+statuses: several statuses at once ("ждёт оплату или оплачен") — then status=none. include_annulled: true when the question
+  explicitly says to count annulled/cancelled deals too ("включая аннулированные", "bekor qilinganlarni ham").
 years: the years if two years are compared. status: filter if asked ("состоялось"/"amalga oshgan"/"not cancelled" → not_annulled).
 contract_type / contract_form / auction_type: filters if asked (when they are compared, use group_by instead). vat: for directory questions.
 rate_date / rate_mode: for usd_rate questions (change = % change of the rate between the start and end of the period).
@@ -193,9 +196,11 @@ Q: на сколько процентов в среднем выросла це�
 Return JSON only.""".replace("{bases}", " | ".join(sorted(bases)))
 
 
-def plan(question, products, regions, timeout=30, bases=(), lang="ru"):
+def plan(question, products, regions, timeout=30, bases=(), lang="ru", feedback=None, previous=None):
     body = {"systemInstruction": {"parts": [{"text": _prompt(products, regions, bases)}]},
-            "contents": [{"role": "user", "parts": [{"text": f"ANSWER LANGUAGE: {lang}\nQUESTION: {question}"}]}],
+            "contents": [{"role": "user", "parts": [{"text": f"ANSWER LANGUAGE: {lang}\nQUESTION: {question}"}]}] + (
+                [{"role": "model", "parts": [{"text": json.dumps(previous, ensure_ascii=False)}]},
+                 {"role": "user", "parts": [{"text": "Your plan cannot be executed: " + feedback + " Return the corrected full plan."}]}] if feedback else []),
             "generationConfig": {"temperature": 0, "seed": 20261105, "responseMimeType": "application/json", "responseSchema": _schema(),
                                  "thinkingConfig": {"thinkingLevel": THINK}}}
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"

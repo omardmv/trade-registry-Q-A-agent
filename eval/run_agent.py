@@ -13,6 +13,14 @@ def same(gold, got):
         if num(g) and num(o):
             return close(g, o) or (LENIENT and (close(g, o * 1000) or close(g * 1000, o)))   # kg vs tonnes
         if LENIENT and (num(g) or num(o)) and str(g).strip() == str(o).strip(): return True  # 2023 vs '2023'
+        if LENIENT:
+            import re as _re
+            def as_num(x):
+                m = _re.fullmatch(r"\s*(-?\d+(?:[.,]\d+)?)\s*%?\s*", str(x)); return float(m.group(1).replace(",", ".")) if m else None
+            def as_date(x):
+                m = _re.fullmatch(r"(\d{2})\.(\d{2})\.(\d{4})", str(x).strip()); return f"{m.group(3)}-{m.group(2)}-{m.group(1)}" if m else str(x).strip()[:10]
+            if as_num(g) is not None and as_num(o) is not None and close(as_num(g), as_num(o)): return True    # '10 %' vs 10.0
+            if as_date(g) == as_date(o) and _re.match(r"\d{4}-\d{2}-\d{2}", as_date(g)): return True            # 03.01.2022 vs 2022-01-03
         return isinstance(g, str) and str(o).strip() == g.strip()
     return all(any(eq(g, o) for o in ov) for g in gv)
 import os, time as _time
