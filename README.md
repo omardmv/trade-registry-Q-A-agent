@@ -4,6 +4,134 @@ Answers Russian and Uzbek questions about the exchange deal registry in `data/`.
 checked against the database result; if the data has no answer, the service says so. The data is fictional:
 companies, tax IDs, brokers, contracts, deals and prices are invented (see `data/README.md`).
 
+**Latest evaluation** (60 questions, live Gemini, two runs in a row): 48/48 answerable questions correct,
+12/12 unanswerable questions refused, 0 hallucinations, median response 4 s, slowest 12 s (limit 90 s).
+
+## Architecture
+
+The core idea: **the language model never decides the facts.** Gemini only does two language jobs: it turns
+the question into a structured query request, and it turns the result rows into a sentence. Everything in
+between (finding IDs, building SQL, running it, checking the final answer) is deterministic code.
+
+```mermaid
+flowchart TD
+    Q[Question in Russian or Uzbek] --> W[Query planner<br/>Gemini]
+    W <-->|tools| T[Name lookup · Examples · Data peek]
+    W -->|structured form| C[Compiler<br/>fixed SQL templates]
+    W -.->|rare fallback: free SQL| V[SQL checker]
+    W -->|no answer in data| N[No-data reply]
+    C --> DB[(DuckDB<br/>read-only)]
+    V --> DB
+    DB --> R[Result rows]
+    R --> A[Answer writer<br/>Gemini]
+    A --> CH[Answer checker]
+    CH -->|every fact found in rows| OK[Answer + how it was computed]
+    CH -->|a fact not in rows| F[Table built from rows]
+```
+
+The two boxes labeled Gemini are the only places a model runs. Everything else is plain Python and SQL.
+
+### The components
+
+| Step | What it does | Code |
+|---|---|---|
+| Data build | Loads the CSVs once into DuckDB with real types and ready-made columns: tonnes, sums in so'm and USD at the deal-date rate, a "cancelled" flag, and one standard name per product (230 spellings → 42 products). | `app/ingest/` |
+| Name lookup | Turns "Pudexiz Plast", "paxta", "Самаркандская область" or "BK001" into the exact IDs stored in the data. Handles Cyrillic ↔ Latin and Russian ↔ Uzbek names. A name that matches nothing returns nothing. | `app/resolve.py` |
+| Semantic layer | Column meanings, business rules and the list of known ambiguities, in Russian and Uzbek. Given to the planner in full. | `app/semantic.yaml` |
+| Examples | 30+ verified question → query pairs; the closest ones are shown to the planner. | `examples/examples.yaml` |
+| Query planner | Gemini with tools. It looks up names, reads examples and fills in a **structured form** (what to count, which filters, how to group). It can also say "the data can't answer this". | `app/agent/writer.py` |
+| Form checker | Rejects forms with unknown fields, periods outside the data, IDs that were not looked up or do not exist, or a month/date from the question that is missing in the form. The error goes back to the planner to fix. | `app/compiler/spec.py`, `writer.py` |
+| Compiler | Turns the form into SQL from a small set of templates, each tested against hand-written SQL. Also writes one plain sentence saying exactly what was computed. | `app/compiler/sql.py`, `explain.py` |
+| Free-SQL checker | Only for questions no form can express. Read-only SELECT, known tables, no name text filters, IDs must be looked up, money must respect currency, no made-up literal rows. | `app/agent/validators.py` |
+| Answer writer | Gemini rewrites the result rows as 1–4 sentences in the question's language. | `app/answer/composer.py` |
+| Answer checker | Every number, INN, broker code, date and known name in the reply must appear in the result rows or the question. If not, the reply is rewritten once, then replaced by a table built from the rows. | `app/answer/verifier.py` |
+| Pipeline and API | Runs the steps under a time budget and serves `POST /ask` plus a chat page. | `app/pipeline.py`, `app/api.py` |
+
+### One question, step by step
+
+*"Сколько сделок было заключено в октябре 2025 года?"*
+
+1. The planner fills the form: count deals, year 2025, month 10.
+2. The compiler builds SQL that returns both readings at once: all deals (17 808) and deals without annulled
+   ones (16 620).
+3. The answer writer says: "В октябре 2025 года заключено 17 808 сделок, без аннулированных — 16 620."
+4. The checker confirms both numbers are in the result rows.
+5. The code appends: "Расчёт: сделки за 10.2025; все сделки и отдельно без аннулированных."
+
+### What the user can get back
+
+```mermaid
+flowchart LR
+    Q[Question] --> P{Pipeline}
+    P --> A1[Checked answer<br/>+ how it was computed]
+    P --> A2[Table from the rows<br/>if the answer failed the check]
+    P --> A3[No data<br/>the data cannot answer]
+    P --> A4[Could not answer<br/>error or time limit]
+```
+
+There is no fifth outcome: model text that did not pass the checker never reaches the user.
+
+## Design decisions
+
+### Why a structured form instead of letting the model write SQL
+
+A wrong SQL query gives a wrong number, and the answer checker cannot catch that, because the wrong number
+really is in the rows. So most questions go through the form: the model only picks *what* to compute, and
+tested templates decide *how*. The model can still make one kind of mistake (choosing the wrong measure or
+filter), but that is visible in the form and in the explanation sentence.
+
+### How ambiguous questions are handled
+
+Many questions hide a choice. Instead of guessing, the compiler computes every reasonable reading in one
+query and the answer shows them all:
+
+| Ambiguity | Example | What the answer shows |
+|---|---|---|
+| Deal status | "Сколько сделок…" | All deals and, separately, without annulled ones |
+| Measure | "Кто купил больше всего хлопка?" | Top by tonnes and top by value |
+| Role | "Кто больше всех торговал?" | Top buyers and top sellers |
+| Currency | "Общая сумма…" | So'm by default; USD converted at the deal-date rate when asked |
+| Product scope | "хлопок" | Raw cotton by default; the whole cotton group when asked |
+
+Rankings exclude annulled deals, because those deals did not take place.
+
+### How made-up answers are blocked
+
+Each layer closes a different hole:
+
+1. **Names → IDs.** Filters may only use IDs returned by the name lookup or written in the question, and
+   the ID must exist in the data. "Брокер BK999" gets "no data", not "0 deals".
+2. **Fixed SQL templates.** Most queries are never written by the model.
+3. **SQL checker.** The fallback path cannot filter by raw text, invent literal rows, read files or write.
+4. **Answer checker.** Every fact in the reply must come from the rows; otherwise a table built from the rows
+   is shown instead.
+5. **Plain refusals.** Profit, directors, forecasts, other currencies or dates outside 2022–2026 get a
+   fixed "no data" reply.
+
+### Time budget
+
+The hard deadline is 75 s, under the 90 s requirement. Each Gemini call is capped at 15 s, and a call only
+starts if a full 15 s still fits before its deadline, so the worst case stays near 75 s. In practice most
+answers take 3–5 s.
+
+## Project layout
+
+```
+app/
+  ingest/     CSV → DuckDB build, product dictionary
+  compiler/   structured form, SQL templates, explanation sentence
+  agent/      Gemini wrapper, query planner, free-SQL checker
+  answer/     answer writer, answer checker, fixed replies
+  resolve.py  name lookup
+  pipeline.py the full question → answer flow
+  api.py      HTTP API; static/ holds the chat page
+data/                 source CSVs (fictional)
+data_dictionary/      product and region dictionaries
+examples/             verified question → query examples
+eval/                 60 evaluation questions and the runner
+tests/                unit tests (offline) and live tests
+```
+
 ## Run locally
 
 ```bash
