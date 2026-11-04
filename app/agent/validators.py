@@ -18,6 +18,8 @@ FORBIDDEN_NODES = tuple(getattr(exp, n) for n in
                         if hasattr(exp, n))
 _WHOLE_ROW_ERR = "whole-row and COLUMNS() expressions are not allowed"
 _WRAPPERS = (exp.Lower, exp.Upper, exp.Trim, exp.Paren)
+_ID_ONLY_COLUMNS = {"contract_id", "deal_id"}
+_CASE_FOLD = (exp.Lower, exp.Upper)
 _ID_LITERAL = re.compile(r"\d{9}|BK\d{3}")
 
 
@@ -31,8 +33,6 @@ def is_grounded(value: str, kind: str, allowed: set[tuple[str, str]], question: 
     value = str(value)
     if value.strip() == "":
         return False
-    if kind == "broker":
-        value = value.upper()
     if (kind, value) in allowed:
         return True
     if kind in _NAME_KINDS:
@@ -126,6 +126,11 @@ def validate_sql(sql: str, allowed: set[tuple[str, str]], question: str, db: Dat
             continue
         if _n(col) not in RESOLVED_COLUMNS:
             continue
+        if _case_folded_comparison(col):
+            errors.append(f"compare {_n(col)} directly with the resolved value, without lower()/upper()")
+            continue
+        if _n(col) in _ID_ONLY_COLUMNS and _id_column_free_use(col):
+            continue
         ok, literals = _check_comparison(col)
         if not ok:
             errors.append(f"compare {_n(col)} only with = / IN to values from resolve()")
@@ -217,6 +222,16 @@ def _is_count_arg(col: exp.Column) -> bool:
     return isinstance(p, exp.Count)
 
 
+def _id_column_free_use(col: exp.Column) -> bool:
+    """contract_id / deal_id used as IS [NOT] NULL operand or as a MIN/MAX/COUNT argument."""
+    p = col.parent
+    if isinstance(p, exp.Not):
+        p = p.parent
+    if isinstance(p, exp.Is) and isinstance(p.args.get("expression"), exp.Null):
+        return True
+    return isinstance(col.parent, (exp.Min, exp.Max, exp.Count))
+
+
 def _is_join_equality(col: exp.Column) -> bool:
     p = col.parent
     if not (isinstance(p, exp.EQ) and isinstance(p.this, exp.Column)
@@ -232,6 +247,30 @@ def _unwrap(node: exp.Expression) -> exp.Expression:
     while isinstance(node, _WRAPPERS) and isinstance(node.this, exp.Expression):
         node = node.this
     return node
+
+
+def _folds_case(node: exp.Expression) -> bool:
+    """True if a wrapper chain starting at node passes through lower()/upper()."""
+    while isinstance(node, _WRAPPERS) and isinstance(node.this, exp.Expression):
+        if isinstance(node, _CASE_FOLD):
+            return True
+        node = node.this
+    return False
+
+
+def _case_folded_comparison(col: exp.Column) -> bool:
+    top: exp.Expression = col
+    while isinstance(top.parent, _WRAPPERS):
+        if isinstance(top.parent, _CASE_FOLD):
+            return True
+        top = top.parent
+    parent = top.parent
+    if isinstance(parent, (exp.EQ, exp.NEQ)):
+        other = parent.args["expression"] if parent.this is top else parent.this
+        return _folds_case(other)
+    if isinstance(parent, exp.In) and parent.this is top:
+        return any(_folds_case(i) for i in parent.args.get("expressions") or [])
+    return False
 
 
 def _check_comparison(col: exp.Column) -> tuple[bool, list[str]]:

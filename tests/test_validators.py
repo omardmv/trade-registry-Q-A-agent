@@ -84,7 +84,7 @@ def test_wrapped_name_filters_rejected():
 
 
 def test_wrapped_resolved_ids_still_checked():
-    sql = "SELECT COUNT(*) FROM deals WHERE upper(buyer_broker) = 'BK001'"
+    sql = "SELECT COUNT(*) FROM deals WHERE trim(buyer_broker) = 'BK001'"
     assert not v(sql).ok
     assert v(sql, allowed={"BK001"}).ok
 
@@ -121,7 +121,7 @@ ACCEPTED = [
     "SELECT region FROM deals WHERE region IN (SELECT region FROM deals WHERE status = 'done')",
     "SELECT 1 FROM deals WHERE buyer_inn = '975923536'",
     "SELECT 1 FROM participants p JOIN deals d ON p.inn = d.buyer_inn",
-    "SELECT 1 FROM deals WHERE lower(region) = 'samarqand viloyati'",
+    "SELECT 1 FROM deals WHERE trim(region) = 'samarqand viloyati'",
     "SELECT currency, SUM(amount) FROM deals GROUP BY currency",
     "SELECT SUM(amount) FROM deals WHERE currency = 'UZS'",
     "SELECT name FROM participants ORDER BY name",
@@ -272,3 +272,31 @@ def test_contract_id_in_question_accepted():
 def test_region_case_sensitive_exact():
     sql = "SELECT COUNT(*) FROM deals WHERE region = 'TOSHKENT VILOYATI'"
     assert not v(sql, allowed={("region", "Toshkent viloyati")}).ok
+
+
+R = ("region", "Toshkent viloyati")
+
+
+@pytest.mark.parametrize("sql,allowed", [
+    ("SELECT COUNT(*) FROM deals WHERE lower(region) = 'Toshkent viloyati'", {R}),
+    ("SELECT COUNT(*) FROM deals WHERE upper(region) = 'Toshkent viloyati'", {R}),
+    ("SELECT COUNT(*) FROM deals WHERE region = upper('Toshkent viloyati')", {R}),
+    ("SELECT COUNT(*) FROM deals WHERE region IN (lower('Toshkent viloyati'))", {R}),
+    ("SELECT COUNT(*) FROM deals WHERE lower(product_canonical) = 'Карбамид'", {("product", "Карбамид")}),
+    ("SELECT COUNT(*) FROM deals WHERE lower(seller_broker) = 'BK001'", {("broker", "BK001")}),
+    ("SELECT COUNT(*) FROM deals WHERE seller_broker = lower('BK001')", {("broker", "BK001")}),
+    ("SELECT COUNT(*) FROM deals WHERE seller_broker = 'bk001'", {("broker", "BK001")}),
+])
+def test_case_folding_on_resolved_rejected(sql, allowed):
+    assert not v(sql, allowed=allowed).ok
+
+
+@pytest.mark.parametrize("sql,allowed", [
+    ("SELECT COUNT(*) FROM deals WHERE trim(region) = 'Toshkent viloyati'", {R}),
+    ("SELECT MAX(deal_id) AS m FROM deals", set()),
+    ("SELECT COUNT(*) FROM deals WHERE contract_id IS NOT NULL", set()),
+    ("SELECT COUNT(*) FROM deals WHERE contract_id IS NULL", set()),
+])
+def test_trim_and_id_null_accepted(sql, allowed):
+    r = v(sql, allowed=allowed)
+    assert r.ok, r.errors
