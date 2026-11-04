@@ -1,6 +1,0 @@
-questions: exact 2/4 | loose 4/8 | trap 8/10 | no_data 8/8 | TOTAL 22/30 | fabricated on no-data: 0
-holdout: exact 5/9 | loose 5/6 | trap 2/3 | no_data 4/4 | TOTAL 16/22 | fabricated on no-data: 0
-round2: loose 4/7 | exact 3/4 | no_data 3/3 | trap 1/2 | TOTAL 11/16 | fabricated on no-data: 0
-bigset: exact 13/20 | loose 20/35 | trap 17/20 | no_data 25/25 | TOTAL 75/100 | fabricated on no-data: 0
-bigset2: exact 9/12 | loose 11/20 | trap 11/13 | no_data 15/15 | TOTAL 46/60 | fabricated on no-data: 0
-bigset3: exact 8/10 | loose 10/17 | trap 7/10 | no_data 13/13 | TOTAL 38/50 | fabricated on no-data: 0
