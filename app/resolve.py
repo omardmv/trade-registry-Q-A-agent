@@ -10,6 +10,23 @@ from app.text import normalize_name, normalize_text
 
 Kind = Literal["company", "broker", "product", "region", "contract"]
 _CUTOFF = 75.0
+
+
+def _fuzzy(q, keys, limit):
+    """WRatio-ranked hits (key, score, index), keeping only precise ones.
+
+    WRatio's partial-ratio component scores a query ~90 when it is merely a
+    substring of a longer key ("мед" in "катод медный"), so a hit is accepted
+    only if fuzz.ratio >= cutoff or every query token is a whole key token.
+    """
+    q_tokens = q.split()
+    out = []
+    for key, score, i in process.extract(q, keys, scorer=fuzz.WRatio, limit=None, score_cutoff=_CUTOFF):
+        if fuzz.ratio(q, key) >= _CUTOFF or set(q_tokens) <= set(key.split()):
+            out.append((key, score, i))
+            if limit is not None and len(out) >= limit:
+                break
+    return out
 _ALL = 100_000
 
 
@@ -83,8 +100,7 @@ class Resolver:
         q = normalize_name(text)
         if not q:
             return []
-        hits = process.extract(q, [r[2] for r in self._companies], scorer=fuzz.WRatio,
-                               limit=limit, score_cutoff=_CUTOFF)
+        hits = _fuzzy(q, [r[2] for r in self._companies], limit)
         cands = [self._company_candidate(self._companies[i], score) for _, score, i in hits]
         return sorted(cands, key=lambda c: (-c.score, -(c.extra["deals_as_buyer"] + c.extra["deals_as_seller"])))
 
@@ -102,8 +118,7 @@ class Resolver:
         q = normalize_name(text)
         if not q:
             return []
-        hits = process.extract(q, [r[2] for r in self._brokers], scorer=fuzz.WRatio,
-                               limit=limit, score_cutoff=_CUTOFF)
+        hits = _fuzzy(q, [r[2] for r in self._brokers], limit)
         return [self._broker_candidate(self._brokers[i], score) for _, score, i in hits]
 
     @staticmethod
@@ -116,7 +131,7 @@ class Resolver:
         q = normalize_text(text)
         if not q:
             return []
-        hits = process.extract(q, self._product_keys, scorer=fuzz.WRatio, limit=None, score_cutoff=_CUTOFF)
+        hits = _fuzzy(q, self._product_keys, None)
         best: dict[tuple[str, str], Candidate] = {}
         for _, score, i in hits:
             kind, value, family = self._product_targets[i]
@@ -127,7 +142,7 @@ class Resolver:
 
     def _region(self, text, limit):
         q = normalize_text(text)
-        hits = process.extract(q, self._region_keys, scorer=fuzz.WRatio, limit=None, score_cutoff=_CUTOFF)
+        hits = _fuzzy(q, self._region_keys, None)
         best: dict[str, Candidate] = {}
         for _, score, i in hits:
             region = self._region_targets[i]

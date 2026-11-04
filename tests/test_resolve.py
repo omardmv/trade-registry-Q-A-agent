@@ -56,3 +56,13 @@ def test_contract_lookup(resolver):
     assert c.id == "100001"
     assert c.extra["product_canonical"] == "Профиль алюминиевый"
     assert resolver.resolve("contract", "999999") == []
+
+
+def test_product_substring_is_not_a_match(resolver):
+    assert resolver.resolve("product", "мед") == []
+    for q in ("нефть", "сырая нефть"):
+        assert all(c.id != "Битум нефтяной" for c in resolver.resolve("product", q))
+
+
+def test_product_whole_token_still_matches(resolver):
+    assert any(c.id == "Сжиженный газ" for c in resolver.resolve("product", "газ"))
