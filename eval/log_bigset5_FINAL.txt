@@ -1,0 +1,81 @@
+
+== eval/bigset5.json
+f001 OK  template:broker            195ms | Брокер BK055: "Lele Broker" MChJ (ИНН 947308234, регион Qashqadaryo viloyati).
+f002 OK  template:broker              2ms | Broker BK115: GACHU BROKER MCHJ (STIR 913117483, hudud Toshkent viloyati).
+f003 OK  template:company             2ms | ИНН 902200996: "ҚЎФИЛ АГРО" МЧЖ. Регион: Sirdaryo viloyati; вид деятельности: Кластер; рол
+f004 OK  template:company             1ms | STIR 933979203: "Nedaz Group" MChJ. Hudud: Toshkent shahri; faoliyat turi: Торговая компан
+f005 OK  semantic:rules:count        12ms | Количество сделок: 461 сделок.
+f006 OK  semantic:rules:amount        5ms | Bitimlar summasi: 2 464 045 852 850 so'm (1 237 ta bitim).
+f007 OK  semantic:rules:avg_price      16ms | Средняя цена: 877 840.08 сум за 1 т (446 сделок, 878 908.02 сум за 1 т).
+f008 OK  semantic:rules:count        11ms | Bitimlar soni: 246 ta bitim.
+f009 OK  template:rate                3ms | Курс доллара на 20.11.2024: 12 287.31 сум за 1 USD.
+f010 BAD semantic:rules:amount/buyer      21ms | Bitimlar summasi:
+     gold: [['"Moto Group" MChJ', 9798221071.0], ['BOKAM SERVIS MCHJ', 6100197215.0]] | got: [('"РОФУЗ БИЗНЕС" МЧЖ', '951119569', None, 62386933560.0, 172, 3242358.0, 3242358.0)] 
+     sql: SELECT pb."Наименование" AS g, d.buyer_inn AS k, NULL AS u, round(sum(amount_uzs)), count(*), round(sum(CASE WHEN unit='килограмм' THEN volume_units/1000 ELSE v
+f011 BAD semantic:rules:amount/year      10ms | Сумма сделок:
+     gold: [[2023, 6439214811565.0, 6702], [2024, 8129749174135.0, 7662]] | got: [('2024', None, None, 6626957325403.0, 6198)] 
+     sql: SELECT CAST(year(deal_date) AS VARCHAR) AS g, NULL AS k, NULL AS u, round(sum(amount_uzs)), count(*) FROM deals_enriched d  WHERE deal_date BETWEEN DATE '2023-0
+f012 BAD guard:unknown-words          2ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlarda quyidagilar yo'q: «birida». Ma'lumotlar
+     gold: [['cement', 940086559134.0], ['petrol', 2096198353581.0]] | got: [] 
+     sql: 
+f013 BAD semantic:rules:count         4ms | Bitimlar soni: 13 546 ta bitim.
+     gold: [['Samarqand viloyati', 7696], ['Sirdaryo viloyati', 5850]] | got: [(13546,)] 
+     sql: SELECT count(*) FROM deals_enriched WHERE deal_date BETWEEN DATE '2024-01-01' AND DATE '2024-12-31' AND region IN ('Samarqand viloyati','Sirdaryo viloyati')
+f014 OK  semantic:rules:deal         16ms | Bitim №550430, 06.07.2026: Сахар белый; 22 215 228.00 so'm / 1 t; 44 lot × 1 t; summa 977 
+f015 OK  semantic:rules:deal         15ms | Bitim №518882, 04.03.2026: ПШЕНИЦА ПРОДОВОЛЬСТВЕННАЯ КЛАСС 3-КЛАСС; 6 616 357.00 so'm / 1 
+f016 BAD guard:unknown-words          2ms | В данных нет ответа на этот вопрос: в данных нет сведений о: «идет». В данных есть только 
+     gold: [[8.734444234046583]] | got: [] 
+     sql: 
+f017 BAD semantic:rules:delay         9ms | Muddat (o'rtacha): 3.5 kun (11 951 ta bitim).
+     gold: [[3.3849949739559535]] | got: [(3.5, 11951)] 
+     sql: SELECT round(avg(paid_date - deal_date),2), count(*) FROM deals_enriched WHERE (product_base SIMILAR TO 'сахар.*') AND paid_date IS NOT NULL AND status<>'Аннули
+f018 OK  semantic:rules:count/share      18ms | Ulushi: 83.54% (136 208 dan 113 784).
+f019 OK  planner:share             1742ms | Ulushi: 1.32% (500 000 dan 6 590 ta bitim).
+f020 BAD semantic:rules:volume/region      25ms | Объём:
+     gold: [['KO‘VIZ FERMER MCHJ', 266358727.0], ['TO‘LI AGRO MCHJ', 230787387.0]] | got: [('Namangan viloyati', None, 'килограмм', 1093421761.0, 18362)] 
+     sql: SELECT region AS g, NULL AS k, unit AS u, round(sum(volume_units),2), count(*) FROM deals_enriched d  WHERE (product_base SIMILAR TO 'хлопок.?сырец.*') AND regi
+f021 BAD guard:unknown-words          3ms | В данных нет ответа на этот вопрос: в данных нет сведений о: «куфил». В данных есть только
+     gold: [[2443, 2981309850866.0]] | got: [] 
+     sql: 
+f022 OK  semantic:rules:amount       14ms | "Nedaz Group" MChJ (STIR 933979203). Bitimlar summasi: 208 533 543 950 so'm (454 ta bitim)
+f023 BAD semantic:rules:count         4ms | Количество сделок: 3 953 сделок.
+     gold: [[1091, 2868]] | got: [(3953,)] 
+     sql: SELECT count(*) FROM deals_enriched WHERE (seller_broker='BK055' OR buyer_broker='BK055')
+f024 OK  semantic:rules:amount        3ms | Bitimlar summasi: 1 045 409 415 566 so'm (4 321 ta bitim).
+f025 BAD guard:unknown-words          4ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlarda quyidagilar yo'q: «ўтади». Ma'lumotlard
+     gold: [[3.3849949739559535]] | got: [] 
+     sql: 
+f026 OK  planner:share              746ms | Ulushi: 87.89% (4 750 dan 4 175 ta bitim).
+f027 OK  template:list                7ms | Mahsulotlar (4 ta):
+f028 BAD semantic:rules:count        15ms | Количество сделок: 0 сделок.
+     gold: [[286]] | got: [(0,)] 
+     sql: SELECT count(*) FROM deals_enriched WHERE (product_base IN ('хлопок-сырец (спот) 3-сорта 1-класс','хлопок-сырец (спот) 3-сорта ii класс','хлопок сырец (спот) 1-
+f029 BAD semantic:rules:count         9ms | Bitimlar soni: 520 ta bitim.
+     gold: [[451490412734.5231]] | got: [(520,)] 
+     sql: SELECT count(*) FROM deals_enriched WHERE deal_date BETWEEN DATE '2022-01-01' AND DATE '2022-12-31' AND (product_base IN ('пряжа хлопковая')) AND contract_type=
+f030 OK  semantic:rules:count/region       8ms | В данных нет ответа на этот вопрос: по заданным условиям сделок не найдено.
+f031 OK  semantic:rules:count/share      11ms | Ulushi: 7.01% (25 523 dan 1 790).
+f032 OK  semantic:rules:amount        4ms | Сумма сделок: 3 187 069 683 221 сум (7 532 сделок).
+f033 OK  semantic:rules:count         3ms | Bitimlar soni: 3 953 ta bitim.
+f034 BAD semantic:rules:count         8ms | Количество сделок: 1 657 сделок.
+     gold: [[1171]] | got: [(1657,)] 
+     sql: SELECT count(*) FROM deals_enriched WHERE deal_date BETWEEN DATE '2023-10-01' AND DATE '2023-12-31' AND (product_base SIMILAR TO '(портландцемент|цемент).*')
+f035 OK  semantic:rules:count        10ms | Bitimlar soni: 4 175 ta bitim.
+f036 OK  semantic:rules:count         7ms | Количество сделок: 0 сделок.
+f037 BAD semantic:rules:count/contract_form      15ms | Bitimlar soni:
+     gold: [[0]] | got: [('Спот', None, None, 103912), ('Форвард', None, None, 25451)] 
+     sql: SELECT contract_form AS g, NULL AS k, NULL AS u, count(*) FROM deals_enriched d  WHERE (product_base SIMILAR TO 'хлопок.?сырец.*') GROUP BY 1, 2, 3 ORDER BY 4 D
+f038 OK  guard:currency               1ms | В данных нет ответа на этот вопрос: в данных есть только курс доллара США к суму; курсов д
+f039 OK  guard:why                    1ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlarda faqat bitim faktlari bor, sabablari yoz
+f040 OK  guard:field                  1ms | В данных нет ответа на этот вопрос: такого поля в данных нет (есть: название, ИНН, регион,
+f041 OK  guard:unknown-words          2ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlarda quyidagilar yo'q: «tizimidagi». Ma'lumo
+f042 OK  guard:unknown-words          3ms | В данных нет ответа на этот вопрос: в данных нет сведений о: «членом», «ассоциации». В дан
+f043 OK  guard:field                  1ms | Ma'lumotlarda bu savolga javob yo'q: bunday maydon ma'lumotlarda yo'q (bor: nomi, STIR, hu
+f044 OK  guard:unknown-words          2ms | В данных нет ответа на этот вопрос: в данных нет сведений о: «скидок». В данных есть тольк
+f045 OK  guard:unknown-words          2ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlarda quyidagilar yo'q: «shartnoma», «tugagan
+f046 OK  guard:unknown-words          2ms | В данных нет ответа на этот вопрос: в данных нет сведений о: «изданиях», «упоминалась». В 
+f047 OK  guard:unknown-words          2ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlarda quyidagilar yo'q: «uglerod». Ma'lumotla
+f048 OK  guard:unknown-words          3ms | В данных нет ответа на этот вопрос: в данных нет сведений о: «гарантированная», «государст
+f049 OK  semantic:rules:count         6ms | Количество сделок: 0 сделок.
+f050 OK  semantic:rules:count         7ms | Bitimlar soni: 0 ta bitim.
+exact 9/10 | loose 8/17 | trap 6/10 | no_data 13/13 | TOTAL 36/50 | fabricated on no-data: 0

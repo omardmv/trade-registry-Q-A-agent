@@ -1,0 +1,137 @@
+
+== eval/bigset.json
+b001 OK  template:count              56ms | Количество сделок: 500 000. Из них состоялось 466 281, аннулировано (не оплачено) 33 719.
+b002 OK  template:distinct            2ms | Turli mahsulot nomlari: 195 ta.
+b003 OK  template:distinct            2ms | Bitimlar bo'lgan hududlar: 14 ta.
+b004 OK  template:count               2ms | Количество сделок: 431 061.
+b005 OK  template:count               1ms | Количество сделок: 106 647. Из них состоялось 99 324, аннулировано (не оплачено) 7 323.
+b006 BAD template:avg_price          12ms | O'rtacha narx: 877 052.61 so'm / 1 t (36 420 ta bitim).
+     gold: [[872063.4967998409]] | got: [('тонна', 877052.61, 36420)] 
+     sql: SELECT unit, round(sum(amount)/sum(volume_units),2), count(*) FROM deals_enriched WHERE (product_base SIMILAR TO '(портландцемент|цемент).*') AND status<>'Аннул
+b007 OK  template:rate                1ms | Курс доллара на 01.01.2024: 11 689.17 сум за 1 USD.
+b008 OK  template:broker              1ms | Broker BK050: "Jahoho‘ Broker" MChJ (STIR 994417312, hudud Toshkent viloyati).
+b009 OK  template:company             1ms | ИНН 999222902: "Nutunim Fermer" MChJ. Регион: Buxoro viloyati; вид деятельности: Кластер; 
+b010 BAD template:volume              8ms | Hajmi: 1 236 475 t (4 536 ta bitim).
+     gold: [[928875.0]] | got: [('тонна', 1236475.0, 4536)] 
+     sql: SELECT CASE WHEN unit='килограмм' THEN 'тонна' ELSE unit END AS u, round(sum(CASE WHEN unit='килограмм' THEN volume_units/1000 ELSE volume_units END),2), count(
+b011 OK  template:distinct            2ms | Уникальных продавцов: 392.
+b012 OK  template:distinct            2ms | Noyob xaridorlar soni: 13 997 ta.
+b013 BAD template:amount              3ms | Сумма сделок: 205 738 738 879 694 сум (466 281 сделок).
+     gold: [[247890, '2023-10-09', 'ПШЕНИЦА ПРОДОВОЛЬСТВЕННАЯ КЛАСС 4-КЛАСС', 30190376286.0, 'CHO‘HE KLASTER MCHJ', '"МИКИ БИЗНЕС" ҚК']] | got: [(205738738879694.0, 466281, 6117)] 
+     sql: SELECT round(sum(amount_uzs)), count(*), count(*) FILTER (WHERE currency='Доллар США') FROM deals_enriched WHERE status<>'Аннулирован(Не оплачен)'
+b014 OK  template:count               2ms | Bitimlar soni: 1 367 ta. Shundan amalga oshgan 1 270 ta, bekor qilingan (to'lanmagan) 97 t
+b015 OK  template:amount              2ms | Сумма сделок: 6 420 937 519 363 сум (13 459 сделок).
+b016 OK  template:directory           1ms | Broker idoralari: 120 ta.
+b017 OK  template:directory           1ms | Компаний в справочнике участников: 14 392.
+b018 OK  template:stat                8ms | Mediana: 3 867 666.50 so'm / 1 t (6 198 ta bitim).
+b019 OK  template:count               1ms | Количество сделок: 2 138. Из них состоялось 2 025, аннулировано (не оплачено) 113.
+b020 OK  template:share               2ms | Доля: 6.74% (33 719 из 500 000 сделок).
+b021 OK  template:volume             10ms | Объём: 5 776 418 т (96 837 сделок).
+b022 BAD template:top                 3ms | Natija:
+     gold: [['хлопок сырец (спот)', 47960]] | got: [('пшеница продовольственная', 25761689448278.0)] 
+     sql: SELECT product_base AS name, round(sum(amount_uzs)) AS v FROM deals_enriched d  WHERE status<>'Аннулирован(Не оплачен)' GROUP BY product_base ORDER BY v DESC LI
+b023 OK  template:top                 7ms | Результат:
+b024 OK  template:count               1ms | Bitimlar soni: 115 763 ta. Shundan amalga oshgan 107 678 ta, bekor qilingan (to'lanmagan) 
+b025 OK  template:rate                1ms | Eng yuqori kurs: 1 USD = 13 500.03 so'm (22.09.2026).
+b026 BAD template:amount              2ms | Bitimlar summasi: 22 380 020 108 791 so'm (54 332 ta bitim).
+     gold: [[58493]] | got: [(22380020108791.0, 54332, 1263)] 
+     sql: SELECT round(sum(amount_uzs)), count(*), count(*) FILTER (WHERE currency='Доллар США') FROM deals_enriched WHERE region IN ('Namangan viloyati') AND status<>'Ан
+b027 OK  template:directory           1ms | Брокерских контор: 11.
+b028 OK  template:largest             6ms | Eng yirik bitim №247890, 09.10.2023: ПШЕНИЦА ПРОДОВОЛЬСТВЕННАЯ КЛАСС 4-КЛАСС, summa 30 190
+b029 BAD template:count               7ms | Количество сделок: 440. Из них состоялось 414, аннулировано (не оплачено) 26.
+     gold: [[325]] | got: [(440, 414)] 
+     sql: SELECT count(*), count(*) FILTER (WHERE status<>'Аннулирован(Не оплачен)') FROM deals_enriched WHERE deal_date BETWEEN DATE '2024-02-01' AND DATE '2024-02-29' A
+b030 OK  template:volume              5ms | Объём: 7 010 т (181 сделок).
+b031 OK  template:extreme            14ms | Eng past narx: 4 680.35 so'm / 1 kg — 30.05.2022, bitim №122317 (Хлопок сырец (спот) Сорт 
+b032 OK  template:distinct            1ms | Noyob sotuvchilar soni: 392 ta.
+b033 OK  template:count               1ms | Bitimlar soni: 6 590 ta. Shundan amalga oshgan 6 117 ta, bekor qilingan (to'lanmagan) 473 
+b034 OK  template:delay               5ms | Средний срок от сделки до оплаты: 6.95 дн. (медиана 3.0, максимум 90; 459 563 сделок).
+b035 OK  template:delay               5ms | O'rtacha muddat to'lovdan yetkazishgacha: 10.51 kun (mediana 8.0, maksimum 75; 453 709 ta 
+b036 OK  template:top                 5ms | Результат:
+b037 OK  template:by_month            3ms | Период-лидер (по числу сделок):
+b038 OK  template:avg_price           8ms | O'rtacha narx: 4 904.42 so'm / 1 kg (22 995 ta bitim).
+b039 BAD template:top                15ms | Natija:
+     gold: [['SITO‘TOM TEKSTIL MCHJ', 499891837.0]] | got: [('SITO‘TOM TEKSTIL MCHJ', 5280361675802.0, '925910430')] 
+     sql: SELECT p."Наименование" AS name, round(sum(amount_uzs)) AS v, d.seller_inn FROM deals_enriched d JOIN participants p ON p."ИНН"=d.seller_inn WHERE (product_base
+b040 OK  template:directory           1ms | Broker idoralari: 3 ta.
+b041 OK  template:count               5ms | Количество сделок: 18. Из них состоялось 15, аннулировано (не оплачено) 3.
+b042 OK  template:count               1ms | Bitimlar soni: 2 083 ta. Shundan amalga oshgan 1 950 ta, bekor qilingan (to'lanmagan) 133 
+b043 OK  template:directory           1ms | Компаний в справочнике участников: 4 266.
+b044 BAD template:volume              8ms | Объём: 8 161 т (119 сделок).
+     gold: [[5665.029]] | got: [('тонна', 8161.05, 119)] 
+     sql: SELECT CASE WHEN unit='килограмм' THEN 'тонна' ELSE unit END AS u, round(sum(CASE WHEN unit='килограмм' THEN volume_units/1000 ELSE volume_units END),2), count(
+b045 BAD template:avg_price          14ms | O'rtacha narx: 8 006.41 so'm / 1 kg (127 747 ta bitim).
+     gold: [['2026-09-21', 12405.550000000001]] | got: [('килограмм', 8006.41, 127747)] 
+     sql: SELECT unit, round(sum(amount)/sum(volume_units),2), count(*) FROM deals_enriched WHERE (product_base SIMILAR TO 'хлопок.?сырец.*') AND status<>'Аннулирован(Не 
+b046 OK  template:share               1ms | Доля: 7.29% (36 431 из 500 000 сделок).
+b047 OK  template:share               1ms | Ulushi: 1.37% (500 000 dan 6 845 ta bitim).
+b048 OK  template:company             1ms | ИНН 983531029: "Zoket Invest" OK. Регион: Navoiy viloyati; вид деятельности: Торговая комп
+b049 OK  template:broker              1ms | Broker BK027: "Kuxon Broker" MChJ (STIR 931408286, hudud Samarqand viloyati).
+b050 BAD template:avg_price           7ms | Средняя цена: 867 449.28 сум за 1 т (5 561 сделок).
+     gold: [[910478.898063475]] | got: [('тонна', 867449.28, 5561)] 
+     sql: SELECT unit, round(sum(amount)/sum(volume_units),2), count(*) FROM deals_enriched WHERE (product_base IN ('цемент портландский цем i 42,5н','портландцемент цем 
+b051 BAD template:amount             11ms | Bitimlar summasi: 12 915 322 307 346 so'm (28 079 ta bitim).
+     gold: [[10301017835022.785]] | got: [(12915322307346.0, 28079, 0)] 
+     sql: SELECT round(sum(amount_uzs)), count(*), count(*) FILTER (WHERE currency='Доллар США') FROM deals_enriched WHERE deal_date BETWEEN DATE '2024-01-01' AND DATE '2
+b052 OK  template:list                2ms | Mahsulotlar (5 ta):
+b053 BAD template:count               9ms | Bitimlar soni: 4 750 ta. Shundan amalga oshgan 4 426 ta, bekor qilingan (to'lanmagan) 324 
+     gold: [[1230]] | got: [(4750, 4426)] 
+     sql: SELECT count(*), count(*) FILTER (WHERE status<>'Аннулирован(Не оплачен)') FROM deals_enriched WHERE (product_base SIMILAR TO '(катод медный|медный катод).*')
+b054 OK  template:count               5ms | Количество сделок: 363. Из них состоялось 343, аннулировано (не оплачено) 20.
+b055 OK  template:amount             12ms | Сумма сделок: 277 377 842 576 сум (266 сделок).
+b056 OK  template:volume              9ms | Объём: 1 030 389 т (17 348 сделок).
+b057 OK  template:volume              7ms | Hajmi: 169 356 t (5 604 ta bitim).
+b058 OK  guard:foreign                1ms | В данных нет ответа на этот вопрос: в данных только 14 регионов Узбекистана; сведений о др
+b059 OK  template:amount              2ms | Bitimlar summasi: 37 679 992 529 873 so'm (91 799 ta bitim).
+b060 OK  template:count               2ms | Bitimlar soni: 4 183 ta. Shundan amalga oshgan 3 899 ta, bekor qilingan (to'lanmagan) 284 
+b061 OK  template:underdelivery       7ms | Фактически поставлено: 299 759 лотов = 299 759 т (1 779 сделок).
+b062 BAD none                         1ms | savolni aniq tushunib bo'lmadi — nimani hisoblash kerakligini (soni, summasi, hajmi, narxi
+     gold: [[115763, 99306, -14.22]] | got: [] 
+     sql: 
+b063 OK  template:count               1ms | Количество сделок: 0.
+b064 OK  template:self                2ms | Sotuvchi va xaridor brokeri bir xil bo'lgan bitimlar: 4 562 ta.
+b065 OK  template:self                4ms | Нет: ни одна компания не выступает и продавцом, и покупателем (0). Роли участников в данны
+b066 OK  template:avg_price          10ms | O'rtacha narx: 7 983.04 so'm / 1 kg (96 837 ta bitim).
+b067 BAD template:count               7ms | Количество сделок: 2 240.
+     gold: [[1534]] | got: [(2240,)] 
+     sql: SELECT count(*) FROM deals_enriched WHERE deal_date BETWEEN DATE '2023-01-01' AND DATE '2023-12-31' AND (product_base SIMILAR TO 'сахар.*') AND status<>'Аннулир
+b068 OK  template:amount              3ms | Bitimlar summasi: 39 526 013 180 461 so'm (91 122 ta bitim).
+b069 BAD template:count               7ms | Количество сделок: 1 456. Из них состоялось 1 348, аннулировано (не оплачено) 108.
+     gold: [[1063]] | got: [(1456, 1348)] 
+     sql: SELECT count(*), count(*) FILTER (WHERE status<>'Аннулирован(Не оплачен)') FROM deals_enriched WHERE deal_date BETWEEN DATE '2024-01-01' AND DATE '2024-03-31' A
+b070 OK  template:amount             13ms | Bitimlar summasi: 277 377 842 576 so'm (266 ta bitim).
+b071 OK  template:volume              5ms | Hajmi: 7 010 t (181 ta bitim).
+b072 BAD template:compare             7ms | Сравнение (больше: Namangan viloyati):
+     gold: [['Namangan viloyati', 1475, 1801179756440.0]] | got: [('Namangan viloyati', 1579, 1801179756440.0)] 
+     sql: SELECT 'Namangan viloyati', count(*), round(sum(amount_uzs) FILTER (WHERE status<>'Аннулирован(Не оплачен)')) FROM deals_enriched WHERE (product_base SIMILAR TO
+b073 OK  guard:range                  1ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlar faqat 03.01.2022 – 30.10.2026 davrini qam
+b074 OK  template:amount              2ms | Bitimlar summasi: 10 117 106 726 593 so'm (17 582 ta bitim).
+b075 OK  template:underdelivery       6ms | Недопоставлено: 624 лотов = 624 000 л (47 частично исполненных сделок).
+b076 OK  guard:field                  1ms | В данных нет ответа на этот вопрос: такого поля в данных нет (есть: название, ИНН, регион,
+b077 OK  guard:why                    1ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlarda faqat bitim faktlari bor, sabablari yoz
+b078 OK  guard:forecast               1ms | В данных нет ответа на этот вопрос: в данных только прошлые сделки, прогнозов нет.
+b079 OK  guard:range                  1ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlar faqat 03.01.2022 – 30.10.2026 davrini qam
+b080 OK  guard:range                  1ms | В данных нет ответа на этот вопрос: данные охватывают только период с 03.01.2022 по 30.10.
+b081 OK  guard:range                  1ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlar faqat 03.01.2022 – 30.10.2026 davrini qam
+b082 OK  guard:not-traded             1ms | В данных нет ответа на этот вопрос: товар «золот» на бирже в этих данных не торговался.
+b083 OK  guard:field                  1ms | Ma'lumotlarda bu savolga javob yo'q: bunday maydon ma'lumotlarda yo'q (bor: nomi, STIR, hu
+b084 OK  guard:field                  1ms | В данных нет ответа на этот вопрос: такого поля в данных нет (есть: название, ИНН, регион,
+b085 OK  guard:field                  1ms | Ma'lumotlarda bu savolga javob yo'q: bunday maydon ma'lumotlarda yo'q (bor: nomi, STIR, hu
+b086 OK  guard:inn                    0ms | В данных нет ответа на этот вопрос: компании с ИНН 123456789 в данных нет.
+b087 OK  guard:broker                 1ms | Ma'lumotlarda bu savolga javob yo'q: BK999 broker ma'lumotlarda yo'q (BK001–BK120 bor).
+b088 OK  template:volume              7ms | В данных нет ответа на этот вопрос: по заданным условиям сделок не найдено.
+b089 BAD template:avg_price           9ms | O'rtacha narx: 12 722 778.25 so'm / 1 t (11 987 ta bitim).
+     gold: [[0]] | got: [('тонна', 12722778.25, 11987)] 
+     sql: SELECT unit, round(sum(amount)/sum(volume_units),2), count(*) FROM deals_enriched WHERE (product_base SIMILAR TO 'сахар.*') AND status<>'Аннулирован(Не оплачен)
+b090 OK  guard:not-traded             1ms | В данных нет ответа на этот вопрос: товар «нефть» на бирже в этих данных не торговался.
+b091 OK  guard:field                  1ms | Ma'lumotlarda bu savolga javob yo'q: bunday maydon ma'lumotlarda yo'q (bor: nomi, STIR, hu
+b092 OK  guard:field                  1ms | В данных нет ответа на этот вопрос: такого поля в данных нет (есть: название, ИНН, регион,
+b093 OK  none                         1ms | savolni aniq tushunib bo'lmadi — nimani hisoblash kerakligini (soni, summasi, hajmi, narxi
+b094 OK  guard:field                  1ms | Ma'lumotlarda bu savolga javob yo'q: bunday maydon ma'lumotlarda yo'q (bor: nomi, STIR, hu
+b095 OK  guard:field                  1ms | Ma'lumotlarda bu savolga javob yo'q: bunday maydon ma'lumotlarda yo'q (bor: nomi, STIR, hu
+b096 OK  guard:field                  1ms | Ma'lumotlarda bu savolga javob yo'q: bunday maydon ma'lumotlarda yo'q (bor: nomi, STIR, hu
+b097 OK  guard:foreign                1ms | В данных нет ответа на этот вопрос: в данных только 14 регионов Узбекистана; сведений о др
+b098 OK  none                         1ms | savolni aniq tushunib bo'lmadi — nimani hisoblash kerakligini (soni, summasi, hajmi, narxi
+b099 OK  template:count               8ms | Количество сделок: 0.
+b100 OK  template:amount              6ms | Ma'lumotlarda bu savolga javob yo'q: berilgan shartlar bo'yicha bitim topilmadi.
+exact 17/20 | loose 26/35 | trap 16/20 | no_data 24/25 | TOTAL 83/100 | fabricated on no-data: 1

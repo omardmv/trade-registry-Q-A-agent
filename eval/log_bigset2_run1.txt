@@ -1,0 +1,110 @@
+
+== eval/bigset2.json
+c001 BAD template:count              58ms | Количество сделок: 500 000. Из них состоялось 466 281, аннулировано (не оплачено) 33 719.
+     gold: [[5854]] | got: [(500000, 466281)] 
+     sql: SELECT count(*), count(*) FILTER (WHERE status<>'Аннулирован(Не оплачен)') FROM deals_enriched 
+c002 OK  template:broker              2ms | Broker BK075: ZO‘REL BROKER MCHJ (STIR 915547849, hudud Qashqadaryo viloyati).
+c003 OK  template:company             1ms | ИНН 931877368: "Boqo‘bo Klaster" MChJ. Регион: Xorazm viloyati; вид деятельности: Кластер;
+c004 OK  template:count               3ms | Bitimlar soni: 10 573 ta. Shundan amalga oshgan 9 854 ta, bekor qilingan (to'lanmagan) 719
+c005 BAD guard:foreign                1ms | В данных нет ответа на этот вопрос: в данных только 14 регионов Узбекистана; сведений о др
+     gold: [[11077.09]] | got: [] 
+     sql: 
+c006 OK  template:volume              8ms | Hajmi: 6 059 t (484 ta bitim).
+c007 OK  template:directory           2ms | Компаний в справочнике участников: 113.
+c008 OK  template:directory           1ms | Broker idoralari: 10 ta.
+c009 OK  template:largest            14ms | Крупнейшая сделка №299524 от 11.04.2024: Подшипник Марка 6210, сумма 238 221 186 сум. Прод
+c010 BAD template:count               9ms | Количество сделок: 12 926. Из них состоялось 11 987, аннулировано (не оплачено) 939.
+     gold: [[1081]] | got: [(12926, 11987)] 
+     sql: SELECT count(*), count(*) FILTER (WHERE status<>'Аннулирован(Не оплачен)') FROM deals_enriched WHERE (product_base SIMILAR TO 'сахар.*')
+c011 OK  template:count               2ms | Bitimlar soni: 878 ta. Shundan amalga oshgan 812 ta, bekor qilingan (to'lanmagan) 66 ta.
+c012 OK  template:distinct            2ms | Регионов со сделками: 14.
+c013 OK  template:top                12ms | Natija:
+c014 BAD template:count               2ms | Bitimlar soni: 106 647 ta. Shundan amalga oshgan 99 324 ta, bekor qilingan (to'lanmagan) 7
+     gold: [[10, 16824]] | got: [(106647, 99324)] 
+     sql: SELECT count(*), count(*) FILTER (WHERE status<>'Аннулирован(Не оплачен)') FROM deals_enriched WHERE deal_date BETWEEN DATE '2024-01-01' AND DATE '2024-12-31'
+c015 BAD planner:avg_price         4057ms | Средняя цена: 7 440.30 USD за 1 т (1 237 сделок).
+     gold: [[10839.03]] | got: [('тонна', 7440.3, 1237, 7393.41)] 
+     sql: SELECT unit, round(sum(amount)/sum(volume_units),2), count(*), round(avg(price_per_unit),2) FROM deals_enriched WHERE deal_date BETWEEN DATE '2022-01-01' AND DA
+c016 BAD planner:volume            1192ms | Hajmi: 9 182 465 159 kg; 440 718 000 l; 122 711 534 dona; 22 351 991 t; 3 649 072 m; 1 493
+     gold: [[1190105.0]] | got: [('килограмм', 9182465159.0, 190747), ('литр', 440718000.0, 11591)] 
+     sql: SELECT unit AS u, round(sum(volume_units),2), count(*) FROM deals_enriched WHERE deal_date BETWEEN DATE '2022-01-01' AND DATE '2026-12-31' AND status<>'Аннулиро
+c017 BAD template:extreme            19ms | Минимальная сумма сделки: 5 655 781.00 сум — 28.11.2023, сделка №270123 (Топливо дизельное
+     gold: [['2025-05-21', 7252636.0]] | got: [(datetime.date(2023, 11, 28), 5655781.0, 'килограмм', 270123, 'Топливо дизельное Марка ДТ-З-К5')] 
+     sql: SELECT deal_date, round(amount_uzs,2), unit, deal_id, product_name FROM deals_enriched WHERE (product_base SIMILAR TO '(дизельное топливо|топливо дизельное).*')
+c018 OK  template:amount              4ms | Bitimlar summasi: 2 533 979 960 439 so'm (1 270 ta bitim).
+c019 BAD fallback:llm              7962ms | Ma'lumotlarda bu savolga javob yo'q: berilgan shartlar bo'yicha bitim topilmadi.
+     gold: [[10126]] | got: [] 
+     sql: SELECT 
+    COUNT(DISTINCT CASE 
+        WHEN p.角色 = 'НДС плательщик' THEN de.卖方INN 
+        ELSE NULL 
+    END) AS countntaxpayers
+FROM 
+    deals_enriched de
+
+c020 OK  template:count              17ms | Bitimlar soni: 892 ta. Shundan amalga oshgan 833 ta, bekor qilingan (to'lanmagan) 59 ta.
+c021 OK  template:directory           2ms | Broker idoralari: 7 ta.
+c022 OK  planner:top                540ms | Результат:
+c023 BAD template:amount             13ms | Bitimlar summasi: 1 260 960 679 520 so'm (8 215 ta bitim).
+     gold: [[940086559134.0]] | got: [(1260960679520.0, 8215, 0)] 
+     sql: SELECT round(sum(amount_uzs)), count(*), count(*) FILTER (WHERE currency='Доллар США') FROM deals_enriched WHERE deal_date BETWEEN DATE '2025-01-01' AND DATE '2
+c024 BAD template:largest            14ms | Eng yirik bitim №459967, 29.09.2025: Стекло флоат 8 мм, summa 399 062 362 so'm. Sotuvchi: 
+     gold: [[459967, 2066.0, 399062362.0]] | got: [(459967, datetime.date(2025, 9, 29), 'Стекло флоат 8 мм', 399062362.0, 399062362.0, 'Узбекский сум', '"Zahu Stroy" MChJ', '"ЗОҲЕ ТРАДЕ" АЖ')] 
+     sql: SELECT deal_id, deal_date, product_name, round(amount_uzs), amount, currency, s."Наименование", b."Наименование" FROM deals_enriched d JOIN participants s ON s.
+c025 OK  template:share               3ms | Ulushi: 7.37% (106 647 dan 7 858 ta bitim).
+c026 OK  template:broker              2ms | Брокер BK036: "БЎРОЛЕ БРОКЕР" МЧЖ (ИНН 994792837, регион Navoiy viloyati).
+c027 OK  template:amount              2ms | Bitimlar summasi: 2 141 753 986 697 so'm (5 145 ta bitim).
+c028 OK  template:count               7ms | Bitimlar soni: 629 ta. Shundan amalga oshgan 586 ta, bekor qilingan (to'lanmagan) 43 ta.
+c029 BAD template:volume             19ms | Объём: 1 604 175 765 кг (26 474 сделок).
+     gold: [[110168775.0]] | got: [('килограмм', 1604175765.0, 26474)] 
+     sql: SELECT unit AS u, round(sum(volume_units),2), count(*) FROM deals_enriched WHERE deal_date BETWEEN DATE '2023-01-01' AND DATE '2023-12-31' AND (product_base SIM
+c030 BAD template:volume              9ms | Объём: 70 160 т (1 780 сделок).
+     gold: [['Samarqand viloyati', 36339.0]] | got: [('тонна', 70160.0, 1780)] 
+     sql: SELECT unit AS u, round(sum(volume_units),2), count(*) FROM deals_enriched WHERE (product_base SIMILAR TO 'известь.*') AND status<>'Аннулирован(Не оплачен)' GRO
+c031 OK  template:extreme            11ms | Eng yuqori narx: 1 489 124.00 so'm / 1 t — 07.08.2025, bitim №437781 (ПОРТЛАНДЦЕМЕНТ Марка
+c032 OK  template:directory           1ms | Компаний в справочнике участников: 1 874.
+c033 OK  template:count               6ms | Количество сделок: 3 266. Из них состоялось 3 035, аннулировано (не оплачено) 231.
+c034 OK  template:count               2ms | Количество сделок: 0.
+c035 BAD template:volume              8ms | Hajmi: 93 283 t (3 782 ta bitim).
+     gold: [[230675.0]] | got: [('тонна', 93283.0, 3782)] 
+     sql: SELECT unit AS u, round(sum(volume_units),2), count(*) FROM deals_enriched WHERE deal_date BETWEEN DATE '2024-01-01' AND DATE '2024-12-31' AND (product_base SIM
+c036 BAD template:volume              7ms | Объём: 1 704 198 т (6 198 сделок).
+     gold: [[113206.0]] | got: [('тонна', 1704198.0, 6198)] 
+     sql: SELECT CASE WHEN unit='килограмм' THEN 'тонна' ELSE unit END AS u, round(sum(CASE WHEN unit='килограмм' THEN volume_units/1000 ELSE volume_units END),2), count(
+c037 BAD template:amount              2ms | Bitimlar summasi: 202 495 621.00 USD (1 229 ta bitim).
+     gold: [[2420672267384.069]] | got: [(202495621.0, 1229)] 
+     sql: SELECT round(sum(amount),2), count(*) FROM deals_enriched WHERE deal_date BETWEEN DATE '2024-01-01' AND DATE '2024-12-31' AND status<>'Аннулирован(Не оплачен)' 
+c038 OK  template:amount              3ms | Bitimlar summasi: 3 915 403 069 677 so'm (8 213 ta bitim).
+c039 OK  template:count               6ms | Количество сделок: 5 817.
+c040 OK  template:volume              7ms | В данных нет ответа на этот вопрос: по заданным условиям сделок не найдено.
+c041 OK  template:volume              7ms | Hajmi: 47 456 t (959 ta bitim).
+c042 BAD fallback:llm              1333ms | В данных нет ответа на этот вопрос: по заданным условиям сделок не найдено.
+     gold: [[9.69]] | got: [] 
+     sql: SELECT 'NO_DATA'
+c043 OK  template:directory           5ms | Broker idoralari: 3 ta.
+c044 BAD template:count              14ms | Количество сделок: 590. Из них состоялось 540, аннулировано (не оплачено) 50.
+     gold: [[136296573.79000008]] | got: [(590, 540)] 
+     sql: SELECT count(*), count(*) FILTER (WHERE status<>'Аннулирован(Не оплачен)') FROM deals_enriched WHERE deal_date BETWEEN DATE '2025-01-01' AND DATE '2025-12-31' A
+c045 OK  template:count               3ms | Bitimlar soni: 9 992 ta. Shundan amalga oshgan 9 321 ta, bekor qilingan (to'lanmagan) 671 
+c046 OK  planner:no_data            276ms | Ma'lumotlarda bu savolga javob yo'q: berilgan shartlar bo'yicha bitim topilmadi.
+c047 OK  planner:no_data           1713ms | Ma'lumotlarda bu savolga javob yo'q: berilgan shartlar bo'yicha bitim topilmadi.
+c048 OK  guard:field                  3ms | В данных нет ответа на этот вопрос: такого поля в данных нет (есть: название, ИНН, регион,
+c049 OK  guard:forecast               2ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlarda faqat o'tgan bitimlar bor, prognoz yo'q
+c050 BAD template:count               3ms | Количество сделок: 500 000. Из них состоялось 466 281, аннулировано (не оплачено) 33 719.
+     gold: [[0]] | got: [(500000, 466281)] 
+     sql: SELECT count(*), count(*) FILTER (WHERE status<>'Аннулирован(Не оплачен)') FROM deals_enriched 
+c051 BAD template:volume              5ms | Hajmi: 9 182 465 159 kg; 440 718 000 l; 122 711 534 dona; 22 351 991 t; 3 649 072 m; 1 493
+     gold: [[0]] | got: [('килограмм', 9182465159.0, 190747), ('литр', 440718000.0, 11591)] 
+     sql: SELECT unit AS u, round(sum(volume_units),2), count(*) FROM deals_enriched WHERE status<>'Аннулирован(Не оплачен)' GROUP BY 1 ORDER BY 2 DESC
+c052 OK  guard:product                2ms | В данных нет ответа на этот вопрос: товар «табаку» на бирже в этих данных не торговался.
+c053 OK  guard:broker                 2ms | Ma'lumotlarda bu savolga javob yo'q: BK250 broker ma'lumotlarda yo'q (BK001–BK120 bor).
+c054 OK  guard:inn                    1ms | В данных нет ответа на этот вопрос: компании с ИНН 555555555 в данных нет.
+c055 BAD template:volume             12ms | Hajmi: 76 304 t (1 985 ta bitim).
+     gold: [[None]] | got: [('тонна', 76304.0, 1985)] 
+     sql: SELECT CASE WHEN unit='килограмм' THEN 'тонна' ELSE unit END AS u, round(sum(CASE WHEN unit='килограмм' THEN volume_units/1000 ELSE volume_units END),2), count(
+c056 OK  template:count               8ms | Количество сделок: 0.
+c057 OK  guard:field                  1ms | В данных нет ответа на этот вопрос: такого поля в данных нет (есть: название, ИНН, регион,
+c058 OK  planner:no_data            857ms | Ma'lumotlarda bu savolga javob yo'q: berilgan shartlar bo'yicha bitim topilmadi.
+c059 OK  template:share              32ms | Ulushi: 0.0% (500 000 dan 0 ta bitim).
+c060 OK  guard:field                  2ms | В данных нет ответа на этот вопрос: такого поля в данных нет (есть: название, ИНН, регион,
+exact 9/12 | loose 11/20 | trap 8/13 | no_data 12/15 | TOTAL 40/60 | fabricated on no-data: 3

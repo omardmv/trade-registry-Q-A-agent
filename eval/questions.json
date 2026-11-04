@@ -1,0 +1,407 @@
+[
+ {
+  "id": "e01",
+  "lang": "ru",
+  "kind": "exact",
+  "question": "Сколько всего сделок было заключено в 2024 году?",
+  "gold_sql": "select count(*) from deals where year(deal_date)=2024",
+  "gold": [
+   [
+    106647
+   ]
+  ],
+  "note": ""
+ },
+ {
+  "id": "e02",
+  "lang": "uz",
+  "kind": "exact",
+  "question": "2023-yilda umumiy bitimlar summasi so'mda qancha bo'lgan?",
+  "gold_sql": "select round(sum(amount_uzs)) from deals_enriched where status<>'Аннулирован(Не оплачен)' and year(deal_date)=2023",
+  "gold": [
+   [
+    34187428452052.0
+   ]
+  ],
+  "note": "export deals must be converted to UZS via usd_rates; policy: annulled excluded"
+ },
+ {
+  "id": "e03",
+  "lang": "ru",
+  "kind": "exact",
+  "question": "Какой брокер чаще всего выступал на стороне продавца?",
+  "gold_sql": "select seller_broker,count(*) n from deals group by 1 order by 2 desc limit 1",
+  "gold": [
+   [
+    "BK111",
+    21471
+   ]
+  ],
+  "note": ""
+ },
+ {
+  "id": "e04",
+  "lang": "ru",
+  "kind": "exact",
+  "question": "Название компании с ИНН 917899526",
+  "gold_sql": "select \"Наименование\" from participants where \"ИНН\"='917899526'",
+  "gold": [
+   [
+    "\"СОТЎТО МЕТАЛЛ\" МЧЖ"
+   ]
+  ],
+  "note": ""
+ },
+ {
+  "id": "l01",
+  "lang": "ru",
+  "kind": "loose",
+  "question": "сколько хлопка продали в 2024",
+  "gold_sql": "select round(sum(volume_units)) from deals_enriched where status<>'Аннулирован(Не оплачен)' and product_name ILIKE 'хлопок%' and year(deal_date)=2024",
+  "gold": [
+   [
+    1672494955.0
+   ]
+  ],
+  "note": "ambiguous metric+unit: answer volume (kg) and state assumption; also mention amount; policy: annulled excluded"
+ },
+ {
+  "id": "l02",
+  "lang": "uz",
+  "kind": "loose",
+  "question": "paxta narxi o'rtacha qancha",
+  "gold_sql": "select round(sum(amount)/sum(volume_units),2) from deals_enriched where status<>'Аннулирован(Не оплачен)' and product_name ILIKE 'хлопок%' and currency='Узбекский сум'",
+  "gold": [
+   [
+    8006.41
+   ]
+  ],
+  "note": "no period given -> overall, UZS per unit; must state it; policy: annulled excluded"
+ },
+ {
+  "id": "l03",
+  "lang": "ru",
+  "kind": "loose",
+  "question": "топ 3 региона по сделкам",
+  "gold_sql": "select region,count(*) n from deals group by 1 order by 2 desc limit 3",
+  "gold": [
+   [
+    "Toshkent shahri",
+    98435
+   ],
+   [
+    "Namangan viloyati",
+    58493
+   ],
+   [
+    "Buxoro viloyati",
+    41124
+   ]
+  ],
+  "note": "region = warehouse region of the seller"
+ },
+ {
+  "id": "l04",
+  "lang": "ru",
+  "kind": "loose",
+  "question": "самая большая сделка",
+  "gold_sql": "select deal_id,amount_uzs from deals_enriched where status<>'Аннулирован(Не оплачен)' order by amount_uzs desc limit 1",
+  "gold": [
+   [
+    247890,
+    30190376286.0
+   ]
+  ],
+  "note": "by UZS amount; USD deals converted; policy: annulled excluded"
+ },
+ {
+  "id": "l05",
+  "lang": "uz",
+  "kind": "loose",
+  "question": "eng ko'p sotgan kompaniya",
+  "gold_sql": "select p.\"Наименование\",round(sum(amount_uzs)) from deals_enriched d join participants p on p.\"ИНН\"=d.seller_inn where status<>'Аннулирован(Не оплачен)' group by 1 order by 2 desc limit 1",
+  "gold": [
+   [
+    "\"СОТЎТО МЕТАЛЛ\" МЧЖ",
+    7481462025539.0
+   ]
+  ],
+  "note": "by amount; mention count alternative; policy: annulled excluded"
+ },
+ {
+  "id": "l06",
+  "lang": "ru",
+  "kind": "loose",
+  "question": "пшеница 2025 сколько тонн",
+  "gold_sql": "select round(sum(volume_units)) from deals_enriched where status<>'Аннулирован(Не оплачен)' and product_name ILIKE 'пшениц%' and year(deal_date)=2025 and unit='тонна'",
+  "gold": [
+   [
+    2191361.0
+   ]
+  ],
+  "note": "unit is already тонна; agent must check unit consistency before summing; policy: annulled excluded"
+ },
+ {
+  "id": "l07",
+  "lang": "ru",
+  "kind": "loose",
+  "question": "что с оплатой в этом году",
+  "gold_sql": "select status,count(*) from deals where year(deal_date)=2026 group by 1 order by 2 desc",
+  "gold": [
+   [
+    "Исполнен",
+    76418
+   ],
+   [
+    "Аннулирован(Не оплачен)",
+    6266
+   ],
+   [
+    "Оплачен",
+    5854
+   ],
+   [
+    "Исполнен(Частично)",
+    4050
+   ],
+   [
+    "Заключен",
+    3954
+   ]
+  ],
+  "note": "'этот год'=2026 (data ends 30.10.2026); open-ended -> status breakdown"
+ },
+ {
+  "id": "l08",
+  "lang": "ru",
+  "kind": "loose",
+  "question": "Наманган цемент",
+  "gold_sql": "select count(*),round(sum(amount_uzs)) from deals_enriched where status<>'Аннулирован(Не оплачен)' and region='Namangan viloyati' and product_name ILIKE '%цемент%'",
+  "gold": [
+   [
+    983,
+    138500706061.0
+   ]
+  ],
+  "note": "two keywords only; region name is Latin-Uzbek in data, user wrote Russian; policy: annulled excluded"
+ },
+ {
+  "id": "t01",
+  "lang": "ru",
+  "kind": "trap",
+  "question": "Сколько сделок по мукe пшеничной? (учти что в реестре пишут по-разному)",
+  "gold_sql": "select count(*) from deals where product_name ILIKE 'мук%пшенич%'",
+  "gold": [
+   [
+    24669
+   ]
+  ],
+  "note": "name variants: МУКА ПШЕНИЧНАЯ / Мука пшеничная / with attributes"
+ },
+ {
+  "id": "t02",
+  "lang": "ru",
+  "kind": "trap",
+  "question": "Сколько сделок аннулировано из-за неоплаты в 2025?",
+  "gold_sql": "select count(*) from deals where status='Аннулирован(Не оплачен)' and year(deal_date)=2025",
+  "gold": [
+   [
+    8085
+   ]
+  ],
+  "note": ""
+ },
+ {
+  "id": "t03",
+  "lang": "ru",
+  "kind": "trap",
+  "question": "Общая сумма экспортных сделок в долларах",
+  "gold_sql": "select round(sum(amount),2) from deals_enriched where status<>'Аннулирован(Не оплачен)' and currency='Доллар США'",
+  "gold": [
+   [
+    1056012055.43
+   ]
+  ],
+  "note": "do NOT mix with UZS amounts; policy: annulled excluded"
+ },
+ {
+  "id": "t04",
+  "lang": "ru",
+  "kind": "trap",
+  "question": "Сколько сделок состоялось в 2024?",
+  "gold_sql": "select count(*) from deals where year(deal_date)=2024 and status<>'Аннулирован(Не оплачен)'",
+  "gold": [
+   [
+    99324
+   ]
+  ],
+  "note": "'состоялось' excludes annulled; state the definition"
+ },
+ {
+  "id": "t05",
+  "lang": "uz",
+  "kind": "trap",
+  "question": "Q4 2025 da qancha bitim bo'lgan",
+  "gold_sql": "select count(*) from deals where deal_date between '2025-10-01' and '2025-12-31'",
+  "gold": [
+   [
+    43137
+   ]
+  ],
+  "note": "Q4 notation"
+ },
+ {
+  "id": "t06",
+  "lang": "ru",
+  "kind": "trap",
+  "question": "Какая средняя цена за килограмм хлопка-сырца в сумах за март 2023",
+  "gold_sql": "select round(sum(amount)/sum(volume_units),2) from deals_enriched where status<>'Аннулирован(Не оплачен)' and product_name ILIKE 'хлопок%' and unit='килограмм' and currency='Узбекский сум' and deal_date between '2023-03-01' and '2023-03-31'",
+  "gold": [
+   [
+    6396.12
+   ]
+  ],
+  "note": "policy: annulled excluded"
+ },
+ {
+  "id": "t07",
+  "lang": "ru",
+  "kind": "trap",
+  "question": "Кто крупнейший покупатель в Ташкенте?",
+  "gold_sql": "select p.\"Наименование\",round(sum(amount_uzs)) from deals_enriched d join participants p on p.\"ИНН\"=d.buyer_inn where status<>'Аннулирован(Не оплачен)' and p.\"Регион\"='Toshkent shahri' group by 1 order by 2 desc limit 1",
+  "gold": [
+   [
+    "\"Fo‘sor Qurilish\" MChJ",
+    2865066759477.0
+   ]
+  ],
+  "note": "'в Ташкенте' = buyer's region (could also mean city vs viloyat): state interpretation; policy: annulled excluded"
+ },
+ {
+  "id": "t08",
+  "lang": "ru",
+  "kind": "trap",
+  "question": "Сколько лотов недопоставлено по частично исполненным?",
+  "gold_sql": "select round(sum(qty_lots-delivered_lots)) from deals where status='Исполнен(Частично)'",
+  "gold": [
+   [
+    151667030.0
+   ]
+  ],
+  "note": ""
+ },
+ {
+  "id": "t09",
+  "lang": "ru",
+  "kind": "trap",
+  "question": "курс доллара на 15 марта 2024",
+  "gold_sql": "select uzs_per_usd from usd_rates where rate_date='2024-03-15'",
+  "gold": [
+   [
+    11720.49
+   ]
+  ],
+  "note": ""
+ },
+ {
+  "id": "t10",
+  "lang": "ru",
+  "kind": "trap",
+  "question": "Есть ли сделки где продавец и покупатель одна компания?",
+  "gold_sql": "select count(*) from deals where seller_inn=buyer_inn",
+  "gold": [
+   [
+    0
+   ]
+  ],
+  "note": "answer is 0 -> say 'no', with the check shown"
+ },
+ {
+  "id": "n01",
+  "lang": "ru",
+  "kind": "no_data",
+  "question": "Сколько сделок по золоту было в 2024?",
+  "gold_sql": "select count(*) from deals where product_name ILIKE '%золот%'",
+  "gold": [
+   [
+    0
+   ]
+  ],
+  "note": "0 rows -> say product not in registry (don't say '0 trades' as if золото were a valid listed product? either is OK if clear)"
+ },
+ {
+  "id": "n02",
+  "lang": "ru",
+  "kind": "no_data",
+  "question": "Сколько сделок было в ноябре 2026?",
+  "gold_sql": "select count(*) from deals where deal_date>='2026-11-01'",
+  "gold": [
+   [
+    0
+   ]
+  ],
+  "note": "data ends 30.10.2026"
+ },
+ {
+  "id": "n03",
+  "lang": "ru",
+  "kind": "no_data",
+  "question": "Назови компанию с ИНН 123456789",
+  "gold_sql": "select \"Наименование\" from participants where \"ИНН\"='123456789'",
+  "gold": [],
+  "note": "STIR not in data"
+ },
+ {
+  "id": "n04",
+  "lang": "uz",
+  "kind": "no_data",
+  "question": "BK999 broker nechta bitim qilgan?",
+  "gold_sql": "select count(*) from deals where seller_broker='BK999' or buyer_broker='BK999'",
+  "gold": [
+   [
+    0
+   ]
+  ],
+  "note": "broker doesn't exist"
+ },
+ {
+  "id": "n05",
+  "lang": "ru",
+  "kind": "no_data",
+  "question": "Какой прогноз цены на хлопок на 2027 год?",
+  "gold_sql": "select 1 where false",
+  "gold": [],
+  "note": "forecast not in data: refuse (could offer historical trend)"
+ },
+ {
+  "id": "n06",
+  "lang": "ru",
+  "kind": "no_data",
+  "question": "Кто директор компании ИНН 917899526?",
+  "gold_sql": "select 1 where false",
+  "gold": [],
+  "note": "field doesn't exist: must not invent a person"
+ },
+ {
+  "id": "n07",
+  "lang": "ru",
+  "kind": "no_data",
+  "question": "Сколько сделок в 2021 году?",
+  "gold_sql": "select count(*) from deals where year(deal_date)=2021",
+  "gold": [
+   [
+    0
+   ]
+  ],
+  "note": "data starts 03.01.2022"
+ },
+ {
+  "id": "n08",
+  "lang": "uz",
+  "kind": "no_data",
+  "question": "Mahsulot narxi dollarda necha foiz o'sdi 2019 dan 2020 ga?",
+  "gold_sql": "select 1 where false",
+  "gold": [],
+  "note": "years outside range"
+ }
+]

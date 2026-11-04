@@ -1,0 +1,429 @@
+[
+ {
+  "id": "e01",
+  "kind": "exact",
+  "ok": true,
+  "halluc": false,
+  "ms": 5303.694291971624,
+  "err": null,
+  "sql": "SELECT COUNT(*) \nFROM deals_enriched \nWHERE deal_date BETWEEN '2024-01-01' AND '2024-12-31'",
+  "got": [
+   [
+    106647
+   ]
+  ]
+ },
+ {
+  "id": "e02",
+  "kind": "exact",
+  "ok": false,
+  "halluc": false,
+  "ms": 1245.373749989085,
+  "err": null,
+  "sql": "SELECT SUM(amount) AS total_amount_usd\nFROM deals_enriched\nWHERE deal_date BETWEEN '2023-01-01' AND '2023-12-31'",
+  "got": [
+   [
+    34261399973003.844
+   ]
+  ]
+ },
+ {
+  "id": "e03",
+  "kind": "exact",
+  "ok": true,
+  "halluc": false,
+  "ms": 953.6042499821633,
+  "err": null,
+  "sql": "SELECT seller_broker AS broker, COUNT(*) AS trade_count\nFROM deals_enriched\nGROUP BY seller_broker\nORDER BY trade_count DESC\nLIMIT 1",
+  "got": [
+   [
+    "BK111",
+    21471
+   ]
+  ]
+ },
+ {
+  "id": "e04",
+  "kind": "exact",
+  "ok": true,
+  "halluc": false,
+  "ms": 836.1855000257492,
+  "err": null,
+  "sql": "SELECT \"Наименование\"\nFROM participants\nWHERE \"ИНН\" = '917899526'",
+  "got": [
+   [
+    "\"СОТЎТО МЕТАЛЛ\" МЧЖ"
+   ]
+  ]
+ },
+ {
+  "id": "l01",
+  "kind": "loose",
+  "ok": false,
+  "halluc": false,
+  "ms": 1619.4578330032527,
+  "err": null,
+  "sql": "SELECT SUM(volume_units) AS total_hemp_sold\nFROM deals_enriched\nWHERE deal_date BETWEEN '2024-01-01' AND '2024-12-31'\n  AND product_name ILIKE 'хлопково%'",
+  "got": [
+   [
+    37135.0
+   ]
+  ]
+ },
+ {
+  "id": "l02",
+  "kind": "loose",
+  "ok": true,
+  "halluc": false,
+  "ms": 925.7648329949006,
+  "err": null,
+  "sql": "SELECT AVG(price_per_unit) AS average_price_per_unit\nFROM deals_enriched\nWHERE product_name ILIKE 'хлопок%'",
+  "got": [
+   [
+    8005.611605999656
+   ]
+  ]
+ },
+ {
+  "id": "l03",
+  "kind": "loose",
+  "ok": true,
+  "halluc": false,
+  "ms": 1134.342540986836,
+  "err": null,
+  "sql": "SELECT \n    region, \n    COUNT(*) AS deal_count\nFROM \n    deals_enriched\nGROUP BY \n    region\nORDER BY \n    deal_count DESC\nLIMIT 3",
+  "got": [
+   [
+    "Toshkent shahri",
+    98435
+   ],
+   [
+    "Namangan viloyati",
+    58493
+   ],
+   [
+    "Buxoro viloyati",
+    41124
+   ]
+  ]
+ },
+ {
+  "id": "l04",
+  "kind": "loose",
+  "ok": true,
+  "halluc": false,
+  "ms": 1280.2231659879908,
+  "err": null,
+  "sql": "SELECT deal_id, deal_date, amount_uzs, product_name, unit, lot_size, qty_lots, volume_units, price_per_unit\nFROM deals_enriched\nORDER BY amount_uzs DESC\nLIMIT 1",
+  "got": [
+   [
+    247890,
+    "2023-10-09",
+    30190376286.0,
+    "ПШЕНИЦА ПРОДОВОЛЬСТВЕННАЯ КЛАСС 4-КЛАСС",
+    "тонна",
+    1.0,
+    8703.0,
+    8703.0,
+    3468962.0
+   ]
+  ]
+ },
+ {
+  "id": "l05",
+  "kind": "loose",
+  "ok": false,
+  "halluc": false,
+  "ms": 2446.5142500121146,
+  "err": null,
+  "sql": "SELECT \n    seller_inn, \n    buyer_inn, \n    product_name, \n    SUM(volume_units) AS total_volume, \n    SUM(amount_uzs) AS total_amount_uzs\nFROM \n    deals_enriched\nWHERE \n    seller_inn IS NOT NULL \n    AND product_name ILIKE '%eng%ko%'\nGROUP BY \n    seller_inn, \n    buyer_inn, \n    product_name\nORDER BY \n    total_amount_uzs DESC",
+  "got": []
+ },
+ {
+  "id": "l06",
+  "kind": "loose",
+  "ok": true,
+  "halluc": false,
+  "ms": 1561.681375023909,
+  "err": null,
+  "sql": "SELECT SUM(volume_units) AS total_wheat_tons\nFROM deals_enriched\nWHERE deal_date BETWEEN '2025-01-01' AND '2025-12-31'\n  AND product_name ILIKE 'пшениц%'",
+  "got": [
+   [
+    2347155.0
+   ]
+  ]
+ },
+ {
+  "id": "l07",
+  "kind": "loose",
+  "ok": false,
+  "halluc": false,
+  "ms": 1573.927916935645,
+  "err": null,
+  "sql": "SELECT \n    COUNT(*) AS paid_deals_count,\n    SUM(amount_uzs) AS total_amount_uzs\nFROM \n    deals_enriched\nWHERE \n    paid_date >= '2023-01-01' AND paid_date < '2024-01-01'",
+  "got": [
+   [
+    87455,
+    33789137300678.188
+   ]
+  ]
+ },
+ {
+  "id": "l08",
+  "kind": "loose",
+  "ok": false,
+  "halluc": false,
+  "ms": 2508.0022079637274,
+  "err": null,
+  "sql": "SELECT \n    deal_id, \n    deal_date, \n    auction_type, \n    SUM(volume_units) AS total_volume_units, \n    SUM(amount_uzs) AS total_amount_uzs, \n    AVG(price_per_unit) AS average_price_per_unit\nFROM \n    deals_enriched\nWHERE \n    region ILIKE 'Namangan viloyati' \n    AND product_name ILIKE 'цемент%'\nGROUP BY \n    deal_id, \n    deal_date, \n    auction_type",
+  "got": []
+ },
+ {
+  "id": "t01",
+  "kind": "trap",
+  "ok": false,
+  "halluc": false,
+  "ms": 926.5166660770774,
+  "err": null,
+  "sql": "SELECT COUNT(*)\nFROM deals_enriched\nWHERE product_name ILIKE 'мук%' OR product_name ILIKE 'пшениц%'",
+  "got": [
+   [
+    70529
+   ]
+  ]
+ },
+ {
+  "id": "t02",
+  "kind": "trap",
+  "ok": true,
+  "halluc": false,
+  "ms": 1517.0529580209404,
+  "err": null,
+  "sql": "SELECT COUNT(*)\nFROM deals_enriched\nWHERE deal_date BETWEEN '2025-01-01' AND '2025-12-31'\n  AND status ILIKE 'Аннулирован(Не оплачен)'",
+  "got": [
+   [
+    8085
+   ]
+  ]
+ },
+ {
+  "id": "t03",
+  "kind": "trap",
+  "ok": true,
+  "halluc": false,
+  "ms": 1031.747791916132,
+  "err": null,
+  "sql": "SELECT SUM(amount) AS total_export_amount_usd\nFROM deals_enriched\nWHERE contract_type ILIKE 'Экспортный' AND currency = 'Доллар США'",
+  "got": [
+   [
+    1137509729.3899992
+   ]
+  ]
+ },
+ {
+  "id": "t04",
+  "kind": "trap",
+  "ok": false,
+  "halluc": false,
+  "ms": 1084.646625095047,
+  "err": null,
+  "sql": "SELECT COUNT(*) \nFROM deals_enriched \nWHERE deal_date BETWEEN '2024-01-01' AND '2024-12-31'",
+  "got": [
+   [
+    106647
+   ]
+  ]
+ },
+ {
+  "id": "t05",
+  "kind": "trap",
+  "ok": false,
+  "halluc": false,
+  "ms": 1515.8023339463398,
+  "err": null,
+  "sql": "SELECT SUM(amount_uzs) AS total_amount_uzs\nFROM deals_enriched\nWHERE deal_date BETWEEN '2025-01-01' AND '2025-12-31' AND status ILIKE 'Исполнен'",
+  "got": [
+   [
+    49438068272540.44
+   ]
+  ]
+ },
+ {
+  "id": "t06",
+  "kind": "trap",
+  "ok": false,
+  "halluc": false,
+  "ms": 5372.933459002525,
+  "err": null,
+  "sql": "SELECT AVG(de.price_per_unit) AS avg_price_per_kg_uzs\nFROM deals_enriched de\nJOIN usd_rates ur ON de.deal_date = ur.rate_date\nWHERE de.product_name ILIKE 'хлопково%' \n  AND EXTRACT(YEAR FROM de.deal_date) = 2023 \n  AND de.unit = 'килограмм'\n  AND de.contract_type = 'Внутренний'\n  AND de.contract_form = 'Спот'",
+  "got": [
+   [
+    null
+   ]
+  ]
+ },
+ {
+  "id": "t07",
+  "kind": "trap",
+  "ok": false,
+  "halluc": false,
+  "ms": 2139.8601250257343,
+  "err": null,
+  "sql": "SELECT \n    buyer_inn, \n    buyer_broker, \n    SUM(volume_units) AS total_volume, \n    SUM(amount_uzs) AS total_amount_uzs\nFROM \n    deals_enriched\nWHERE \n    region = 'Toshkent shahri'\nGROUP BY \n    buyer_inn, \n    buyer_broker\nORDER BY \n    total_volume DESC\nLIMIT 1",
+  "got": [
+   [
+    "983531029",
+    "BK017",
+    69839823.0,
+    1197703104384.9314
+   ]
+  ]
+ },
+ {
+  "id": "t08",
+  "kind": "trap",
+  "ok": false,
+  "halluc": false,
+  "ms": 1072.624041000381,
+  "err": null,
+  "sql": "SELECT SUM(delivered_lots - qty_lots) AS недопоставленные_lотов\nFROM deals_enriched\nWHERE status ILIKE 'Исполнен(Частично)'",
+  "got": [
+   [
+    -151667030.0
+   ]
+  ]
+ },
+ {
+  "id": "t09",
+  "kind": "trap",
+  "ok": true,
+  "halluc": false,
+  "ms": 919.8102499358356,
+  "err": null,
+  "sql": "SELECT rate_date, uzs_per_usd\nFROM usd_rates\nWHERE rate_date = '2024-03-15'",
+  "got": [
+   [
+    "2024-03-15",
+    11720.49
+   ]
+  ]
+ },
+ {
+  "id": "t10",
+  "kind": "trap",
+  "ok": false,
+  "halluc": false,
+  "ms": 1102.5236250134185,
+  "err": null,
+  "sql": "SELECT \n    deal_id, \n    seller_inn, \n    buyer_inn, \n    deal_date \nFROM \n    deals_enriched \nWHERE \n    seller_inn = buyer_inn",
+  "got": []
+ },
+ {
+  "id": "n01",
+  "kind": "no_data",
+  "ok": true,
+  "halluc": false,
+  "ms": 1331.791750038974,
+  "err": null,
+  "sql": "SELECT COUNT(*)\nFROM deals_enriched\nWHERE deal_date BETWEEN '2024-01-01' AND '2024-12-31'\nAND product_name ILIKE '%золото%'",
+  "got": [
+   [
+    0
+   ]
+  ]
+ },
+ {
+  "id": "n02",
+  "kind": "no_data",
+  "ok": true,
+  "halluc": false,
+  "ms": 1013.5564579395577,
+  "err": null,
+  "sql": "SELECT COUNT(*) \nFROM deals_enriched \nWHERE deal_date BETWEEN '2026-11-01' AND '2026-11-30'",
+  "got": [
+   [
+    0
+   ]
+  ]
+ },
+ {
+  "id": "n03",
+  "kind": "no_data",
+  "ok": true,
+  "halluc": false,
+  "ms": 1067.8661670535803,
+  "err": null,
+  "sql": "SELECT \"Наименование\", \"Регион\", \"Вид деятельности\"\nFROM participants\nWHERE \"ИНН\" = '123456789'",
+  "got": []
+ },
+ {
+  "id": "n04",
+  "kind": "no_data",
+  "ok": true,
+  "halluc": false,
+  "ms": 632.9719580244273,
+  "err": null,
+  "sql": "SELECT COUNT(*) \nFROM deals_enriched \nWHERE buyer_broker = 'BK999'",
+  "got": [
+   [
+    0
+   ]
+  ]
+ },
+ {
+  "id": "n05",
+  "kind": "no_data",
+  "ok": true,
+  "halluc": false,
+  "ms": 287.25416702218354,
+  "err": null,
+  "sql": "SELECT 'NO_DATA'",
+  "got": [
+   [
+    "NO_DATA"
+   ]
+  ]
+ },
+ {
+  "id": "n06",
+  "kind": "no_data",
+  "ok": true,
+  "halluc": false,
+  "ms": 284.4952919986099,
+  "err": null,
+  "sql": "SELECT 'NO_DATA'",
+  "got": [
+   [
+    "NO_DATA"
+   ]
+  ]
+ },
+ {
+  "id": "n07",
+  "kind": "no_data",
+  "ok": true,
+  "halluc": false,
+  "ms": 1008.5904999868944,
+  "err": null,
+  "sql": "SELECT COUNT(*) \nFROM deals_enriched \nWHERE deal_date BETWEEN '2021-01-01' AND '2021-12-31'",
+  "got": [
+   [
+    0
+   ]
+  ]
+ },
+ {
+  "id": "n08",
+  "kind": "no_data",
+  "ok": true,
+  "halluc": false,
+  "ms": 8630.873208981939,
+  "err": null,
+  "sql": "SELECT \n    100 * SUM(CASE WHEN deal_date >= '2020-01-01' AND deal_date < '2021-01-01' THEN amount_uzs / lot_size - start_price END) / \n    SUM(CASE WHEN deal_date >= '2019-01-01' AND deal_date < '2020-01-01' THEN amount_uzs / lot_size END) AS price_increase_percentage\nFROM \n    deals_enriched\nWHERE \n    deal_date BETWEEN '2019-01-01' AND '2020-12-31' AND \n    currency = 'Доллар США' AND \n    product_name IS NOT NULL",
+  "got": [
+   [
+    null
+   ]
+  ]
+ }
+]

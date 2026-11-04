@@ -1,0 +1,83 @@
+
+== eval/bigset4.json
+e001 OK  gemini:broker_info        2213ms | Брокер BK045: "ДУСУНУ БРОКЕР" МЧЖ (ИНН 964686510, регион Surxondaryo viloyati).
+e002 OK  gemini:broker_info        1827ms | Broker BK080: DUFEMU BROKER MAS’ULIYATI CHEKLANGAN JAMIYATI (STIR 958429958, hudud Farg‘on
+e003 OK  gemini:company_info       2121ms | ИНН 923113140: "Tusoya Fermer" MChJ. Регион: Qashqadaryo viloyati; вид деятельности: Торго
+e004 OK  gemini:company_info       1987ms | STIR 974458985: "Mapa Invest" MChJ. Hudud: Toshkent viloyati; faoliyat turi: Торговая комп
+e005 BAD gemini:count              1951ms | Количество сделок: 316 сделок.
+     gold: [[183]] | got: [(316,)] 
+     sql: SELECT count(*) FROM deals_enriched WHERE (product_base SIMILAR TO '(портландцемент|цемент).*') AND status='Оплачен'
+e006 OK  gemini:amount             1895ms | Bitimlar summasi: 2 199 458 684 636 so'm (1 118 ta bitim).
+e007 OK  gemini:avg_price          2039ms | Средняя цена: 921 695.57 сум за 1 т (211 сделок, 915 482.29 сум за 1 т).
+e008 OK  gemini:count              1988ms | Bitimlar soni: 628 ta bitim.
+e009 OK  gemini:usd_rate           1710ms | Курс доллара на 01.09.2023: 11 453.06 сум за 1 USD.
+e010 BAD gemini:amount/buyer       1859ms | Bitimlar summasi:
+     gold: [['"Qasi Invest" MChJ', 147933103592.0], ['"Lo‘xol Servis" MChJ', 83292605441.0]] | got: [('"Qasi Invest" MChJ', '908181397', None, 158263771064.0, 286, 12363.0, 12363.0), ('"Lo‘xol Servis" MChJ', '968900028', None, 91137140056.0, 188, 7230.0, 7230.0)] 
+     sql: SELECT pb."Наименование" AS g, d.buyer_inn AS k, NULL AS u, round(sum(amount_uzs)), count(*), round(sum(CASE WHEN unit='килограмм' THEN volume_units/1000 ELSE v
+e011 BAD gemini:amount/year/cmp-year    2013ms | Сумма сделок — сравнение:
+     gold: [[2022, 5603480070612.0, 5984], [2025, 9243437724773.0, 7996]] | got: [('2022', None, None, 5603480070612.0, 5984), ('2025', None, None, 9243437724773.0, 7996)] 
+     sql: SELECT '2022' AS g, NULL AS k, NULL AS u, round(sum(amount_uzs)), count(*) FROM deals_enriched WHERE (product_base SIMILAR TO 'пшениц.*') AND status<>'Аннулиров
+e012 BAD gemini:amount/product/cmp-product    1900ms | Bitimlar summasi — taqqoslash:
+     gold: [['сахар белый', 1016819482501.0], ['портландцемент', 773048241233.0]] | got: [('цемент', None, None, 1091975301500.0, 7643), ('сахар', None, None, 1150565701300.0, 2419)] 
+     sql: SELECT 'цемент' AS g, NULL AS k, NULL AS u, round(sum(amount_uzs)), count(*) FROM deals_enriched WHERE deal_date BETWEEN DATE '2024-01-01' AND DATE '2024-12-31'
+e013 OK  gemini:count/cmp-region    1977ms | Bitimlar soni — taqqoslash:
+e014 BAD gemini:count/share        2288ms | Ulushi: 0.38% (106 647 dan 405).
+     gold: [[4.9]] | got: [(0.38, 405, 106647)] 
+     sql: SELECT round(100.0 * count(*) FILTER (WHERE contract_form='Фьючерс') / NULLIF(count(*), 0), 2), count(*) FILTER (WHERE contract_form='Фьючерс'), count(*) FROM d
+e015 OK  gemini:deal               2051ms | Сделка №152669 от 30.09.2022: Пшеница Класс IV класс; 2 946 487.00 сум за 1 т; 471 лотов ×
+e016 OK  gemini:delay              1959ms | Muddat (o'rtacha): 12.97 kun (122 881 ta bitim).
+e017 OK  gemini:count/share        2212ms | Ulushi: 87.25% (28 747 dan 25 083).
+e018 OK  gemini:amount_stat/contract_type    2108ms | Bitim summasi (o'rtacha):
+e019 OK  gemini:volume/seller      2080ms | Объём:
+e020 BAD gemini:volume/buyer       2012ms | Hajmi:
+     gold: [['"Zoket Invest" OK', 649011759231.0], ['"Fo‘sor Qurilish" MChJ', 206735648298.0]] | got: [('"Zoket Invest" OK', '983531029', 'тонна', 170294.0, 625), ('"Fo‘sor Qurilish" MChJ', '975117742', 'тонна', 55061.0, 220)] 
+     sql: SELECT pb."Наименование" AS g, d.buyer_inn AS k, unit AS u, round(sum(volume_units),2), count(*) FROM deals_enriched d JOIN participants pb ON pb."ИНН"=d.buyer_
+e021 BAD gemini:volume             2064ms | "Tusoya Fermer" MChJ (ИНН 923113140). Объём: 831 470 т (2 980 сделок).
+     gold: [[2980, 3151351116499.0]] | got: [('тонна', 831470.0, 2980)] 
+     sql: SELECT unit AS u, round(sum(volume_units),2), count(*) FROM deals_enriched WHERE (product_base SIMILAR TO 'пшениц.*') AND seller_inn='923113140' AND status<>'Ан
+e022 OK  gemini:amount             2245ms | "Mapa Invest" MChJ (STIR 974458985). Bitimlar summasi: 246 982 327 798 so'm (72 ta bitim).
+e023 BAD gemini:count              1886ms | Количество сделок: 6 712 сделок.
+     gold: [[2781, 3946]] | got: [(6712,)] 
+     sql: SELECT count(*) FROM deals_enriched WHERE (seller_broker='BK045' OR buyer_broker='BK045')
+e024 OK  gemini:amount             2081ms | Bitimlar summasi: 2 158 281 219 583 so'm (5 215 ta bitim).
+e025 OK  gemini:delay              2506ms | Срок (среднее): 10.0 дн. (35 955 сделок).
+e026 OK  gemini:deal               2378ms | Bitim №134177, 28.07.2022: Сахар белый; 8 531 194.00 so'm / 1 t; 40 lot × 1 t; summa 341 2
+e027 BAD gemini:volume/product     1932ms | Hajmi:
+     gold: [['шрот хлопковых семян', 477], ['мазут топочный', 393]] | got: [('шрот хлопковых семян', None, 'килограмм', 33743473.0, 446), ('мука пшеничная', None, 'килограмм', 3061400.0, 187)] 
+     sql: SELECT product_base AS g, NULL AS k, unit AS u, round(sum(volume_units),2), count(*) FROM deals_enriched d  WHERE seller_broker='BK100' AND status<>'Аннулирован
+e028 BAD gemini:avg_price          1852ms | Средняя цена: 7 995.31 сум за 1 кг (24 340 сделок, 8 004.48 сум за 1 кг).
+     gold: [[8121.733729685923]] | got: [('килограмм', 7995.31, 24340, 8004.48)] 
+     sql: SELECT unit AS u, round(sum(amount)/sum(volume_units),2), count(*), round(avg(price_per_unit),2) FROM deals_enriched WHERE (product_base SIMILAR TO 'хлопок.?сыр
+e029 BAD gemini:amount             1875ms | Bitimlar summasi: 2 012 555 440 115 so'm (748 ta bitim).
+     gold: [[58040973745.72461]] | got: [(2012555440115.0, 748)] 
+     sql: SELECT round(sum(amount_uzs)), count(*) FROM deals_enriched WHERE deal_date BETWEEN DATE '2022-01-01' AND DATE '2022-12-31' AND (product_base SIMILAR TO '(катод
+e030 BAD gemini:count              1700ms | Количество сделок: 280 сделок.
+     gold: [[0]] | got: [(280,)] 
+     sql: SELECT count(*) FROM deals_enriched WHERE (product_base SIMILAR TO 'стекло.*') AND region IN ('Qashqadaryo viloyati')
+e031 BAD gemini:count/share        1960ms | Ulushi: 6.96% (39 146 dan 2 726).
+     gold: [[7.03]] | got: [(6.96, 2726, 39146)] 
+     sql: SELECT round(100.0 * count(*) FILTER (WHERE status='Аннулирован(Не оплачен)') / NULLIF(count(*), 0), 2), count(*) FILTER (WHERE status='Аннулирован(Не оплачен)'
+e032 OK  gemini:amount             2107ms | Сумма сделок: 1 727 244 423 417 сум (4 433 сделок).
+e033 OK  gemini:count              1809ms | Bitimlar soni: 6 117 ta bitim.
+e034 OK  gemini:count              1961ms | Количество сделок: 1 731 сделок.
+e035 BAD gemini:count              2400ms | Bitimlar soni: 10 779 ta bitim.
+     gold: [[7904]] | got: [(10779,)] 
+     sql: SELECT count(*) FROM deals_enriched WHERE (product_base SIMILAR TO '(масло хлопков|хлопковое масло).*') AND status='Исполнен'
+e036 OK  gemini:count              2035ms | Количество сделок: 808 сделок.
+e037 BAD gemini:count              2058ms | Bitimlar soni: 25 451 ta bitim.
+     gold: [[0]] | got: [(25451,)] 
+     sql: SELECT count(*) FROM deals_enriched WHERE (product_base SIMILAR TO 'хлопок.?сырец.*') AND contract_form='Форвард'
+e038 OK  gemini:not-answerable     1773ms | В данных нет ответа на этот вопрос: в данных нет сведений о курсе рубля, доступен только к
+e039 OK  gemini:not-answerable     2204ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlar bazasida bitimlarning bekor qilinish saba
+e040 OK  gemini:not-answerable     2001ms | В данных нет ответа на этот вопрос: в данных нет сведений о комиссиях и сборах брокеров.
+e041 OK  gemini:not-answerable     2081ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlar bazasida savdoda qatnashgan raqobatbardos
+e042 OK  gemini:not-answerable     1821ms | В данных нет ответа на этот вопрос: в данных нет сведений о комиссиях биржи.
+e043 OK  gemini:not-answerable     1853ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlar bazasida subsidiyalar haqida ma'lumotlar 
+e044 OK  gemini:not-answerable     1923ms | В данных нет ответа на этот вопрос: в данных нет сведений о лабораториях и сертификации ка
+e045 OK  gemini:not-answerable     2577ms | Ma'lumotlarda bu savolga javob yo'q: Ma'lumotlar bazasida kompaniyalarning aksiyadorlari y
+e046 OK  gemini:not-answerable     1852ms | В данных нет ответа на этот вопрос: в данных нет сведений о применимом праве и законодател
+e047 OK  gemini:not-answerable     2057ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlar bazasida xaridor sotib olgan mahsulotni q
+e048 OK  gemini:not-answerable     1827ms | В данных нет ответа на этот вопрос: в данных нет сведений о весовом оборудовании и моделях
+e049 OK  gemini:count              2088ms | Количество сделок: 0 сделок.
+e050 OK  gemini:count              2316ms | Bitimlar soni: 0 ta bitim.
+exact 8/10 | loose 10/17 | trap 4/10 | no_data 13/13 | TOTAL 35/50 | fabricated on no-data: 0

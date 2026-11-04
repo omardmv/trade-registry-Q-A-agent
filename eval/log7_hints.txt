@@ -1,0 +1,35 @@
+e01 OK  5.3s SELECT COUNT(*)  FROM deals_enriched  WHERE deal_date BETWEEN '2024-01-01' AND '2024-12-31'
+e02 BAD 1.2s SELECT SUM(amount) AS total_amount_usd FROM deals_enriched WHERE deal_date BETWEEN '2023-01-01' AND '2023-12-3
+e03 OK  1.0s SELECT seller_broker AS broker, COUNT(*) AS trade_count FROM deals_enriched GROUP BY seller_broker ORDER BY tr
+e04 OK  0.8s SELECT "Наименование" FROM participants WHERE "ИНН" = '917899526'
+l01 BAD 1.6s SELECT SUM(volume_units) AS total_hemp_sold FROM deals_enriched WHERE deal_date BETWEEN '2024-01-01' AND '2024
+l02 OK  0.9s SELECT AVG(price_per_unit) AS average_price_per_unit FROM deals_enriched WHERE product_name ILIKE 'хлопок%'
+l03 OK  1.1s SELECT      region,      COUNT(*) AS deal_count FROM      deals_enriched GROUP BY      region ORDER BY      de
+l04 OK  1.3s SELECT deal_id, deal_date, amount_uzs, product_name, unit, lot_size, qty_lots, volume_units, price_per_unit FR
+l05 BAD 2.4s SELECT      seller_inn,      buyer_inn,      product_name,      SUM(volume_units) AS total_volume,      SUM(am
+l06 OK  1.6s SELECT SUM(volume_units) AS total_wheat_tons FROM deals_enriched WHERE deal_date BETWEEN '2025-01-01' AND '202
+l07 BAD 1.6s SELECT      COUNT(*) AS paid_deals_count,     SUM(amount_uzs) AS total_amount_uzs FROM      deals_enriched WHE
+l08 BAD 2.5s SELECT      deal_id,      deal_date,      auction_type,      SUM(volume_units) AS total_volume_units,      SUM
+t01 BAD 0.9s SELECT COUNT(*) FROM deals_enriched WHERE product_name ILIKE 'мук%' OR product_name ILIKE 'пшениц%'
+t02 OK  1.5s SELECT COUNT(*) FROM deals_enriched WHERE deal_date BETWEEN '2025-01-01' AND '2025-12-31'   AND status ILIKE '
+t03 OK  1.0s SELECT SUM(amount) AS total_export_amount_usd FROM deals_enriched WHERE contract_type ILIKE 'Экспортный' AND c
+t04 BAD 1.1s SELECT COUNT(*)  FROM deals_enriched  WHERE deal_date BETWEEN '2024-01-01' AND '2024-12-31'
+t05 BAD 1.5s SELECT SUM(amount_uzs) AS total_amount_uzs FROM deals_enriched WHERE deal_date BETWEEN '2025-01-01' AND '2025-
+t06 BAD 5.4s SELECT AVG(de.price_per_unit) AS avg_price_per_kg_uzs FROM deals_enriched de JOIN usd_rates ur ON de.deal_date
+t07 BAD 2.1s SELECT      buyer_inn,      buyer_broker,      SUM(volume_units) AS total_volume,      SUM(amount_uzs) AS tota
+t08 BAD 1.1s SELECT SUM(delivered_lots - qty_lots) AS недопоставленные_lотов FROM deals_enriched WHERE status ILIKE 'Исполн
+t09 OK  0.9s SELECT rate_date, uzs_per_usd FROM usd_rates WHERE rate_date = '2024-03-15'
+t10 BAD 1.1s SELECT      deal_id,      seller_inn,      buyer_inn,      deal_date  FROM      deals_enriched  WHERE      sel
+n01 OK  1.3s SELECT COUNT(*) FROM deals_enriched WHERE deal_date BETWEEN '2024-01-01' AND '2024-12-31' AND product_name ILI
+n02 OK  1.0s SELECT COUNT(*)  FROM deals_enriched  WHERE deal_date BETWEEN '2026-11-01' AND '2026-11-30'
+n03 OK  1.1s SELECT "Наименование", "Регион", "Вид деятельности" FROM participants WHERE "ИНН" = '123456789'
+n04 OK  0.6s SELECT COUNT(*)  FROM deals_enriched  WHERE buyer_broker = 'BK999'
+n05 OK  0.3s SELECT 'NO_DATA'
+n06 OK  0.3s SELECT 'NO_DATA'
+n07 OK  1.0s SELECT COUNT(*)  FROM deals_enriched  WHERE deal_date BETWEEN '2021-01-01' AND '2021-12-31'
+n08 OK  8.6s SELECT      100 * SUM(CASE WHEN deal_date >= '2020-01-01' AND deal_date < '2021-01-01' THEN amount_uzs / lot_s
+exact 3 / 4
+loose 4 / 8
+trap 3 / 10
+no_data 8 / 8
+total 18 / 30 | hallucinated no_data: 0 | median s 1.134342540986836

@@ -1,0 +1,35 @@
+e01 OK  0.2s SELECT COUNT(*) FROM deals_enriched WHERE YEAR(deal_date) = 2024
+e02 BAD 0.4s SELECT SUM(amount_uzs) AS total_amount FROM duckdb_views
+e03 BAD 0.7s SELECT bbroker FROM deals_enriched WHERE seller_broker IS NOT NULL GROUP BY bbroker ORDER BY COUNT(*) DESC LIM
+e04 OK  0.3s SELECT Наименование FROM participants WHERE ИНН = '917899526'
+l01 BAD 0.9s SELECT SUM(volume_units) AS total_hemp_sold FROM deals_enriched WHERE YEAR(deal_date) = 2024 AND unit = 'тонна
+l02 BAD 3.9s SELECT SUM(volume_units * price_per_unit) AS total_paxta FROM deals_enriched WHERE currency = 'Узбекский сум' 
+l03 BAD 1.0s SELECT region, SUM(volume_units) as total_volume_units FROM duckdb_views WHERE contract_type IN ('Внутренний',
+l04 BAD 1.1s SELECT      deal_id,      deal_date,      auction_type,      SUM(volume_units) AS total_volume_units,      SUM
+l05 BAD 3.9s SELECT DISTINCT T1.buyer_inn, T1.buyer_broker, T1.buyer_name FROM duckdb_view_deals_enriched AS T1 JOIN partic
+l06 BAD 0.8s SELECT SUM(volume_units)  FROM duckdb_views  WHERE product_name LIKE '%пшеница%'  AND YEAR(deal_date) = 2025  
+l07 BAD 0.9s SELECT      SUM(CASE WHEN status = 'Оплачен' THEN volume_units ELSE 0 END) AS paid_volume_units,     SUM(CASE 
+l08 BAD 3.9s ```sql SELECT      SUM(volume_units) AS total_volume_units,     SUM(CASE WHEN unit = 'тонна' THEN volume_units
+t01 BAD 0.8s SELECT COUNT(*) FROM duckdb_views.deals_enriched WHERE product_name ILIKE '%мукe' OR product_name ILIKE '%пшен
+t02 BAD 0.8s SELECT COUNT(*) FROM duckdb_views WHERE status = 'Аннулирован(Не оплачен)' AND YEAR(delivery_date) = 2025
+t03 BAD 1.6s SELECT SUM(amount_uzs * usd_rates.uzs_per_usd) AS total_usd FROM deal_enriched JOIN brokers ON deal_enriched.s
+t04 BAD 0.4s SELECT COUNT(*) FROM deals_enriched WHERE deal_date BETWEEN '2024-01-01' AND '2024-12-31'
+t05 BAD 1.6s SELECT SUM(volume_units) AS total_volume_units FROM deals_enriched WHERE deal_date BETWEEN '2025-01-01' AND '2
+t06 BAD 2.5s SELECT AVG(T1.amount_uzs / T2.volume_units)  FROM deal_enriched AS T1  JOIN brokers AS T2 ON T1.buyer_broker =
+t07 BAD 2.9s SELECT      p.onimennyye,     p.regiin,     b.onimennyye AS broker_name,     b.inn,     SUM(v.volume_units) AS
+t08 BAD 0.4s SELECT SUM(volume_units) AS total_unfulfilled_lots FROM deals_enriched WHERE status = 'Исполнен(Частично)' AND
+t09 OK  0.3s SELECT uzs_per_usd FROM usd_rates WHERE rate_date = '2024-03-15'
+t10 BAD 3.4s SELECT      deal_id,      deal_date,      auction_type,      qty_lots,      amount,      start_price,      con
+n01 OK  0.6s SELECT COUNT(*)  FROM duckdb_views  WHERE product_name ILIKE '%золото%' AND YEAR(deal_date) = 2024
+n02 OK  0.6s SELECT COUNT(*)  FROM duckdb_views  WHERE MONTH(deal_date) = 11 AND YEAR(deal_date) = 2026
+n03 OK  0.3s SELECT Наименование FROM participants WHERE ИНН = 123456789
+n04 OK  0.4s SELECT COUNT(*)  FROM participants  WHERE Вид деятельности = 'Вид деятельности'
+n05 OK  0.1s SELECT 'NO_DATA'
+n06 OK  0.4s SELECT `Наименование` FROM participants WHERE `ИНН` = '917899526' AND `Роль` = 'Директор'
+n07 OK  0.3s SELECT COUNT(*) FROM deals_enriched WHERE YEAR(deal_date) = 2021
+n08 OK  1.1s SELECT SUM(volume_units * price_per_unit * uzs_per_usd) AS total_usd FROM deals_enriched WHERE YEAR(deal_date)
+exact 2 / 4
+loose 0 / 8
+trap 1 / 10
+no_data 8 / 8
+total 11 / 30 | hallucinated no_data: 0 | median s 0.7865477500017732

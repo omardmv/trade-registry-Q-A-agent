@@ -1,0 +1,81 @@
+
+== eval/bigset6.json
+g001 OK  gemini:broker_info        2068ms | Брокер BK005: NAXON BROKER AJ (ИНН 968675771, регион Namangan viloyati).
+g002 OK  gemini:broker_info        2080ms | Broker BK095: FOJE BROKER MAS’ULIYATI CHEKLANGAN JAMIYATI (STIR 952670921, hudud Toshkent 
+g003 OK  gemini:company_info       1990ms | ИНН 996831451: XUSIT POLIMER MCHJ. Регион: Buxoro viloyati; вид деятельности: Производител
+g004 OK  gemini:company_info       2032ms | STIR 917899526: "СОТЎТО МЕТАЛЛ" МЧЖ. Hudud: Sirdaryo viloyati; faoliyat turi: Торговая ком
+g005 BAD gemini:count              2295ms | Количество сделок: 809 сделок.
+     gold: [[759, 19017.0]] | got: [(809,)] 
+     sql: SELECT count(*) FROM deals_enriched WHERE deal_date BETWEEN DATE '2024-01-01' AND DATE '2024-12-31' AND product_base IN ('рис','рис шлифованный','рис шлифованны
+g006 OK  gemini:avg_price          1924ms | O'rtacha narx: 20 725 183.36 so'm 1 t (792 ta bitim, 20 781 715.17 so'm 1 t).
+g007 OK  gemini:avg_price          2539ms | Средняя цена: 761 278.25 сум за 1 т (42 сделок, 785 793.74 сум за 1 т).
+g008 OK  gemini:count              1930ms | Bitimlar soni: 17 727 ta bitim.
+g009 OK  gemini:usd_rate           1788ms | Курс доллара на 10.02.2026: 12 481.34 сум за 1 USD.
+g010 BAD gemini:volume/seller      4060ms | Hajmi:
+     gold: [['"Nutunim Fermer" MChJ', 187348432.0], ['SITO‘TOM TEKSTIL MCHJ', 150376817.0]] | got: [('"Nutunim Fermer" MChJ', '999222902', 'килограмм', 187348432.0, 3187, 1319732236965.0), ('XO‘VO‘ FERMER MCHJ', '972385099', 'килограмм', 97311063.0, 1613, 734602196331.0)] 
+     sql: SELECT ps."Наименование" AS g, d.seller_inn AS k, unit AS u, round(sum(volume_units),2), count(*), round(sum(amount_uzs)) FROM deals_enriched d JOIN participant
+g011 OK  gemini:amount/cmp-year    2049ms | Bitimlar summasi — taqqoslash:
+g012 BAD gemini:amount/cmp-product    2730ms | Bitimlar summasi — taqqoslash:
+     gold: [['сахар белый', 623711873087.0], ['портландцемент', 607257874061.0]] | got: [('цемент', None, None, 846625332858.0, 6613), ('сахар', None, None, 924913299622.0, 2240)] 
+     sql: SELECT 'цемент' AS g, NULL AS k, NULL AS u, round(sum(amount_uzs)), count(*) FROM deals_enriched WHERE deal_date BETWEEN DATE '2023-01-01' AND DATE '2023-12-31'
+g013 OK  gemini:amount/cmp-region    4028ms | Bitimlar summasi — taqqoslash:
+g014 BAD gemini:volume/product/cmp-product    2928ms | Hajmi — taqqoslash:
+     gold: [[109538300.0]] | got: [('мука пшеничная', None, 'тонна', 109538.3, 6349, 526473912131.0), ('рис', None, 'тонна', 19017.0, 759, 352767252077.0)] 
+     sql: SELECT 'мука пшеничная' AS g, NULL AS k, CASE WHEN unit='килограмм' THEN 'тонна' ELSE unit END AS u, round(sum(CASE WHEN unit='килограмм' THEN volume_units/1000
+g015 OK  gemini:count/share        2170ms | Доля: 0.0% (0 из 25 523).
+g016 OK  gemini:deal               3938ms | Bitim №122317, 30.05.2022: Хлопок сырец (спот) Сорт 3-сорта Класс II класс; 4 680.35 so'm 
+g017 OK  gemini:delay              2154ms | Срок (среднее): 3.73 дн. (26 537 сделок).
+g018 BAD gemini:count/share        2124ms | Ulushi: 91.57% (12 926 dan 11 836).
+     gold: [[86.97]] | got: [(91.57, 11836, 12926)] 
+     sql: SELECT round(100.0 * count(*) FILTER (WHERE status IN ('Исполнен','Исполнен(Частично)')) / NULLIF(count(*), 0), 2), count(*) FILTER (WHERE status IN ('Исполнен'
+g019 BAD gemini:amount/buyer       2061ms | Сумма сделок:
+     gold: [['"Qasi Invest" MChJ', 72401684533.0], ['"Lo‘xol Servis" MChJ', 41511987455.0]] | got: [('"Qasi Invest" MChJ', '908181397', None, 82732352005.0, 168, 7190.0, 7190.0), ('"Lo‘xol Servis" MChJ', '968900028', None, 49356522070.0, 109, 4250.0, 4250.0)] 
+     sql: SELECT pb."Наименование" AS g, d.buyer_inn AS k, NULL AS u, round(sum(amount_uzs)), count(*), round(sum(CASE WHEN unit='килограмм' THEN volume_units/1000 ELSE v
+g020 OK  gemini:volume             2091ms | Hajmi: 254 688 t (916 ta bitim, 1 077 682 171 327 so'm).
+g021 OK  gemini:amount             2184ms | XUSIT POLIMER MCHJ (STIR 996831451). Bitimlar summasi: 843 650 221 992 so'm (1 865 ta biti
+g022 BAD gemini:not-answerable     3018ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlar bazasida 'metall' umumiy nomi bilan mahsu
+     gold: [['LEXAZ IMPEKS MCHJ', 219876171312.1831]] | got: [] 
+     sql: 
+g023 BAD gemini:count              1965ms | Количество сделок: 1 957 сделок.
+     gold: [[222577740703.33002, 1804]] | got: [(1957,)] 
+     sql: SELECT count(*) FROM deals_enriched WHERE seller_broker='BK095'
+g024 BAD gemini:volume/product     2076ms | Hajmi:
+     gold: [['хлопок сырец (спот)', 532], ['хлопок-сырец (спот)', 501]] | got: [('хлопок сырец (спот)', None, 'килограмм', 31524097.0, 496, 245732097126.0), ('хлопок-сырец (спот)', None, 'килограмм', 31260652.0, 465, 254480978443.0)] 
+     sql: SELECT product_base AS g, NULL AS k, unit AS u, round(sum(volume_units),2), count(*), round(sum(amount_uzs)) FROM deals_enriched d  WHERE buyer_broker='BK105' A
+g025 OK  gemini:count/share        2102ms | Доля: 7.7% (201 из 2 610).
+g026 BAD gemini:count/region       2187ms | Bitimlar soni:
+     gold: [['Toshkent shahri', 6087], ['Namangan viloyati', 4474]] | got: [('Toshkent shahri', None, None, 7168), ('Namangan viloyati', None, None, 4474)] 
+     sql: SELECT region AS g, NULL AS k, NULL AS u, count(*) FROM deals_enriched d  WHERE product_base IN ('сахар белый','сахар-песок') GROUP BY 1, 2, 3 ORDER BY 4 DESC N
+g027 BAD gemini:brokers_directory    1845ms | Broker idoralari: 120 ta.
+     gold: [['Toshkent viloyati']] | got: [(120,)] 
+     sql: SELECT count(*) FROM brokers 
+g028 OK  gemini:count              2058ms | Bitimlar soni: 0 ta bitim.
+g029 OK  gemini:volume             2187ms | В данных нет ответа на этот вопрос: по заданным условиям сделок не найдено.
+g030 OK  gemini:volume             2541ms | В данных нет ответа на этот вопрос: по заданным условиям сделок не найдено.
+g031 OK  gemini:amount             2174ms | Bitimlar summasi: 3 148 397 428 049 so'm (6 708 ta bitim).
+g032 OK  gemini:count/share        2008ms | Доля: 6.45% (252 из 3 910).
+g033 BAD gemini:count              2454ms | Bitimlar soni: 34 149 ta bitim.
+     gold: [[23647]] | got: [(34149,)] 
+     sql: SELECT count(*) FROM deals_enriched WHERE product_base IN ('цемент портландский','цемент портландский цем i 42,5н','цемент портландский цем ii/а-ш 32,5н','цемен
+g034 OK  gemini:count              2619ms | Количество сделок: 0 сделок.
+g035 BAD gemini:count              2812ms | Bitimlar soni: 1 456 ta bitim.
+     gold: [[1063]] | got: [(1456,)] 
+     sql: SELECT count(*) FROM deals_enriched WHERE deal_date BETWEEN DATE '2024-01-01' AND DATE '2024-03-31' AND product_base IN ('портландцемент','портландцемент цем i 
+g036 BAD gemini:amount             2087ms | Сумма сделок: 839 677 373 925 сум (730 сделок).
+     gold: [[380760731585.3045]] | got: [(839677373925.0, 730)] 
+     sql: SELECT round(sum(amount_uzs)), count(*) FROM deals_enriched WHERE deal_date BETWEEN DATE '2025-01-01' AND DATE '2025-12-31' AND product_base IN ('пряжа хлопкова
+g037 OK  gemini:amount             3809ms | Ma'lumotlarda bu savolga javob yo'q: berilgan shartlar bo'yicha bitim topilmadi.
+g038 OK  gemini:not-answerable     1882ms | В данных нет ответа на этот вопрос: в данных нет сведений о способе оплаты (наличные или б
+g039 OK  gemini:not-answerable     1922ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlar bazasida xodimlar soni haqida ma'lumot ma
+g040 OK  gemini:not-answerable     1836ms | В данных нет ответа на этот вопрос: в базе данных нет информации о налоговом резидентстве 
+g041 OK  gemini:not-answerable     2125ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlar bazasida tovar belgilari va ularning ro'y
+g042 OK  gemini:not-answerable     2150ms | В данных нет ответа на этот вопрос: в данных нет информации о претензиях покупателей по ка
+g043 OK  gemini:not-answerable     1851ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlar bazasida kompaniyalarning elektron pochta
+g044 OK  gemini:not-answerable     2094ms | В данных нет ответа на этот вопрос: в базе данных нет информации о номерах партий (батчей)
+g045 OK  gemini:not-answerable     1898ms | Ma'lumotlarda bu savolga javob yo'q: Ma'lumotlar bazasida mahsulotlar uchun sertifikatlar 
+g046 OK  gemini:not-answerable     2140ms | В данных нет ответа на этот вопрос: в данных нет сведений о причинах выбора типа аукциона.
+g047 OK  gemini:not-answerable     2492ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlar bazasida eksport qilingan mahsulotlarning
+g048 OK  gemini:not-answerable     1951ms | В данных нет ответа на этот вопрос: в данных нет информации о жалобах на биржу.
+g049 OK  gemini:count              2227ms | Количество сделок: 0 сделок.
+g050 OK  gemini:not-answerable     2094ms | Ma'lumotlarda bu savolga javob yo'q: Ma'lumotlar bazasida Moliya vazirligining hisobotlari
+exact 8/10 | loose 8/17 | trap 7/10 | no_data 13/13 | TOTAL 36/50 | fabricated on no-data: 0

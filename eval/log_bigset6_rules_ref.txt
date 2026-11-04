@@ -1,0 +1,89 @@
+
+== eval/bigset6.json
+g001 OK  template:broker            106ms | Брокер BK005: NAXON BROKER AJ (ИНН 968675771, регион Namangan viloyati).
+g002 OK  template:broker              2ms | Broker BK095: FOJE BROKER MAS’ULIYATI CHEKLANGAN JAMIYATI (STIR 952670921, hudud Toshkent 
+g003 BAD semantic:llm-none         1546ms | В данных нет ответа на этот вопрос: по заданным условиям сделок не найдено.
+     gold: [['996831451']] | got: [] 
+     sql: 
+g004 BAD semantic:rules:amount/region      17ms | Bitimlar summasi:
+     gold: [['917899526', 'Sirdaryo viloyati']] | got: [('Toshkent shahri', None, None, 37679992529873.0, 91799)] 
+     sql: SELECT region AS g, NULL AS k, NULL AS u, round(sum(amount_uzs)), count(*) FROM deals_enriched d  WHERE status<>'Аннулирован(Не оплачен)' GROUP BY 1, 2, 3 ORDER
+g005 BAD semantic:rules:volume       14ms | Объём: 7 798 т (302 сделок, 144 547 339 594 сум).
+     gold: [[759, 19017.0]] | got: [('тонна', 7798.0, 302, 144547339594.0)] 
+     sql: SELECT CASE WHEN unit='килограмм' THEN 'тонна' ELSE unit END AS u, round(sum(CASE WHEN unit='килограмм' THEN volume_units/1000 ELSE volume_units END),2), count(
+g006 OK  semantic:rules:avg_price      13ms | O'rtacha narx: 20 725 183.36 so'm 1 t (792 ta bitim, 20 781 715.17 so'm 1 t).
+g007 OK  semantic:rules:avg_price      11ms | Средняя цена: 761 278.25 сум за 1 т (42 сделок, 785 793.74 сум за 1 т).
+g008 BAD guard:unknown-words          3ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlarda quyidagilar yo'q: «ikkalasi». Ma'lumotl
+     gold: [[17727]] | got: [] 
+     sql: 
+g009 OK  template:rate                3ms | Курс доллара на 10.02.2026: 12 481.34 сум за 1 USD.
+g010 OK  semantic:rules:volume/seller      20ms | Hajmi:
+g011 BAD guard:unknown-words          5ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlarda quyidagilar yo'q: «икки», «йигирма», «и
+     gold: [[2024, 8129749174135.0], [2025, 9243437724773.0]] | got: [] 
+     sql: 
+g012 BAD guard:unknown-words          2ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlarda quyidagilar yo'q: «biri». Ma'lumotlarda
+     gold: [['сахар белый', 623711873087.0], ['портландцемент', 607257874061.0]] | got: [] 
+     sql: 
+g013 BAD guard:unknown-words          4ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlarda quyidagilar yo'q: «айланмаси». Ma'lumot
+     gold: [['Namangan viloyati', 8505111356854.572], ['Andijon viloyati', 102146673043.50002]] | got: [] 
+     sql: 
+g014 BAD guard:unknown-words          2ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlarda quyidagilar yo'q: «biri». Ma'lumotlarda
+     gold: [[109538300.0]] | got: [] 
+     sql: 
+g015 OK  semantic:rules:count/share      11ms | Доля: 0.0% (0 из 25 523).
+g016 OK  semantic:rules:deal         20ms | Bitim №122317, 30.05.2022: Хлопок сырец (спот) Сорт 3-сорта Класс II класс; 4 680.35 so'm 
+g017 OK  semantic:rules:delay        10ms | Срок (среднее): 3.73 дн. (26 537 сделок).
+g018 OK  semantic:rules:count/share      10ms | Ulushi: 87.18% (12 926 dan 11 269).
+g019 BAD semantic:rules:amount/buyer      13ms | Сумма сделок:
+     gold: [['"Qasi Invest" MChJ', 72401684533.0], ['"Lo‘xol Servis" MChJ', 41511987455.0]] | got: [('"Qasi Invest" MChJ', '908181397', None, 158263771064.0, 286, 12363.0, 12363.0), ('"Nefot Savdo" MChJ', '977541756', None, 50944883118.0, 105, 3953.0, 3953.0)] 
+     sql: SELECT pb."Наименование" AS g, d.buyer_inn AS k, NULL AS u, round(sum(amount_uzs)), count(*), round(sum(CASE WHEN unit='килограмм' THEN volume_units/1000 ELSE v
+g020 BAD guard:unknown-words          2ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlarda quyidagilar yo'q: «qarshida». Ma'lumotl
+     gold: [[254688.0]] | got: [] 
+     sql: 
+g021 OK  semantic:rules:amount       10ms | XUSIT POLIMER MCHJ (STIR 996831451). Bitimlar summasi: 843 650 221 992 so'm (1 865 ta biti
+g022 BAD semantic:rules:amount/buyer       8ms | Bitimlar summasi:
+     gold: [['LEXAZ IMPEKS MCHJ', 219876171312.1831]] | got: [('"Zoket Invest" OK', '983531029', None, 5709800900092.0, 9503)] 
+     sql: SELECT pb."Наименование" AS g, d.buyer_inn AS k, NULL AS u, round(sum(amount_uzs)), count(*) FROM deals_enriched d JOIN participants pb ON pb."ИНН"=d.buyer_inn 
+g023 BAD semantic:rules:count         3ms | Количество сделок: 1 957 сделок.
+     gold: [[222577740703.33002, 1804]] | got: [(1957,)] 
+     sql: SELECT count(*) FROM deals_enriched WHERE seller_broker='BK095'
+g024 BAD guard:unknown-words          2ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlarda quyidagilar yo'q: «olib», «kelgan». Ma'
+     gold: [['хлопок сырец (спот)', 532], ['хлопок-сырец (спот)', 501]] | got: [] 
+     sql: 
+g025 OK  semantic:rules:count/share       9ms | Доля: 7.7% (201 из 2 610).
+g026 BAD semantic:rules:count/region      10ms | Bitimlar soni:
+     gold: [['Toshkent shahri', 6087], ['Namangan viloyati', 4474]] | got: [('Toshkent shahri', None, None, 7168), ('Namangan viloyati', None, None, 4474)] 
+     sql: SELECT region AS g, NULL AS k, NULL AS u, count(*) FROM deals_enriched d  WHERE (product_base SIMILAR TO 'сахар.*') GROUP BY 1, 2, 3 ORDER BY 4 DESC NULLS LAST 
+g027 OK  semantic:rules:count/region       5ms | Bitimlar soni:
+g028 OK  guard:unknown-words          2ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlarda quyidagilar yo'q: «nukusda». Ma'lumotla
+g029 OK  semantic:rules:volume/region       7ms | В данных нет ответа на этот вопрос: по заданным условиям сделок не найдено.
+g030 OK  semantic:rules:volume        6ms | В данных нет ответа на этот вопрос: по заданным условиям сделок не найдено.
+g031 OK  semantic:rules:amount        4ms | Bitimlar summasi: 3 148 397 428 049 so'm (6 708 ta bitim).
+g032 OK  semantic:rules:count/share       9ms | Доля: 6.45% (252 из 3 910).
+g033 BAD semantic:rules:count         8ms | Bitimlar soni: 1 806 ta bitim.
+     gold: [[23647]] | got: [(1806,)] 
+     sql: SELECT count(*) FROM deals_enriched WHERE (product_base SIMILAR TO '(портландцемент|цемент).*') AND status='Исполнен(Частично)'
+g034 OK  semantic:rules:count         6ms | Количество сделок: 0 сделок.
+g035 BAD semantic:rules:count         9ms | Bitimlar soni: 1 456 ta bitim.
+     gold: [[1063]] | got: [(1456,)] 
+     sql: SELECT count(*) FROM deals_enriched WHERE deal_date BETWEEN DATE '2024-01-01' AND DATE '2024-03-31' AND (product_base SIMILAR TO '(портландцемент|цемент).*')
+g036 OK  semantic:rules:amount        8ms | Сумма сделок: 380 760 731 585 сум (309 сделок).
+g037 BAD semantic:rules:amount       15ms | Bitimlar summasi: 61 025 220 620 240 so'm (127 747 ta bitim).
+     gold: [[None, 0]] | got: [(61025220620240.0, 127747)] 
+     sql: SELECT round(sum(amount_uzs)), count(*) FROM deals_enriched WHERE (product_base SIMILAR TO 'хлопок.?сырец.*') AND status<>'Аннулирован(Не оплачен)'
+g038 OK  guard:unknown-words          3ms | В данных нет ответа на этот вопрос: в данных нет сведений о: «наличные», «банковский». В д
+g039 OK  guard:field                  1ms | Ma'lumotlarda bu savolga javob yo'q: bunday maydon ma'lumotlarda yo'q (bor: nomi, STIR, hu
+g040 OK  guard:field                  1ms | В данных нет ответа на этот вопрос: такого поля в данных нет (есть: название, ИНН, регион,
+g041 BAD semantic:rules:amount       11ms | Bitimlar summasi: 5 189 832 541 991 so'm (36 420 ta bitim).
+     gold: [] | got: [(5189832541991.0, 36420)] 
+     sql: SELECT round(sum(amount_uzs)), count(*) FROM deals_enriched WHERE (product_base SIMILAR TO '(портландцемент|цемент).*') AND status<>'Аннулирован(Не оплачен)'
+g042 OK  guard:unknown-words          3ms | В данных нет ответа на этот вопрос: в данных нет сведений о: «претензий», «качеству». В да
+g043 OK  guard:field                  1ms | Ma'lumotlarda bu savolga javob yo'q: bunday maydon ma'lumotlarda yo'q (bor: nomi, STIR, hu
+g044 OK  guard:unknown-words          3ms | В данных нет ответа на этот вопрос: в данных нет сведений о: «номер», «партии». В данных е
+g045 OK  guard:unknown-words          2ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlarda quyidagilar yo'q: «halol», «sertifikati
+g046 OK  guard:why                    1ms | В данных нет ответа на этот вопрос: в данных есть только факты сделок, причины в них не за
+g047 OK  guard:unknown-words          2ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlarda quyidagilar yo'q: «davlatga». Ma'lumotl
+g048 OK  guard:unknown-words          2ms | В данных нет ответа на этот вопрос: в данных нет сведений о: «жалоб», «uzex», «регулятору»
+g049 OK  semantic:rules:count         7ms | Количество сделок: 0 сделок.
+g050 OK  guard:unknown-words          3ms | Ma'lumotlarda bu savolga javob yo'q: ma'lumotlarda quyidagilar yo'q: «o'zbekiston», «respu
+exact 6/10 | loose 7/17 | trap 7/10 | no_data 12/13 | TOTAL 32/50 | fabricated on no-data: 1

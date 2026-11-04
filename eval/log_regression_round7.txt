@@ -1,0 +1,27 @@
+bigset4: exact 9/10 | loose 15/17 | trap 6/10 | no_data 13/13 | TOTAL 43/50 | fabricated on no-data: 0
+bigset5: exact 10/10 | loose 12/17 | trap 10/10 | no_data 13/13 | TOTAL 45/50 | fabricated on no-data: 0
+bigset6: exact 10/10 | loose 11/17 | trap 10/10 | no_data 13/13 | TOTAL 44/50 | fabricated on no-data: 0
+bigset7: exact 11/12 | trap 10/12 | loose 18/20 | no_data 16/16 | TOTAL 55/60 | fabricated on no-data: 0
+== stability set7
+unstable: 7/60
+  h012 100037-son shartnomada to'lov muddati necha kun qilib belgilangan?
+     run1 gemini:contracts:count [(100037, 5)]
+     run2 gemini:contracts:pay_term [(100037, 5)]
+  h013 Какой базис поставки указан в контракте №100068?
+     run1 gemini:contracts:count [(100068, 'EXW')]
+     run2 gemini:contracts:contracts [(100068, 'EXW')]
+  h024 Arpa (ячмень) savdosi bo'yicha jami nechta tonna sotilgan?
+     run1 guard:unresolved-product []
+     run2 gemini:not-answerable []
+  h032 Қаҳва (кофе) савдоси тўғрисида маълумот борми - жами қанча тонна сотилган?
+     run1 guard:unresolved-product []
+     run2 gemini:not-answerable []
+  h048 2023 yil sentyabr oyida paxta-xomashyo necha tonna sotilgan (kg emas, tonnada hi
+     run1 gemini:volume [('тонна', 221824.79, 3719, 1540291058333.0), ('хлопок-сырец (спот)', None, 'тонна', 10504
+     run2 gemini:volume [('тонна', 310642.1, 5204, 2158712528631.0), ('хлопок-сырец (спот)', None, 'тонна', 105045
+  h050 Бензин билан дизель қайсиси кўпроқ сотилган - тонна ҳисобида?
+     run1 gemini:volume/cmp-product [('бензин', None, 'тонна', 332740.0, 12142, 4213326453086.0), ('бензин', None, 'литр', 440
+     run2 gemini:volume/cmp-product [('бензин автомобильный', None, 'тонна', 309865.0, 11280, 3867732514839.0), ('бензин автом
+  h058 Portlandsement EXW va CPT bazislarida qaysi birida narx qimmatroq?
+     run1 gemini:avg_price/delivery_basis [('CPT', None, 'тонна|Узбекский сум', 947783.59, 1183, 949711.79), ('DAP', None, 'тонна|Уз
+     run2 gemini:avg_price/delivery_basis [('CPT', None, 'тонна|Узбекский сум', 947783.59, 1183, 949711.79), ('DAP', None, 'тонна|Уз
