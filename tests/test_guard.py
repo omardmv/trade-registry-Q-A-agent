@@ -108,3 +108,15 @@ def test_every_example_passes_the_guard(index):
     for ex in ExampleStore.from_yaml(config.EXAMPLES_PATH).examples:
         if ex.spec is not None:
             assert err(index, ex.question, ex.spec) is None, ex.question
+
+
+@pytest.mark.parametrize("q", ["Когда была самая дешёвая сделка по цементу?", "Дизель бўйича неча фоиз битим?"])
+def test_more_cue_spellings(index, q):
+    grouped = {"kind": "deals_aggregate", "measures": ["mean_deal_price_uzs_per_t"], "group_by": "deal"}
+    assert err(index, q, grouped) is not None
+
+
+def test_broker_side_is_not_a_ranking(index):
+    spec = {"kind": "deals_aggregate", "measures": ["deal_count"], "group_by": "broker_side",
+            "filters": {"brokers": ["BK045"]}}
+    assert err(index, "Минимально сколько сделок у BK045 как брокера продавца и покупателя?", spec) is None

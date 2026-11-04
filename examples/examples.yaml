@@ -71,3 +71,59 @@
   spec: {kind: deals_aggregate, measures: [amount_uzs], group_by: deal, top: 1, filters: {year: 2024}}
 - question: "2024-yildagi eng katta bitim qaysi?"
   spec: {kind: deals_aggregate, measures: [amount_uzs], group_by: deal, top: 1, filters: {year: 2024}}
+- question: "Сколько компаний-продавцов с видом деятельности «Кластер» в реестре?"
+  spec: {kind: registry_count, entity: participants, activity: Кластер, role: Продавец}
+- question: "Какой продавец продал меньше всего карбамида по сумме в 2024 году?"
+  note: "меньше всего → order asc"
+  spec: {kind: deals_aggregate, measures: [amount_uzs], group_by: seller, top: 1, order: asc, filters: {year: 2024, products: [Карбамид]}}
+- question: "Когда была самая дешёвая сделка по портландцементу за тонну в 2023 году?"
+  note: "одна сделка → group_by deal; цена за тонну сделки, по возрастанию"
+  spec: {kind: deals_aggregate, measures: [mean_deal_price_uzs_per_t], group_by: deal, top: 1, order: asc, status_scope: valid, filters: {year: 2023, products: [Портландцемент]}}
+- question: "Какая средняя цена портландцемента в 2024 году?"
+  note: "не сказано взвешенная или простая → обе меры (price_average)"
+  spec: {kind: deals_aggregate, measures: [avg_price_uzs_per_kg, mean_deal_price_uzs_per_t], status_scope: valid, filters: {year: 2024, products: [Портландцемент]}}
+- question: "2025-yilda bug‘doyning mediana narxi (1 kg uchun) qancha bo‘lgan?"
+  spec: {kind: deals_aggregate, measures: [median_price_uzs_per_kg], status_scope: valid, filters: {year: 2025, products: [Пшеница]}}
+- question: "Сколько различных покупателей было у хлопка-сырца в 2023 году?"
+  note: "сколько различных → distinct-мера без group_by"
+  spec: {kind: deals_aggregate, measures: [distinct_buyers], filters: {year: 2023, products: [Хлопок-сырец]}}
+- question: "2024-yilda nechta turli hududda bitim tuzilgan?"
+  spec: {kind: deals_aggregate, measures: [distinct_regions], filters: {year: 2024}}
+- question: "Какая доля форвардных сделок среди всех сделок 2024 года?"
+  note: "знаменатель — все сделки, включая аннулированные"
+  spec: {kind: deals_aggregate, measures: [share_pct, deal_count], share_of: {field: contract_form, value: Форвард}, filters: {year: 2024}}
+- question: "Kaustik soda bo‘yicha bitimlarning necha foizi «Исполнен» holatida?"
+  spec: {kind: deals_aggregate, measures: [share_pct], share_of: {field: status, value: Исполнен}, filters: {products: [Сода каустическая]}}
+- question: "Как изменилась сумма сделок по хлопку-сырцу в первом квартале 2025 года по сравнению с первым кварталом 2024?"
+  spec: {kind: deals_aggregate, measures: [amount_uzs], filters: {products: [Хлопок-сырец]}, compare_periods: [{year: 2024, month_from: 1, month_to: 3}, {year: 2025, month_from: 1, month_to: 3}]}
+- question: "На какую сумму купили компании, зарегистрированные в Самаркандской области, в 2024 году?"
+  note: "регион регистрации покупателя → buyer_regions (resolve region), не регион склада"
+  spec: {kind: deals_aggregate, measures: [amount_uzs], filters: {year: 2024, buyer_regions: [Samarqand viloyati]}}
+- question: "Сколько сделок по нефтепродуктам было в 2025 году?"
+  note: "категория из каталога значений"
+  spec: {kind: deals_aggregate, measures: [deal_count], filters: {year: 2025, categories: [Нефтепродукты]}}
+- question: "Сколько тонн сахара-песка (именно это наименование) продано в 2024 году?"
+  note: "конкретное написание → resolve(product_variant) → САХАР-ПЕСОК"
+  spec: {kind: deals_aggregate, measures: [volume_tonnes], filters: {year: 2024, product_variants: [САХАР-ПЕСОК]}}
+- question: "Сколько тонн хлопка-сырца (спот) продано в 2024 году?"
+  note: "«(спот)» в названии → contract_form=Спот"
+  spec: {kind: deals_aggregate, measures: [volume_tonnes], filters: {year: 2024, products: [Хлопок-сырец], contract_form: Спот}}
+- question: "Сколько хлопка-сырца продано во всех формах (спот, форвард, фьючерс) в 2023 году?"
+  note: "все формы → без contract_form, не product_family"
+  spec: {kind: deals_aggregate, measures: [volume_tonnes], filters: {year: 2023, products: [Хлопок-сырец]}}
+- question: "В скольких сделках брокер BK045 был брокером продавца и в скольких брокером покупателя в 2024 году?"
+  spec: {kind: deals_aggregate, measures: [deal_count], group_by: broker_side, filters: {year: 2024, brokers: [BK045]}}
+- question: "Кто продавец и покупатель самой крупной сделки по карбамиду в 2025 году?"
+  spec: {kind: deals_aggregate, measures: [amount_uzs], group_by: deal, top: 1, status_scope: valid, filters: {year: 2025, products: [Карбамид]}}
+- question: "STIR 915688255 bo‘lgan kompaniya qaysi hududda ro‘yxatdan o‘tgan?"
+  spec: {kind: participant_lookup, inn: "915688255"}
+- question: "В каком регионе находится брокер BK027 и сколько у него сделок?"
+  spec: {kind: broker_lookup, broker_code: BK027}
+- question: "Когда в 2024 году был самый высокий курс доллара?"
+  spec: {kind: usd_rate, year: 2024, extreme: max}
+- question: "Какая средняя просрочка поставки (в днях) по поставкам с опозданием в 2024 году и сколько их?"
+  spec: {kind: deals_aggregate, measures: [avg_delivery_delay_days, late_delivery_count], status_scope: valid, filters: {year: 2024}}
+- question: "В какой час дня заключается больше всего сделок?"
+  spec: {kind: deals_aggregate, measures: [deal_count], group_by: hour, top: 1, status_scope: valid}
+- question: "Сколько контрактов на карбамид действовало на 01.05.2024?"
+  spec: {kind: registry_count, entity: contracts, products: [Карбамид], active_on: "2024-05-01"}

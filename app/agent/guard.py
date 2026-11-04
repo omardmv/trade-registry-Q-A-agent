@@ -38,11 +38,12 @@ _UNIT_MEASURES = {"volume", "volume_tonnes", "delivered_volume", "undelivered_vo
                   "max_unit_price_uzs", "avg_price_uzs_per_kg", "mean_deal_price_uzs_per_t",
                   "median_price_uzs_per_kg", "lots_bought", "lots_delivered", "undelivered_lots"}
 
-_LEAST_RE = re.compile(r"наименьш|меньше всего|дешевле всего|самы[йемх]\s+дешёв|самы[йемх]\s+дешев|минимальн"
+_LEAST_RE = re.compile(r"наименьш|меньше всего|дешевле всего|сам(?:ый|ая|ое|ую|ой|ых|ые|ом)\s+деш[её]в|минимальн"
                        r"|eng\s+kam|eng\s+arzon|eng\s+past", re.IGNORECASE)
 _DISTINCT_RE = re.compile(r"сколько\s+(?:\w+\s+)?(?:разных|различных|уникальных)|nechta\s+(?:turli|xil)"
                           r"|nechta\s+\w+\s+xil", re.IGNORECASE)
-_SHARE_RE = re.compile(r"(?<!\w)(?:дол[яиюей]|процент\w*|foiz\w*|ulush\w*)(?!\w)|%", re.IGNORECASE)
+_SHARE_RE = re.compile(r"(?<!\w)(?:дол[яиюей]|процент\w*|foiz\w*|ulush\w*|фоиз\w*|улуш\w*)(?!\w)|%",
+                       re.IGNORECASE)
 _PERCENT_MEASURES = {"share_pct", "cancelled_pct", "avg_price_change_pct"}
 
 
@@ -170,7 +171,7 @@ def missing_condition_error(question: str, spec: Spec, index: list[_Value], igno
     if not isinstance(spec, DealsAggregate):
         return None
     q = question.replace("ё", "е").replace("Ё", "Е")
-    ranked = spec.group_by is not None and not (spec.group_by in TIME_DIMENSIONS and spec.top is None)
+    ranked = spec.group_by not in (None, "broker_side") and not (spec.group_by in TIME_DIMENSIONS and spec.top is None)
     if ranked and spec.order != "asc" and _LEAST_RE.search(q):
         return ("the question asks for the least / cheapest / fewest: set order=\"asc\" so the ranking starts "
                 "from the smallest value")

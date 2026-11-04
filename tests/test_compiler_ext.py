@@ -336,3 +336,24 @@ def test_compare_periods_validation(bad, msg):
     from app.compiler.spec import SpecError
     with pytest.raises(SpecError, match=msg):
         parse_spec(agg(["deal_count"], **bad))
+
+
+# ---------- broker_side ----------
+
+def test_broker_side_counts_each_side_separately(db):
+    c, res = run(db, agg(["deal_count"], group_by="broker_side", filters={"year": 2025, "brokers": ["BK045"]}))
+    assert res.columns == ["side", "broker_code", "broker_name", "deals_all", "deals_valid"]
+    by = {r[0]: r for r in res.rows}
+    s_all, s_valid, b_all, b_valid = rows(db, """SELECT
+        COUNT(*) FILTER (WHERE seller_broker='BK045'), COUNT(*) FILTER (WHERE seller_broker='BK045' AND NOT is_cancelled),
+        COUNT(*) FILTER (WHERE buyer_broker='BK045'), COUNT(*) FILTER (WHERE buyer_broker='BK045' AND NOT is_cancelled)
+        FROM deals WHERE year=2025""")[0]
+    assert (by["seller"][3], by["seller"][4]) == (s_all, s_valid)
+    assert (by["buyer"][3], by["buyer"][4]) == (b_all, b_valid)
+    assert "broker_side_split" in c.notes and "status_scope" in c.splits
+
+
+def test_broker_side_needs_brokers_filter():
+    from app.compiler.spec import SpecError
+    with pytest.raises(SpecError, match="brokers"):
+        parse_spec(agg(["deal_count"], group_by="broker_side"))

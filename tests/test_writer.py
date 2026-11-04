@@ -568,3 +568,13 @@ def test_dropped_condition_fed_back(parts):
 def test_system_prompt_forbids_dropping_conditions(parts):
     writer, _ = make(parts, [])
     assert "never drop a condition" in writer.system
+
+
+def test_quarter_question_with_compare_periods_months_accepted(parts):
+    spec = {"kind": "deals_aggregate", "measures": ["deal_count"],
+            "compare_periods": [{"year": 2024, "month_from": 1, "month_to": 3},
+                                {"year": 2025, "month_from": 1, "month_to": 3}]}
+    writer, _ = make(parts, [call("compile_query", spec=spec, assumptions=[])])
+    res = writer.run("Как изменилось число сделок в первом квартале 2025 по сравнению с первым кварталом 2024?",
+                     "ru", deadline())
+    assert res.status == "ok" and "change_pct" in res.result.columns[-1]

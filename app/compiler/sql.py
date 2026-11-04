@@ -212,7 +212,7 @@ def _currency_notes(measures: list[str]) -> list[str]:
 
 def _scope(s: DealsAggregate) -> str:
     scope = s.status_scope
-    if s.group_by is not None and scope == "split":
+    if s.group_by not in (None, "broker_side") and scope == "split":
         scope = "valid"          # rankings are computed on deals that took place
     if s.filters.statuses:
         scope = "all"            # explicit status filter overrides the default
@@ -245,7 +245,7 @@ def _compile_aggregate(s: DealsAggregate) -> Compiled:
         notes.append("order_asc")
     split_cols = scope == "split"
     dims: list[Dim] = []
-    if grouped and s.group_by != "participant":
+    if grouped and s.group_by not in ("participant", "broker_side"):
         dims.append(DIMS[s.group_by])
     per_unit_measures = [m for m in s.measures if m in PER_UNIT]
     if per_unit_measures:
@@ -258,6 +258,10 @@ def _compile_aggregate(s: DealsAggregate) -> Compiled:
     if s.compare_periods:
         notes.append("compare_periods")
         return Compiled(_compare_periods_sql(s, scope, valid_filter, dims), splits, notes)
+
+    if s.group_by == "broker_side":
+        notes.append("broker_side_split")
+        return Compiled(_broker_side_sql(s, scope, valid_filter, split_cols, measure_cols), splits, notes)
 
     per_unit = grouped and bool(per_unit_measures)
     if s.group_by == "participant":
@@ -318,6 +322,27 @@ def _compile_aggregate(s: DealsAggregate) -> Compiled:
         return Compiled(" UNION ALL ".join(parts), splits, notes)
     sql = _ranked_select(select + measure_cols, from_sql, group, s, s.measures[0], split_cols, per_unit, valid_filter)
     return Compiled(sql, splits, notes)
+
+
+def _broker_side_sql(s: DealsAggregate, scope: str, valid_filter: bool, split: bool, measure_cols: list[str]) -> str:
+    """The filtered brokers counted separately as seller broker and as buyer broker (a deal with the broker on both
+    sides appears in both rows)."""
+    unit = any(m in PER_UNIT for m in s.measures)
+    parts = []
+    for side, col, alias in (("seller", "seller_broker", "bs"), ("buyer", "buyer_broker", "bb")):
+        f = replace(s.filters, brokers=[], **{f"{col}s": list(s.filters.brokers)})
+        where = where_clauses(f)
+        if scope == "valid" and not valid_filter:
+            where.append("NOT d.is_cancelled")
+        sel = [f"'{side}' AS side", f"d.{col} AS broker_code", f"{alias}.name AS broker_name"]
+        grp = [f"d.{col}", f"{alias}.name"]
+        if unit:
+            sel.append("d.unit AS unit")
+            grp.append("d.unit")
+        parts.append(f"(SELECT {', '.join(sel + measure_cols)} FROM deals d LEFT JOIN brokers {alias} "
+                     f"ON {alias}.broker_code = d.{col} WHERE {' AND '.join(where)} GROUP BY {', '.join(grp)} "
+                     f"ORDER BY {', '.join(grp)})")
+    return " UNION ALL ".join(parts)
 
 
 def _compare_periods_sql(s: DealsAggregate, scope: str, valid_filter: bool, dims: list[Dim]) -> str:

@@ -117,6 +117,19 @@ rules:
   - "В выдаче рядом с ИНН/кодом всегда выводить наименование (join participants/brokers)."
   - "Производные числа (проценты, средние, доли) считать в SQL отдельными колонками."
   - "Если resolve() вернул товар (product) и группу (product_family) с одинаковым score — фильтровать по конкретному товару (products=[...]), а группу использовать только когда вопрос о всей группе товаров."
+  - "«(спот)», «(форвард)», «(фьючерс)» в названии товара — это форма контракта: contract_form=Спот/Форвард/Фьючерс вместе с products=[...], а не вариант наименования. Если в вопросе «(спот)» и другая форма («Форвард») — фильтр contract_form по форме, названной как условие (результат может быть 0)."
+  - "«Хлопок во всех формах (спот, форвард, фьючерс)», «все варианты написания» = products=[Хлопок-сырец] (канонический товар) без contract_form; это не product_family=Хлопок."
+  - "Вариант товара: если вопрос называет конкретное написание, сорт, марку или класс («сахар белый», «АИ-92», «М00К», «4-класс»), вызвать resolve(kind=product_variant) и фильтровать filters.product_variants по всем возвращённым подходящим написаниям; канонический products=[...] — когда товар назван в общем."
+  - "Брокер «как брокер продавца и как брокер покупателя» (отдельно по сторонам) — group_by=broker_side с filters.brokers=[код]; только одна сторона — filters.seller_brokers или filters.buyer_brokers; «участвовал в сделках» без стороны — filters.brokers."
+  - "«Сколько разных / различных / уникальных X», «nechta turli X» — мера distinct_* (distinct_buyers, distinct_sellers, distinct_products, distinct_regions, distinct_*_brokers) без group_by."
+  - "«Наименьший / меньше всего / самый дешёвый / eng kam / eng arzon» — рейтинг с order=asc (NULL всегда в конце)."
+  - "«Доля / процент X от всех сделок» — share_pct с share_of {field, value}: знаменатель — все сделки выборки, включая аннулированные, если не задан фильтр statuses; доля аннулированных — cancelled_pct."
+  - "«Изменение в % / рост / падение по сравнению с прошлым годом» — compare_periods из двух периодов (без year в filters); change_pct — изменение второго периода к первому, %."
+  - "Регион покупателя/продавца по месту регистрации компании (participants.region) — filters.buyer_regions / seller_regions (значения из resolve(region)); filters.regions — регион склада."
+  - "Вид деятельности компании (Кластер, Транспортная компания ...) — registry_count.activity для числа компаний, filters.buyer_activities / seller_activities для сделок."
+  - "Категория, отрасль, группа (по контракту), базис поставки, упаковка, код ТН ВЭД, единица измерения — только точные значения из каталога значений."
+  - "Просрочка оплаты (late_payment_count): оплачено позже deal_date + payment_term_days или не оплачено, а срок истёк до 30.10.2026 (в данных = аннулированные). Просрочка поставки: delivery_date > payment_date + delivery_term_days."
+  - "Если в вопросе есть условие, которое форма не может выразить, — declare_unanswerable; никогда не отбрасывать условие."
 
 ambiguities:
   status_scope:
@@ -131,6 +144,9 @@ ambiguities:
   product_scope:
     when: "«хлопок», «paxta» без уточнения"
     default: "хлопок-сырец (products=[Хлопок-сырец]); если вопрос о всей хлопковой продукции — product_family=Хлопок с group_by=product"
+  price_average:
+    when: "«средняя цена», «o‘rtacha narx» без уточнения «взвешенная» или «простое среднее»"
+    default: "обе меры: avg_price_uzs_per_kg (взвешенная: сумма ÷ объём, за кг) и mean_deal_price_uzs_per_t (простое среднее цен сделок, за тонну)"
   role:
     when: "«торговала больше всего», «eng ko‘p savdo qilgan» без указания покупатель/продавец"
     default: "group_by=participant (отдельно покупатели и продавцы)"
@@ -144,7 +160,11 @@ glossary:
   - "STIR / ИНН → inn"
   - "summa, qiymat / сумма, стоимость → amount_uzs | amount_usd"
   - "hajm, miqdor, tonna / объём, количество, тонн → volume_tonnes | volume"
-  - "narx / цена → unit_price | avg_price_uzs_per_kg"
+  - "narx / цена → unit_price | avg_price_uzs_per_kg + mean_deal_price_uzs_per_t; mediana / медиана → median_price_uzs_per_kg"
+  - "eng arzon, eng kam / самый дешёвый, меньше всего → order=asc"
+  - "turli, xil / разных, различных, уникальных → distinct_*"
+  - "ulush, foiz / доля, процент → share_pct"
+  - "kechikish / просрочка, задержка → late_delivery_count, avg_delivery_delay_days, late_payment_count"
   - "eksport / экспорт → contract_type=Экспортный; ichki / внутренний → Внутренний"
   - "bekor qilingan / аннулирован → is_cancelled"
   - "viloyat, hudud / регион, область → region"

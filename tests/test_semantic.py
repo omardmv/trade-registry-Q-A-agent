@@ -67,3 +67,25 @@ def test_every_example_spec_compiles_and_explains(db):
         if ex.spec is not None:
             compiled = compile_spec(parse_spec(ex.spec))
             db.explain(compiled.sql)
+
+
+def test_example_entities_exist_and_queries_return_data(db):
+    from app.agent.writer import period_error
+    from app.compiler.spec import entity_values
+    from app.resolve import Resolver
+    resolver = Resolver(db)
+    for ex in ExampleStore.from_yaml(config.EXAMPLES_PATH).examples:
+        if ex.spec is None:
+            continue
+        spec = parse_spec(ex.spec)
+        assert period_error(ex.question, spec) is None, ex.question
+        for kind, value in entity_values(spec):
+            if kind in ("inn", "broker", "contract", "deal"):
+                assert resolver.exists(kind, value), (ex.question, value)
+            elif kind == "product_variant":
+                assert db.query("SELECT 1 FROM deals WHERE product_name_full = ? LIMIT 1", [value]).rows, value
+            else:
+                col = {"product": "product_canonical", "product_family": "product_family", "region": "region"}[kind]
+                assert db.query(f"SELECT 1 FROM contracts WHERE {col} = ? LIMIT 1", [value]).rows, (ex.question, value)
+        res = db.query(compile_spec(spec).sql)
+        assert res.rows and any(c is not None for c in res.rows[0]), ex.question

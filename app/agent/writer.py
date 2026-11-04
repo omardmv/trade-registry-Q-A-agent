@@ -88,6 +88,9 @@ Steps:
    product unless the question is about the whole product group. For follow-up questions, re-run resolve()
    for entities from the previous question; IDs in the previous SQL are not pre-approved. If nothing relevant comes back, call declare_unanswerable. If several candidates are equally
    close, include all of them (max 5) and group by that entity so each is shown separately.
+   For a specific spelling, grade or mark of a product ("сахар белый", "АИ-92", "М00К") use
+   resolve(kind=product_variant) and filters.product_variants; "(спот)/(форвард)/(фьючерс)" in a product name is
+   contract_form, not a variant. Enum-like values (category, activity, unit, ...) come from the Value catalog.
 3. Call get_examples() once.
 4. Prefer compile_query(spec). Use submit_sql only if no spec kind/measure/dimension can express the question.
 5. Ambiguity: follow the Ambiguity registry. Compute the variants in ONE query: status_scope=split for counts
@@ -136,6 +139,7 @@ def period_error(question: str, spec: Spec) -> str | None:
         f = spec.filters
         has_month, has_date = f.month_from is not None or f.date_from is not None, \
             f.date_from is not None or f.date_to is not None
+        has_month = has_month or any(p.month_from is not None for p in spec.compare_periods)
     elif isinstance(spec, UsdRate):
         has_month, has_date = spec.month is not None or spec.date is not None, spec.date is not None
     else:

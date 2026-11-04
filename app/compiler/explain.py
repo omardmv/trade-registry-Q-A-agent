@@ -18,6 +18,7 @@ _T = {
         "usd_converted": "суммы в долларах (сумовые сделки пересчитаны по курсу на дату сделки)",
         "broker_both_sides": "брокер учитывается и со стороны продавца, и со стороны покупателя",
         "role_split": "отдельно как покупатель и как продавец",
+        "broker_side_split": "отдельно как брокер продавца и как брокер покупателя",
         "volume_by_unit": "объём по единицам измерения", "ranked_top": "топ-{n}",
         "cancelled_share": "доля аннулированных — от всех сделок",
         "data_until": " (данные до 30.10.2026)",
@@ -55,6 +56,7 @@ _T = {
         "m_delivered_volume": "поставленный объём = поставлено лотов × лот, по единицам измерения",
         "m_undelivered_volume": "не поставлено = (куплено − поставлено лотов) × лот, по единицам измерения",
         "m_distinct_brokers": "число различных брокеров с любой стороны сделки",
+        "m_distinct_buyers": "число различных покупателей", "m_distinct_sellers": "число различных продавцов",
         "m_distinct_products": "число различных товаров", "m_distinct_regions": "число различных регионов",
         "m_distinct_seller_brokers": "число различных брокеров продавцов",
         "m_distinct_buyer_brokers": "число различных брокеров покупателей",
@@ -78,6 +80,7 @@ _T = {
         "usd_converted": "summalar dollarda (so‘mdagi bitimlar bitim sanasidagi kurs bo‘yicha)",
         "broker_both_sides": "broker sotuvchi va xaridor tomonida ham hisobga olingan",
         "role_split": "xaridor va sotuvchi sifatida alohida",
+        "broker_side_split": "sotuvchi brokeri va xaridor brokeri sifatida alohida",
         "volume_by_unit": "hajm o‘lchov birliklari bo‘yicha", "ranked_top": "eng yaxshi {n} ta",
         "cancelled_share": "bekor qilinganlar ulushi — barcha bitimlardan",
         "data_until": " (ma’lumotlar 30.10.2026 gacha)",
@@ -117,6 +120,7 @@ _T = {
         "m_delivered_volume": "yetkazilgan hajm = yetkazilgan lotlar × lot, birliklar bo‘yicha",
         "m_undelivered_volume": "yetkazilmagan hajm = (sotib olingan − yetkazilgan lotlar) × lot, birliklar bo‘yicha",
         "m_distinct_brokers": "bitimning istalgan tomonidagi turli brokerlar soni",
+        "m_distinct_buyers": "turli xaridorlar soni", "m_distinct_sellers": "turli sotuvchilar soni",
         "m_distinct_products": "turli tovarlar soni", "m_distinct_regions": "turli hududlar soni",
         "m_distinct_seller_brokers": "turli sotuvchi brokerlari soni",
         "m_distinct_buyer_brokers": "turli xaridor brokerlari soni",
@@ -129,7 +133,7 @@ _T = {
 
 # Compiler note codes (app/compiler/sql.py) that are rendered as fixed phrases.
 _NOTE_KEYS = ("excluded_cancelled", "all_statuses", "status_split", "uzs_converted", "usd_converted",
-              "broker_both_sides", "role_split", "volume_by_unit")
+              "broker_both_sides", "role_split", "volume_by_unit", "broker_side_split")
 # Status phrases describe the row set; a cancelled_pct-only query always runs over all deals.
 _STATUS_NOTES = ("excluded_cancelled", "all_statuses", "status_split")
 # list filter -> phrase key

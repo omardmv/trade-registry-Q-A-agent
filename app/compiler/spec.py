@@ -22,7 +22,7 @@ DIMENSIONS = ("buyer", "seller", "participant", "seller_broker", "buyer_broker",
               "trade_type", "status", "unit", "contract", "deal",
               "category", "industry", "product_group", "delivery_basis", "packaging", "hs_code",
               "product_variant", "quarter", "hour", "buyer_region", "seller_region", "buyer_activity",
-              "seller_activity")
+              "seller_activity", "broker_side")
 TIME_DIMENSIONS = ("month", "year", "quarter", "hour")
 ORDERS = ("desc", "asc")
 SHARE_FIELDS = ("contract_form", "contract_type", "trade_type", "status")
@@ -381,7 +381,7 @@ def _parse_aggregate(d: dict) -> DealsAggregate:
     if group_by is not None:
         _enum(group_by, DIMENSIONS, "group_by")
     top = _opt_int(d, "top")
-    if group_by and top is None and group_by not in TIME_DIMENSIONS:
+    if group_by and top is None and group_by not in TIME_DIMENSIONS + ("broker_side",):
         top = 3
     if top is not None and not 1 <= top <= 20:
         raise SpecError("top must be 1..20")
@@ -412,6 +412,12 @@ def _parse_aggregate(d: dict) -> DealsAggregate:
             raise SpecError("with compare_periods put the periods only in compare_periods, not in filters")
         if periods[0] == periods[1]:
             raise SpecError("compare_periods needs two different periods")
+    if group_by == "broker_side":
+        if not f.brokers or f.seller_brokers or f.buyer_brokers:
+            raise SpecError("group_by=broker_side needs filters.brokers (the broker codes to split by side) and "
+                            "no seller_brokers / buyer_brokers")
+        if top is not None or order != "desc":
+            raise SpecError("group_by=broker_side is not a ranking: do not set top or order")
     return DealsAggregate(measures, f, group_by, top, scope, order, share_of, periods)
 
 

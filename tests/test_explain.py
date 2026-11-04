@@ -231,3 +231,9 @@ def test_registry_count_rendered():
                                "registered_year": 2023}), [], "ru")
     assert text == ("Расчёт: контракты; товар: Карбамид; форма: Спот; продавец ИНН 975923536; "
                     "действует на 01.05.2024; зарегистрирован в 2023 году.")
+
+
+def test_broker_side_rendered():
+    text = _explain({"kind": "deals_aggregate", "measures": ["deal_count"], "group_by": "broker_side",
+                     "filters": {"brokers": ["BK045"]}}, "ru")
+    assert "отдельно как брокер продавца и как брокер покупателя" in text
