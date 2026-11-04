@@ -26,9 +26,9 @@ TIMEOUT = {
 }
 RESULT_HEADER = {"ru": "Результат запроса:", "uz": "So‘rov natijasi:", "uz-Cyrl": "Сўров натижаси:"}
 PARTIAL = {
-    "ru": "Показаны первые {n} строк.",
-    "uz": "Dastlabki {n} ta qator ko‘rsatilgan.",
-    "uz-Cyrl": "Дастлабки {n} та қатор кўрсатилган.",
+    "ru": "Результат запроса неполный: показаны не все строки.",
+    "uz": "So‘rov natijasi to‘liq emas: barcha qatorlar ko‘rsatilmagan.",
+    "uz-Cyrl": "Сўров натижаси тўлиқ эмас: барча қаторлар кўрсатилмаган.",
 }
 
 
@@ -49,8 +49,8 @@ def timeout(lang: str) -> str:
     return TIMEOUT[_lang(lang)]
 
 
-def partial_note(lang: str, n: int) -> str:
-    return PARTIAL[_lang(lang)].format(n=n)
+def partial_note(lang: str) -> str:
+    return PARTIAL[_lang(lang)]
 
 
 def table_answer(lang: str, columns: list[str], rows: list[tuple], explanation: str = "") -> str:

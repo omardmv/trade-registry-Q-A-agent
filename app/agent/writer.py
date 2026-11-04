@@ -4,6 +4,7 @@ import time
 from dataclasses import asdict, dataclass, field
 from typing import Literal
 
+from app import config
 from app.agent.llm import LLM, ToolSpec
 from app.agent.validators import is_grounded, validate_sql
 from app.compiler.spec import (CONTRACT_FORMS, CONTRACT_TYPES, DIMENSIONS, MEASURES, REGISTRY_ENTITIES, ROLES,
@@ -118,10 +119,12 @@ class WriterResult:
 
 class Writer:
     def __init__(self, llm: LLM, db: Database, resolver: Resolver, examples: ExampleStore, schema_prompt: str,
-                 max_tool_calls: int = 8, max_fixes: int = 2):
+                 max_tool_calls: int = 8, max_fixes: int = 2,
+                 llm_timeout_s: float = config.LLM_TIMEOUT_S):
         self.llm, self.db, self.resolver, self.examples = llm, db, resolver, examples
         self.system = SYSTEM.format(schema=schema_prompt)
         self.max_tool_calls, self.max_fixes = max_tool_calls, max_fixes
+        self.llm_timeout_s = llm_timeout_s
 
     def run(self, question: str, lang: str, deadline: float, previous: dict | None = None) -> WriterResult:
         allowed: set[tuple[str, str]] = set()
@@ -134,14 +137,14 @@ class Writer:
 
         def send(fn, *args):
             """-> (reply, None) or (None, failed-result); checks the deadline before every send."""
-            if time.monotonic() > deadline:
+            if deadline - time.monotonic() < self.llm_timeout_s:
                 return None, failed("timeout")
             try:
                 return fn(*args), None
             except Exception as e:  # LLMError or transport failure from the chat
                 return None, failed(f"llm error: {e}")
 
-        if time.monotonic() > deadline:
+        if deadline - time.monotonic() < self.llm_timeout_s:
             return failed("timeout")
         try:
             chat = self.llm.start_chat(self.system, TOOLS)

@@ -1,3 +1,5 @@
+import time
+
 from app.agent.writer import WriterResult
 from app.db import QueryResult
 from app.answer import templates
@@ -121,12 +123,59 @@ def test_truncated_result_says_partial():
     llm = FakeLLM(completions=["Первая строка: 1 и 2."])
     r = Pipeline(StubWriter(wr), llm).ask("Покажи список")
     assert r.source == "llm" and r.truncated
-    assert r.answer.endswith("Показаны первые 2 строк.")
+    assert r.answer.endswith("Результат запроса неполный: показаны не все строки.")
     r = Pipeline(StubWriter(wr), FakeLLM(completions=["99", "98"])).ask("Покажи список")
-    assert r.source == "template" and "Показаны первые 2 строк." in r.answer
+    assert r.source == "template" and "Результат запроса неполный" in r.answer
 
 
 def test_partial_note_templates():
-    assert templates.partial_note("ru", 5) == "Показаны первые 5 строк."
-    assert templates.partial_note("uz", 5) == "Dastlabki 5 ta qator ko‘rsatilgan."
-    assert templates.partial_note("uz-Cyrl", 5)
+    assert templates.partial_note("ru") == "Результат запроса неполный: показаны не все строки."
+    assert templates.partial_note("uz") == "So‘rov natijasi to‘liq emas: barcha qatorlar ko‘rsatilmagan."
+    assert templates.partial_note("uz-Cyrl") == "Сўров натижаси тўлиқ эмас: барча қаторлар кўрсатилмаган."
+
+
+class SlowLLM(FakeLLM):
+    def complete(self, system, prompt):
+        time.sleep(0.8)
+        return super().complete(system, prompt)
+
+
+def test_second_compose_skipped_when_it_cannot_fit():
+    llm = SlowLLM(completions=["Заключено 10 500 сделок.", "Заключено 9 912 сделок."])
+    r = Pipeline(StubWriter(ok([(9912, 9300)])), llm, deadline_s=1.0, llm_timeout_s=0.3).ask(Q)
+    assert r.source == "template"
+    assert len(llm.prompts) == 1
+    assert r.timings["total_s"] < 1.2
+
+
+def test_writer_budget_requires_llm_timeout():
+    import app.agent.writer as w
+    from tests.fakes import FakeLLM as F
+    writer = w.Writer(F(), None, None, None, "schema", llm_timeout_s=25.0)
+    res = writer.run("?", "ru", time.monotonic() + 10)
+    assert res.status == "failed" and res.reason == "timeout"
+
+
+def test_label_only_rows_are_no_data():
+    r = Pipeline(StubWriter(ok([("buyer", None), ("seller", None)])), FakeLLM()).ask(Q)
+    assert r.source == "no_data" and not r.answered
+
+
+def test_zero_count_is_a_real_answer():
+    llm = FakeLLM(completions=["Сделок: 0."])
+    r = Pipeline(StubWriter(ok([(0,)], columns=("deals_all",))), llm).ask(Q)
+    assert r.answered and r.source == "llm"
+
+
+def test_empty_llm_text_falls_back_to_template():
+    r = Pipeline(StubWriter(ok([(9912, 9300)])), FakeLLM(completions=["", ""])).ask(Q)
+    assert r.source == "template"
+
+
+def test_verifier_exception_is_failed(monkeypatch):
+    import app.pipeline as pl
+    def boom(*a, **k):
+        raise ValueError("x")
+    monkeypatch.setattr(pl, "verify_answer", boom)
+    r = Pipeline(StubWriter(ok([(9912, 9300)])), FakeLLM(completions=["9 912"])).ask(Q)
+    assert r.source == "failed" and not r.answered
