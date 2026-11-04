@@ -238,3 +238,10 @@ def test_unsupported_vs_gold_uses_gold_cells_and_tolerance():
     assert unsupported_vs_gold("Выручка около 1,84 млн.", "Q?", [], [[1_841_000.0]]) == []
     assert unsupported_vs_gold("Брокер BK007.", "Q?", [["BK007"]], []) == []
     assert unsupported_vs_gold("Выручка 9 млн.", "Q?", [[1_840_000.4]], [[5]]) == ["9 млн"]
+
+
+def test_eval_row_includes_trace():
+    res = AskResult("Нет данных.", "ru", False, "no_data", trace=[{"tool": "declare_unanswerable", "args": {}}])
+    q = {"id": "q", "lang": "ru", "question": "x", "answerable": False}
+    row = evaluate(q, Stub({"x": res}), FakeDb())
+    assert row["result"]["trace"] == [{"tool": "declare_unanswerable", "args": {}}]

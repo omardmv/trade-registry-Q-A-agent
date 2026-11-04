@@ -267,3 +267,15 @@ def test_composer_transient_error_not_retried_without_time():
 
     r = Pipeline(StubWriter(ok([(9912, 9300)])), Slow(), deadline_s=1.0, llm_timeout_s=0.4).ask(Q)
     assert r.source == "template" and Slow.n == 1
+
+
+def test_ask_result_carries_writer_trace():
+    from app.agent.writer import WriterResult
+    from app.pipeline import Pipeline
+
+    class W:
+        def run(self, *a, **k):
+            return WriterResult("unanswerable", reason="x", trace=[{"tool": "declare_unanswerable", "args": {}}])
+
+    res = Pipeline(W(), None).ask("Сколько сделок?")
+    assert res.trace == [{"tool": "declare_unanswerable", "args": {}}]

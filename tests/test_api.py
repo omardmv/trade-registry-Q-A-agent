@@ -76,8 +76,8 @@ def test_internal_fields_not_exposed():
     class Leaky:
         def ask(self, question, previous=None):
             return AskResult("В данных нет ответа.", "ru", False, "failed", reason="llm error: secret internals",
-                             unsupported=["12345"])
+                             unsupported=["12345"], trace=[{"tool": "compile_query", "args": {}}])
 
     body = client(Leaky()).post("/ask", json={"question": "Q?"}).json()
-    assert "reason" not in body and "unsupported" not in body
+    assert "reason" not in body and "unsupported" not in body and "trace" not in body
     assert "secret" not in str(body) and body["answer"] == "В данных нет ответа."

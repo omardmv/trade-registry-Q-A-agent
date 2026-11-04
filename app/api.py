@@ -13,7 +13,7 @@ from app.pipeline import Pipeline, build_pipeline
 
 log = logging.getLogger(__name__)
 app = FastAPI(title="Exchange Q&A")
-INTERNAL_FIELDS = ("reason", "unsupported")
+INTERNAL_FIELDS = ("reason", "unsupported", "trace")
 
 
 class Previous(BaseModel):

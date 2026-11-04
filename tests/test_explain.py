@@ -116,3 +116,23 @@ def test_period_past_data_end_is_flagged():
     assert "данные до" not in ok
     assert "данные до" not in _explain({"kind": "deals_aggregate", "measures": ["deal_count"],
                                         "filters": {"year": 2025}}, "ru")
+
+
+def test_usd_rate_explanations():
+    from app.compiler.spec import parse_spec
+    e = lambda d, lang: explain(parse_spec({"kind": "usd_rate", **d}), [], lang)
+    assert e({"year": 2024, "month": 3}, "ru") == \
+        "Расчёт: курс доллара за 03.2024 (среднее, минимум и максимум по дням)."
+    assert e({"date": "2025-06-15"}, "ru") == "Расчёт: курс доллара на 15.06.2025."
+    assert e({"year": 2024}, "ru") == \
+        "Расчёт: курс доллара за 2024 год (среднее, минимум и максимум по дням)."
+    assert e({"year": 2024, "month": 3}, "uz") == \
+        "Hisob: 03.2024 uchun dollar kursi (kunlar bo‘yicha o‘rtacha, minimal va maksimal)."
+    assert e({"date": "2025-06-15"}, "uz") == "Hisob: 15.06.2025 dagi dollar kursi."
+    assert e({"year": 2024}, "uz") == \
+        "Hisob: 2024-yil uchun dollar kursi (kunlar bo‘yicha o‘rtacha, minimal va maksimal)."
+
+
+def test_contract_lookup_and_registry_have_no_explanation():
+    from app.compiler.spec import parse_spec
+    assert explain(parse_spec({"kind": "contract_lookup", "contract_id": 1}), [], "ru") == ""

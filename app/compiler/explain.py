@@ -1,5 +1,5 @@
 """One-line, deterministic description of what a compiled query computed."""
-from app.compiler.spec import DATA_END, DealsAggregate, Filters, Spec
+from app.compiler.spec import DATA_END, DealsAggregate, Filters, Spec, UsdRate
 
 _T = {
     "ru": {
@@ -20,6 +20,8 @@ _T = {
         "volume_by_unit": "объём по единицам измерения", "ranked_top": "топ-{n}",
         "cancelled_share": "доля аннулированных — от всех сделок",
         "data_until": " (данные до 30.10.2026)",
+        "usd_day": "курс доллара на {d}", "usd_period": "курс доллара {p} (среднее, минимум и максимум по дням)",
+        "usd_year": "за {y} год", "usd_month": "за {m}",
     },
     "uz": {
         "prefix": "Hisob:", "deals": "bitimlar", "all_time": "butun davr uchun (03.01.2022–30.10.2026)",
@@ -39,6 +41,9 @@ _T = {
         "volume_by_unit": "hajm o‘lchov birliklari bo‘yicha", "ranked_top": "eng yaxshi {n} ta",
         "cancelled_share": "bekor qilinganlar ulushi — barcha bitimlardan",
         "data_until": " (ma’lumotlar 30.10.2026 gacha)",
+        "usd_day": "{d} dagi dollar kursi",
+        "usd_period": "{p} dollar kursi (kunlar bo‘yicha o‘rtacha, minimal va maksimal)",
+        "usd_year": "{y}-yil uchun", "usd_month": "{m} uchun",
     },
 }
 
@@ -84,9 +89,17 @@ def explain(spec: Spec, notes: list[str], lang: str) -> str:
 
     Unknown languages fall back to Russian.
     """
+    t = _T["uz"] if lang in ("uz", "uz-Cyrl") else _T["ru"]
+    if isinstance(spec, UsdRate):
+        if spec.date is not None:
+            body = t["usd_day"].format(d=spec.date.strftime("%d.%m.%Y"))
+        elif spec.month is not None:
+            body = t["usd_period"].format(p=t["usd_month"].format(m=f"{spec.month:02d}.{spec.year}"))
+        else:
+            body = t["usd_period"].format(p=t["usd_year"].format(y=spec.year))
+        return f"{t['prefix']} {body}."
     if not isinstance(spec, DealsAggregate):
         return ""
-    t = _T["uz"] if lang in ("uz", "uz-Cyrl") else _T["ru"]
     f = spec.filters
     parts = [f"{t['deals']} {_period(f, t)}"]
     for key, values in (("product", f.products), ("region", f.regions), ("buyer", f.buyer_inns),

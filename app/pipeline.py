@@ -37,6 +37,7 @@ class AskResult:
     unsupported: list[str] = field(default_factory=list)
     reason: str = ""
     timings: dict = field(default_factory=dict)
+    trace: list[dict] = field(default_factory=list)  # writer tool calls (no rows); eval only
 
 
 _MEASURE_COLUMNS = {alias for _, alias in MEASURE_SQL.values()}
@@ -79,6 +80,7 @@ class Pipeline:
             res = AskResult(templates.failed(lang), lang, False, "failed", reason="error: answer stage")
         timings["total_s"] = round(time.monotonic() - t0, 2)
         res.timings = timings
+        res.trace = wr.trace
         return res
 
     def _supported_assumptions(self, assumptions, question, shown, extra) -> list[str]:
