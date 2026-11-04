@@ -305,3 +305,62 @@ def test_rereview_probes(answer, question, rows, extra, row_count, ok):
 def test_third_rereview_probes(answer, question, rows, ok):
     r = verify_answer(answer, question, rows)
     assert r.ok is ok, r.unsupported
+
+
+# --- final review: known-name check and glued codes ---
+from app.text import normalize_name  # noqa: E402
+
+KNOWN = {normalize_name(n) for n in ("Pakhtakor Agro", "Хлопок-сырец", "Пшеница", "Ташкент", "AB")}
+
+
+def test_known_participant_not_in_rows_is_unsupported():
+    v = verify_answer("Больше всех купила «Pakhtakor Agro».", "Кто купил больше всех?",
+                      [("Zarafshon Tex", 5.0)], known_names=KNOWN)
+    assert not v.ok and any("pakhtakor" in u.lower() for u in v.unsupported)
+
+
+def test_known_participant_present_in_rows_ok():
+    v = verify_answer("Больше всех купила Pakhtakor Agro.", "Кто купил больше всех?",
+                      [("Pakhtakor Agro", 5.0)], known_names=KNOWN)
+    assert v.ok, v.unsupported
+
+
+def test_known_name_supported_by_question_or_extra_text():
+    assert verify_answer("Pakhtakor Agro: 5.", "Покупки Pakhtakor Agro?", [(5.0,)], known_names=KNOWN).ok
+    assert verify_answer("Pakhtakor Agro: 5.", "Покупки?", [(5.0,)], extra_text="Pakhtakor Agro",
+                         known_names=KNOWN).ok
+
+
+def test_known_product_family_inflected_not_in_rows_unsupported():
+    v = verify_answer("Объём продаж пшеницы составил 5 тонн.", "Сколько продали?", [("Хлопок-сырец", 5.0)],
+                      known_names=KNOWN)
+    assert not v.ok
+
+
+def test_known_product_in_rows_ok():
+    v = verify_answer("Продано 5 т хлопка-сырца.", "Сколько продали?", [("Хлопок-сырец", 5.0)],
+                      known_names=KNOWN)
+    assert v.ok, v.unsupported
+
+
+def test_short_known_name_ignored():
+    assert verify_answer("Компания AB продала 5.", "Сколько?", [(5.0,)], known_names=KNOWN).ok
+
+
+def test_known_names_optional():
+    assert verify_answer("Pakhtakor Agro: 5.", "Сколько?", [(5.0,)]).ok
+
+
+def test_glued_code_unsupported_when_rows_have_other_grade():
+    v = verify_answer("Продано 5 т бензина АИ95.", "Сколько?", [("АИ-92", 5.0)])
+    assert not v.ok and "АИ95" in v.unsupported
+
+
+def test_glued_code_supported_by_hyphenated_cell():
+    v = verify_answer("Марка М200: 5 т.", "Сколько?", [("Марка М-200", 5.0)])
+    assert v.ok, v.unsupported
+
+
+def test_glued_latin_code_unsupported():
+    v = verify_answer("Товар Agromir3 продан.", "Сколько?", [("Agromir 2", 5.0)])
+    assert not v.ok

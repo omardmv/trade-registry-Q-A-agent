@@ -96,6 +96,15 @@ class Resolver:
             "contract": self._contract,
         }[kind](text, limit)
 
+    def known_names(self) -> frozenset[str]:
+        """Normalized (normalize_name) display names of every company, broker, product, family and region."""
+        raw = [r[1] for r in self._companies] + [r[1] for r in self._brokers]
+        for product_name, canonical, family, _ in self._product_rows:
+            raw += [product_name, canonical, family]
+        for region, region_ru, _ in self._regions:
+            raw += [region, region_ru]
+        return frozenset(n for n in (normalize_name(t) for t in raw if t) if n)
+
     def exists(self, kind: str, value: str) -> bool:
         """Exact existence of an id: kind in inn / broker / contract / deal."""
         if kind == "inn":

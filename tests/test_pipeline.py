@@ -103,8 +103,8 @@ def test_verifier_receives_explanation_text():
 
 def test_assumptions_and_columns_feed_verifier():
     wr = ok([(9912, 9300)])
-    wr.assumptions = ["учтён срок 45 дней"]
-    llm = FakeLLM(completions=["Заключено 9 912 сделок; учтён срок 45 дней."])
+    wr.assumptions = ["учтён 2025 год"]
+    llm = FakeLLM(completions=["Заключено 9 912 сделок; учтён 2025 год."])
     r = Pipeline(StubWriter(wr), llm).ask(Q)
     assert r.source == "llm"
 
@@ -199,3 +199,39 @@ def test_verifier_exception_is_failed(monkeypatch):
     monkeypatch.setattr(pl, "verify_answer", boom)
     r = Pipeline(StubWriter(ok([(9912, 9300)])), FakeLLM(completions=["9 912"])).ask(Q)
     assert r.source == "failed" and not r.answered
+
+
+# --- final review ---
+def test_assumption_with_invented_number_is_dropped_and_not_acceptable():
+    wr = ok([(9912, 9300)])
+    wr.assumptions = ["учтён срок 45 дней", "статус не указан: учтены все сделки"]
+    llm = FakeLLM(completions=["Заключено 9 912 сделок; учтён срок 45 дней.", "Заключено 9 912 сделок."])
+    r = Pipeline(StubWriter(wr), llm).ask(Q)
+    assert r.assumptions == ["статус не указан: учтены все сделки"]
+    assert "45" in llm.prompts[1] and r.source == "llm" and "45" not in r.answer
+    assert "45 дней" not in llm.prompts[0]
+
+
+def test_assumption_supported_by_question_is_kept():
+    wr = ok([(9912, 9300)])
+    wr.assumptions = ["период: октябрь 2025 года"]
+    r = Pipeline(StubWriter(wr), FakeLLM(completions=["Заключено 9 912 сделок."])).ask(Q)
+    assert r.assumptions == ["период: октябрь 2025 года"]
+
+
+def test_resolved_names_feed_verifier():
+    wr = ok([(5.0,)], columns=("volume_t",))
+    wr.resolved_names = ["Хлопок-сырец"]
+    r = Pipeline(StubWriter(wr), FakeLLM(completions=["Продано 5 т товара «Хлопок-сырец»."])).ask("Сколько хлопка?")
+    assert r.source == "llm"
+    r = Pipeline(StubWriter(ok([(5.0,)], columns=("volume_t",))),
+                 FakeLLM(completions=["«Хлопок-сырец»: 5 т.", "5 т."])).ask("Сколько хлопка?")
+    assert r.source == "llm" and r.answer == "5 т."
+
+
+def test_known_names_reach_verifier():
+    from app.text import normalize_name
+    known = {normalize_name("Pakhtakor Agro")}
+    llm = FakeLLM(completions=["Больше всех купила Pakhtakor Agro: 5 т.", "5 т."])
+    r = Pipeline(StubWriter(ok([(5.0,)], columns=("volume_t",))), llm, known_names=known).ask("Кто купил больше?")
+    assert r.source == "llm" and r.answer == "5 т."

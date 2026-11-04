@@ -2,7 +2,6 @@
 import logging
 import time
 from dataclasses import dataclass, field
-from decimal import Decimal
 
 from app import config
 from app.agent.writer import Writer, WriterResult
@@ -56,8 +55,10 @@ def _is_no_data(result, compiled: bool) -> bool:
 
 
 class Pipeline:
-    def __init__(self, writer, llm, deadline_s: float = 75.0, llm_timeout_s: float = config.LLM_TIMEOUT_S):
+    def __init__(self, writer, llm, deadline_s: float = 75.0, llm_timeout_s: float = config.LLM_TIMEOUT_S,
+                 known_names: frozenset[str] | set[str] | None = None):
         self.writer, self.llm = writer, llm
+        self.known_names = known_names
         self.deadline_s, self.llm_timeout_s = deadline_s, llm_timeout_s
 
     def ask(self, question: str, previous: dict | None = None) -> AskResult:
@@ -79,6 +80,21 @@ class Pipeline:
         res.timings = timings
         return res
 
+    def _supported_assumptions(self, assumptions, question, shown, extra) -> list[str]:
+        """Assumptions are model text: keep only those whose numbers/ids/dates/names the data supports."""
+        kept = []
+        for a in assumptions:
+            try:
+                check = verify_answer(a, question, shown, extra_text=extra, known_names=self.known_names)
+            except Exception:
+                log.exception("assumption check crashed")
+                check = None
+            if check is not None and check.ok:
+                kept.append(a)
+            else:
+                log.info("dropping unsupported assumption %r: %s", a, check.unsupported if check else "error")
+        return kept
+
     def _answer(self, question: str, lang: str, wr: WriterResult, deadline: float) -> AskResult:
         if wr.status == "unanswerable":
             return AskResult(templates.no_data(lang), lang, False, "no_data", reason=wr.reason)
@@ -94,10 +110,14 @@ class Pipeline:
                     row_count=len(result.rows), truncated=result.truncated, splits=wr.splits,
                     assumptions=wr.assumptions, explanation=explanation)
         if _is_no_data(result, wr.spec is not None):
+            base["assumptions"] = []
             return AskResult(templates.no_data(lang), answered=False, source="no_data", **base)
 
-        context = " ".join(wr.assumptions) + " " + explanation + " " + " ".join(result.columns)
         shown = result.rows[:MAX_RETURNED_ROWS]  # exactly what the composer sees
+        resolved = " ".join(wr.resolved_names)
+        assumptions = self._supported_assumptions(wr.assumptions, question, shown, explanation + " " + resolved)
+        base["assumptions"] = assumptions
+        context = " ".join(assumptions) + " " + explanation + " " + " ".join(result.columns) + " " + resolved
         count = None if result.truncated or len(result.rows) > MAX_RETURNED_ROWS else len(result.rows)
         tail = templates.partial_note(lang) if result.truncated else ""
         feedback = None
@@ -108,11 +128,12 @@ class Pipeline:
             try:
                 text = compose(self.llm, question=question, lang=lang, sql=wr.sql, columns=result.columns,
                                rows=result.rows, row_count=len(result.rows), truncated=result.truncated,
-                               splits=wr.splits, assumptions=wr.assumptions, feedback=feedback)
+                               splits=wr.splits, assumptions=assumptions, feedback=feedback)
             except Exception:
                 log.exception("composer failed")
                 break
-            check = verify_answer(text, question, shown, extra_text=context, row_count=count)
+            check = verify_answer(text, question, shown, extra_text=context, row_count=count,
+                                  known_names=self.known_names)
             if check.ok and text:
                 answer = "\n\n".join(p for p in (text, explanation, tail) if p)
                 return AskResult(answer, answered=True, source="llm", verified=True, **base)
@@ -132,7 +153,8 @@ def build_pipeline() -> Pipeline:
 
     db = Database(config.DB_PATH)
     llm = GeminiLLM(config.GEMINI_API_KEY, config.GEMINI_MODEL, config.LLM_TIMEOUT_S)
-    writer = Writer(llm, db, Resolver(db), ExampleStore.from_yaml(config.EXAMPLES_PATH),
+    resolver = Resolver(db)
+    writer = Writer(llm, db, resolver, ExampleStore.from_yaml(config.EXAMPLES_PATH),
                     render_schema_prompt(load_semantic()), config.MAX_TOOL_CALLS, config.MAX_FIX_RETRIES,
                     config.LLM_TIMEOUT_S)
-    return Pipeline(writer, llm, config.DEADLINE_S, config.LLM_TIMEOUT_S)
+    return Pipeline(writer, llm, config.DEADLINE_S, config.LLM_TIMEOUT_S, resolver.known_names())

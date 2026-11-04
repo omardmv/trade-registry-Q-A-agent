@@ -59,7 +59,9 @@ def test_participant_normalized_name_and_counts(con):
     name_norm, buyer, seller = one(con, """SELECT name_norm, deals_as_buyer, deals_as_seller
                                            FROM participants WHERE inn = '915688255'""")
     assert name_norm == "harayom kimyo"
-    assert buyer + seller >= 0
+    exp_buyer = one(con, "SELECT COUNT(*) FROM deals WHERE buyer_inn = '915688255'")[0]
+    exp_seller = one(con, "SELECT COUNT(*) FROM deals WHERE seller_inn = '915688255'")[0]
+    assert (buyer, seller) == (exp_buyer, exp_seller)
 
 
 def test_mass_volume_in_tonnes(con):

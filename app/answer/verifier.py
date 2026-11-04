@@ -47,8 +47,45 @@ def _month_years(text: str) -> set[tuple[int, int]]:
     return found
 
 
+_MIN_NAME_CHARS = 6
+_SAFE_GLUED = {"m2", "m3", "km2", "sm2", "sm3", "mm2", "mm3", "q1", "q2", "q3", "q4", "h1", "h2", "co2", "h2o"}
+
+
+def _tok_match(g: str, w: str) -> bool:
+    """Name token g matches answer token w: equal, or alphabetic words of 5+ chars differing only in the ending."""
+    if g == w:
+        return True
+    if len(g) < 5 or not g.isalpha() or not w.isalpha() or abs(len(g) - len(w)) > 3:
+        return False
+    n = max(3, len(g) - 3)
+    return w[:n] == g[:n]
+
+
+def _find_name(name: list[str], tokens: list[str]) -> bool:
+    k = len(name)
+    return any(all(_tok_match(g, w) for g, w in zip(name, tokens[i:i + k])) for i in range(len(tokens) - k + 1))
+
+
+def _unsupported_known_names(answer: str, supports: list[str], known_names) -> list[str]:
+    a_tokens = normalize_name(answer).split()
+    prefixes = {t[:3] for t in a_tokens}
+    s_tokens = [normalize_name(t).split() for t in supports]
+    out = []
+    for name in known_names:
+        toks = name.split()
+        if not toks or (len(toks) < 2 and len(name) < _MIN_NAME_CHARS) or toks[0][:3] not in prefixes:
+            continue
+        if _find_name(toks, a_tokens) and not any(_find_name(toks, st) for st in s_tokens):
+            out.append(name)
+    return out
+
+
+def _spaced(norm: str) -> str:
+    return re.sub(r"(?<=[a-z])(?=\d)|(?<=\d)(?=[a-z])", " ", norm)
+
+
 def verify_answer(answer: str, question: str, rows: list[tuple], extra_text: str = "",
-                  row_count: int | None = None) -> Verification:
+                  row_count: int | None = None, known_names=None) -> Verification:
     numbers: list[float] = [] if row_count is None else [float(row_count)]
     month_years: set[tuple[int, int]] = set()
     dates: set[str] = set(_ALWAYS_DATES)
@@ -83,9 +120,12 @@ def verify_answer(answer: str, question: str, rows: list[tuple], extra_text: str
         month_years |= _month_years(context)
         ids |= set(extract_ids(context))
     text_hay = [f" {normalize_text(t)} " for t in [*cells, question, extra_text]]
+    spaced_hay = [_spaced(h) for h in text_hay]
     name_hay = [_padded(c) for c in cells] + [_padded(question), _padded(extra_text)]
 
     unsupported: list[str] = []
+    if known_names:
+        unsupported += _unsupported_known_names(answer, [*cells, question, extra_text], known_names)
     for d in extract_dates(answer):
         if d not in dates:
             unsupported.append(d)
@@ -123,6 +163,12 @@ def verify_answer(answer: str, question: str, rows: list[tuple], extra_text: str
         if UNIT_AFTER_RE.match(scrubbed, m.end()):
             return m.group(0)
         if any(f" {norm} " in hay for hay in text_hay):
+            return " "
+        glued = _spaced(norm)
+        if glued != norm and norm not in _SAFE_GLUED:  # АИ95, М500, Agromir3: letters and digits glued
+            if any(f" {glued} " in hay for hay in spaced_hay):
+                return " "
+            unsupported.append(m.group(0).rstrip(".,"))
             return " "
         return m.group(0)
 
