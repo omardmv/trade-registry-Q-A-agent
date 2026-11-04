@@ -140,3 +140,51 @@ def test_round_trip_filter_qualify_cast_explain(db):
            "FROM deals QUALIFY ROW_NUMBER() OVER (ORDER BY deal_id) = 1")
     r = v(sql, db=db)
     assert r.ok, r.errors
+
+
+REJECTED_2 = [
+    # case
+    "SELECT 1 FROM participants WHERE NAME = 'x'",
+    'SELECT 1 FROM participants WHERE "Name" LIKE \'%x%\'',
+    "SELECT 1 FROM deals WHERE REGION = 'Atlantis'",
+    "SELECT SUM(AMOUNT) FROM deals",
+    # aliases
+    "WITH t AS (SELECT amount AS a FROM deals) SELECT SUM(a) FROM t",
+    "SELECT SUM(a) FROM (SELECT unit_price AS a FROM deals)",
+    "WITH t AS (SELECT name AS n FROM participants) SELECT * FROM t WHERE n = 'x'",
+    "SELECT name AS n FROM participants WHERE n = 'x'",
+    "SELECT * FROM (SELECT region AS r FROM deals) WHERE r = 'Atlantis'",
+    "SELECT * FROM (SELECT buyer_inn AS b FROM deals) WHERE b = '12345678' || '9'",
+    # CASE / IF
+    "SELECT SUM(CASE WHEN region = 'Atlantis' THEN 1 END) FROM deals",
+    "SELECT SUM(CASE WHEN contains(name, 'X') THEN 1 ELSE 0 END) FROM participants",
+    "SELECT IF(region = 'Atlantis', 1, 0) FROM deals",
+    # currency conjunct
+    "SELECT SUM(amount) FROM deals WHERE currency = 'UZS' OR currency = 'USD'",
+    "SELECT SUM(amount) FROM deals WHERE NOT currency = 'UZS'",
+]
+
+
+@pytest.mark.parametrize("sql", REJECTED_2)
+def test_second_review_rejected(sql):
+    assert not v(sql).ok
+
+
+ACCEPTED_2 = [
+    "SELECT Currency, SUM(Amount) FROM deals GROUP BY CURRENCY",
+    "SELECT p.name AS buyer_name, SUM(d.amount_uzs) AS total FROM deals d "
+    "JOIN participants p ON p.inn = d.buyer_inn GROUP BY p.name ORDER BY total DESC",
+    "WITH t AS (SELECT buyer_inn, SUM(amount_uzs) AS total FROM deals GROUP BY buyer_inn) "
+    "SELECT * FROM t WHERE total > 0",
+    "SELECT SUM(CASE WHEN region = 'Samarqand viloyati' THEN 1 END) FROM deals",
+    "SELECT 1 FROM deals WHERE region = ('Samarqand viloyati')",
+    "SELECT currency, SUM(amount) FROM deals GROUP BY 1",
+    "SELECT currency, SUM(amount) FROM deals GROUP BY ALL",
+    "SELECT SUM(amount) FROM deals WHERE year = 2025 AND currency = 'UZS'",
+]
+
+
+@pytest.mark.parametrize("sql", ACCEPTED_2)
+def test_second_review_accepted(sql):
+    r = v(sql, allowed={"Samarqand viloyati"})
+    assert r.ok, r.errors
