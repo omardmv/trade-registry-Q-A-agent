@@ -344,3 +344,28 @@ def test_tables_and_ctes_still_joinable():
            "JOIN (SELECT deal_id FROM deals) s ON s.deal_id = d.deal_id")
     r = v(sql)
     assert r.ok, r.errors
+
+
+@pytest.mark.parametrize("sql", [
+    "SELECT COUNT(*) FROM deals WHERE contract_id IN (SELECT 123456)",
+    "SELECT COUNT(*) FROM deals d JOIN (SELECT 123456 AS c) x ON d.contract_id = x.c",
+    "WITH k AS (SELECT 100005 AS c) SELECT COUNT(*) FROM deals d WHERE d.contract_id IN (SELECT c FROM k)",
+    "SELECT COUNT(*) FROM deals WHERE deal_id IN (SELECT 100000 + 5)",
+    "SELECT COUNT(*) FROM deals WHERE seller_inn IN (SELECT concat(97592353, 6))",
+    "SELECT COUNT(*) FROM deals d JOIN (SELECT 123456 AS contract_id) x USING (contract_id)",
+])
+def test_untraced_id_comparisons_rejected(sql):
+    assert not v(sql, question="Сколько сделок?").ok
+
+
+@pytest.mark.parametrize("sql", [
+    "SELECT COUNT(*) AS n FROM deals d JOIN contracts c ON d.contract_id = c.contract_id",
+    "SELECT COUNT(*) AS n FROM deals d JOIN participants p ON p.inn = d.buyer_inn",
+    "SELECT COUNT(*) AS n FROM deals WHERE region IN (SELECT region FROM deals WHERE year = 2025)",
+    "WITH t AS (SELECT buyer_inn, SUM(amount_uzs) AS total FROM deals GROUP BY buyer_inn) "
+    "SELECT * FROM t JOIN participants p ON p.inn = t.buyer_inn",
+    "SELECT COUNT(*) AS n FROM deals d JOIN contracts c USING (contract_id)",
+])
+def test_traced_id_comparisons_accepted(sql):
+    r = v(sql)
+    assert r.ok, r.errors

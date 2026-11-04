@@ -132,12 +132,20 @@ def validate_sql(sql: str, allowed: set[tuple[str, str]], question: str, db: Dat
         if _n(col) in _ID_ONLY_COLUMNS and _id_column_free_use(col):
             continue
         ok, literals = _check_comparison(col)
+        if ok and _untraced_comparison(col, bases):
+            errors.append(f"compare {_n(col)} only to resolved values or to another id column")
+            continue
         if not ok:
             errors.append(f"compare {_n(col)} only with = / IN to values from resolve()")
         elif check_ids:
             for value in literals:
                 if unresolved(value, _COLUMN_KIND[_n(col)]):
                     errors.append(f"{_n(col)} = {value!r} was not returned by resolve() in this request")
+    for join in stmt.find_all(exp.Join):
+        for ident in join.args.get("using") or []:
+            name = ident.name.lower()
+            if name in RESOLVED_COLUMNS and _using_side_untraced(join.this, name, stmt, aliases):
+                errors.append(f"compare {name} only to resolved values or to another id column")
     if check_ids:
         if any(True for _ in stmt.find_all(exp.Values)) or any(
                 not _is_top_level(sel) and _builds_string(sel) for sel in stmt.find_all(exp.Select)):
@@ -289,6 +297,55 @@ def _is_top_level(sel: exp.Select) -> bool:
             return False
         node = parent
     return True
+
+
+def _select_branches(node: exp.Expression):
+    while isinstance(node, (exp.Subquery, exp.Paren)):
+        node = node.this
+    if isinstance(node, exp.SetOperation):
+        yield from _select_branches(node.this)
+        yield from _select_branches(node.args["expression"])
+    elif isinstance(node, exp.Select):
+        yield node
+
+
+def _untraced_comparison(col: exp.Column, bases) -> bool:
+    """True if col is compared to a subquery column or another column not traceable to a resolved column."""
+    top: exp.Expression = col
+    while isinstance(top.parent, _WRAPPERS):
+        top = top.parent
+    parent = top.parent
+    if isinstance(parent, (exp.EQ, exp.NEQ)):
+        other = _unwrap(parent.args["expression"] if parent.this is top else parent.this)
+        return isinstance(other, exp.Column) and not (bases(other) & RESOLVED_COLUMNS)
+    if isinstance(parent, exp.In) and parent.this is top and parent.args.get("query") is not None:
+        for sel in _select_branches(parent.args["query"]):
+            for item in sel.expressions:
+                item = _unwrap(_strip_alias(item))
+                if not (isinstance(item, exp.Column) and bases(item) & RESOLVED_COLUMNS):
+                    return True
+        return False
+    return False
+
+
+def _using_side_untraced(source, name, stmt, aliases) -> bool:
+    node = source
+    if isinstance(node, exp.Table):
+        cte = next((c for c in stmt.find_all(exp.CTE) if c.alias_or_name.lower() == node.name.lower()), None)
+        if cte is None:
+            return False
+        node = cte.this
+    if not isinstance(node, (exp.Subquery, exp.Select, exp.SetOperation)):
+        return False
+    for sel in _select_branches(node):
+        for item in sel.expressions:
+            if item.alias_or_name.lower() != name:
+                continue
+            inner = _unwrap(_strip_alias(item))
+            if not (isinstance(inner, exp.Column)
+                    and ((aliases.get(inner.name.lower(), set()) | {inner.name.lower()}) & RESOLVED_COLUMNS)):
+                return True
+    return False
 
 
 def _folds_case(node: exp.Expression) -> bool:
