@@ -201,3 +201,40 @@ def test_gold_error_excluded_from_answered_wrong(monkeypatch, tmp_path, capsys):
     out = capsys.readouterr().out
     s = json.loads(out[out.index("{"):])
     assert s["errors"] == 1 and s["answered_wrong"] == 0
+
+
+def test_unsupported_vs_gold_flagged_and_fails_exit(monkeypatch, tmp_path, capsys):
+    import json
+    import eval.run as run
+
+    pipe = Stub({
+        "good": AskResult("Оплачено 5 854 сделки.", "ru", True, "compiled", columns=["paid"], rows=[[5854]],
+                          explanation="Расчёт: сделки за 10.2025; все сделки."),
+        "inv": AskResult("Оплачено 5 854 сделки, из них 321 через брокера BK042.", "ru", True, "compiled",
+                         columns=["paid"], rows=[[5854]]),
+    })
+    db = FakeDb()
+    good = evaluate(_q("a", True, "good"), pipe, db)
+    assert good["unsupported_vs_gold"] == []
+    inv = evaluate(_q("b", True, "inv"), pipe, db)
+    assert "321" in inv["unsupported_vs_gold"] and "BK042" in inv["unsupported_vs_gold"]
+
+    monkeypatch.setattr(run, "build_pipeline", lambda: pipe)
+    monkeypatch.setattr(run, "Database", lambda path: db)
+    monkeypatch.setattr(run.yaml, "safe_load", lambda f: [_q("a", True, "good"), _q("b", True, "inv")])
+    monkeypatch.setattr(run.config, "ROOT", tmp_path)
+    (tmp_path / "eval").mkdir()
+    (tmp_path / "eval" / "questions.yaml").write_text("x", encoding="utf-8")
+    monkeypatch.setattr("sys.argv", ["eval.run"])
+    assert run.main() == 1
+    out = capsys.readouterr().out
+    summary = json.loads(out[out.index("{"):])
+    assert summary["hallucinations_vs_gold"] == 1 and summary["hallucinations"] == 0
+
+
+def test_unsupported_vs_gold_uses_gold_cells_and_tolerance():
+    from eval.run import unsupported_vs_gold
+    assert unsupported_vs_gold("Выручка около 1,84 млн.", "Q?", [[1_840_000.4]], []) == []
+    assert unsupported_vs_gold("Выручка около 1,84 млн.", "Q?", [], [[1_841_000.0]]) == []
+    assert unsupported_vs_gold("Брокер BK007.", "Q?", [["BK007"]], []) == []
+    assert unsupported_vs_gold("Выручка 9 млн.", "Q?", [[1_840_000.4]], [[5]]) == ["9 млн"]

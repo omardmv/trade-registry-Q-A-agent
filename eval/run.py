@@ -6,11 +6,12 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
+from decimal import Decimal
 
 import yaml
 
 from app import config
-from app.answer.numbers import extract_numbers
+from app.answer.numbers import extract_ids, extract_numbers, strip_structural
 from app.db import Database, to_jsonable
 from app.pipeline import build_pipeline
 from app.text import normalize_name
@@ -66,6 +67,36 @@ def value_in_rows_top1(gold, columns, rows) -> bool:
     return value_in_rows(gold, firsts)
 
 
+def unsupported_vs_gold(answer: str, question: str, gold_rows, res_rows, explanation: str = "") -> list[str]:
+    """Numbers and IDs of the answer text found neither in the gold rows, the returned rows nor the question.
+
+    The appended explanation sentence is not part of the model's claims and is removed first; list markers and
+    ranks are structural (as in the verifier)."""
+    text = answer.replace(explanation, " ") if explanation else answer
+    numbers: list[float] = []
+    ids: set[str] = set()
+    for context in (question,):
+        numbers += [t.value for t in extract_numbers(context)]
+        ids |= set(extract_ids(context))
+    for row in [*gold_rows, *res_rows]:
+        for cell in row:
+            if cell is None or isinstance(cell, bool):
+                continue
+            if isinstance(cell, (int, float, Decimal)):
+                numbers.append(float(cell))
+            elif isinstance(cell, dt.date):
+                numbers += [cell.day, cell.month, cell.year]
+            else:
+                numbers += [t.value for t in extract_numbers(str(cell))]
+                ids |= set(extract_ids(str(cell)))
+                if str(cell).isdigit():
+                    ids.add(str(cell))
+    bad = [i for i in extract_ids(text) if i not in ids]
+    bad += [t.text.rstrip(".") for t in extract_numbers(strip_structural(text))
+            if not any(abs(t.value - v) <= t.tolerance + 1e-9 * abs(v) for v in numbers)]
+    return bad
+
+
 def evaluate(q: dict, pipeline, db: Database) -> dict:
     t0 = time.monotonic()
     row = {"id": q["id"], "lang": q["lang"], "question": q["question"], "answerable": q["answerable"]}
@@ -93,6 +124,8 @@ def evaluate(q: dict, pipeline, db: Database) -> dict:
             row["sql_ok"] = res.answered and all(value_in_rows(v, res.rows) for v in flat)
         row["answer_ok"] = res.answered and res.verified and all(value_in_text(v, res.answer) for v in flat)
         row["hallucination"] = res.answered and not res.verified
+        row["unsupported_vs_gold"] = unsupported_vs_gold(
+            res.answer, q["question"], gold.rows, res.rows, res.explanation) if res.answered else []
     else:
         row["sql_ok"] = None
         row["answer_ok"] = not res.answered
@@ -117,7 +150,7 @@ def main() -> int:
     for r in rows:
         mark = lambda v: "-" if v is None else ("ok" if v else "FAIL")
         print(f"{r['id']} {r['lang']} sql={mark(r['sql_ok']):4} answer={mark(r['answer_ok']):4} "
-              f"halluc={'YES' if r['hallucination'] else 'no':3} {r['latency_s']:5.1f}s "
+              f"halluc={'YES' if r['hallucination'] else 'no':3} vs_gold={len(r.get('unsupported_vs_gold') or [])} {r['latency_s']:5.1f}s "
               f"[{r['result']['source']}] {r['question'][:60]}" + (f" ERROR {r['error']}" if r.get("error") else ""))
     answerable = [r for r in rows if r["answerable"]]
     unanswerable = [r for r in rows if not r["answerable"]]
@@ -128,6 +161,7 @@ def main() -> int:
         "answer_correct": f"{sum(r['answer_ok'] for r in answerable)}/{len(answerable)}",
         "refused_correctly": f"{sum(r['answer_ok'] for r in unanswerable)}/{len(unanswerable)}",
         "hallucinations": sum(r["hallucination"] for r in rows),
+        "hallucinations_vs_gold": sum(1 for r in answerable if r.get("unsupported_vs_gold")),
         "answered_wrong": sum(1 for r in answerable if r["result"].get("answered") and not r["answer_ok"]
                                 and not r.get("gold_error")),
         "errors": sum(1 for r in rows if r.get("error")),
@@ -141,7 +175,7 @@ def main() -> int:
     stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     (out_dir / f"run-{stamp}.json").write_text(
         json.dumps({"summary": summary, "rows": rows}, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
-    bad = summary["hallucinations"] > 0 or (summary["latency_max_s"] or 0) > LATENCY_LIMIT_S
+    bad = summary["hallucinations"] + summary["hallucinations_vs_gold"] > 0 or (summary["latency_max_s"] or 0) > LATENCY_LIMIT_S
     return 1 if bad else 0
 
 
