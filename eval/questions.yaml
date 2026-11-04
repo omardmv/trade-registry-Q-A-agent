@@ -1,6 +1,6 @@
 - {id: q01, lang: ru, answerable: true, question: "Сколько сделок было заключено в октябре 2025 года?", key_columns: [deals_all, deals_valid],
    gold_sql: "SELECT COUNT(*) AS deals_all, COUNT(*) FILTER (WHERE NOT is_cancelled) AS deals_valid FROM deals WHERE year = 2025 AND month = 10"}
-- {id: q02, lang: ru, answerable: true, question: "Какая компания купила больше всего хлопка?", key_columns: [buyer_inn],
+- {id: q02, lang: ru, answerable: true, top1: true, question: "Какая компания купила больше всего хлопка?", key_columns: [buyer_inn],
    gold_sql: "SELECT buyer_inn FROM deals WHERE product_canonical = 'Хлопок-сырец' AND NOT is_cancelled GROUP BY buyer_inn ORDER BY SUM(volume_tonnes) DESC LIMIT 1"}
 - {id: q03, lang: ru, answerable: true, question: "Кто выступал брокером покупателя по сделке 387830?", key_columns: [buyer_broker],
    gold_sql: "SELECT buyer_broker FROM deals WHERE deal_id = 387830"}
@@ -8,10 +8,10 @@
    gold_sql: "SELECT seller_broker FROM deals WHERE contract_id = 102267 GROUP BY seller_broker ORDER BY COUNT(*) DESC LIMIT 5"}
 - {id: q05, lang: ru, answerable: true, question: "Какова общая стоимость сделок в долларах?", key_columns: [total_usd_all, total_usd_valid],
    gold_sql: "SELECT SUM(amount_usd) AS total_usd_all, SUM(amount_usd) FILTER (WHERE NOT is_cancelled) AS total_usd_valid FROM deals"}
-- {id: q06, lang: uz, answerable: true, question: "2025-yilda eng ko'p savdo qilgan korxona qaysi?", key_columns: [inn],
+- {id: q06, lang: uz, answerable: true, top1: true, question: "2025-yilda eng ko'p savdo qilgan korxona qaysi?", key_columns: [inn],
    gold_sql: "(SELECT buyer_inn AS inn FROM deals WHERE year = 2025 AND NOT is_cancelled GROUP BY buyer_inn ORDER BY SUM(amount_uzs) DESC LIMIT 1) UNION ALL (SELECT seller_inn FROM deals WHERE year = 2025 AND NOT is_cancelled GROUP BY seller_inn ORDER BY SUM(amount_uzs) DESC LIMIT 1)"}
-- {id: q07, lang: uz, answerable: true, question: "Qaysi broker orqali eng katta hajmdagi bitimlar amalga oshirilgan?", key_columns: [broker_code],
-   gold_sql: "WITH s AS (SELECT deal_id, seller_broker AS broker_code, amount_uzs FROM deals WHERE NOT is_cancelled UNION SELECT deal_id, buyer_broker, amount_uzs FROM deals WHERE NOT is_cancelled) SELECT broker_code FROM s GROUP BY broker_code ORDER BY SUM(amount_uzs) DESC LIMIT 1"}
+- {id: q07, lang: uz, answerable: true, top1: true, question: "Qaysi broker orqali eng katta hajmdagi bitimlar amalga oshirilgan?", key_columns: [broker_code],
+   gold_sql: "WITH s AS (SELECT deal_id, seller_broker AS broker_code, amount_uzs, volume_tonnes FROM deals WHERE NOT is_cancelled UNION SELECT deal_id, buyer_broker, amount_uzs, volume_tonnes FROM deals WHERE NOT is_cancelled) (SELECT broker_code FROM s WHERE volume_tonnes IS NOT NULL GROUP BY broker_code ORDER BY SUM(volume_tonnes) DESC LIMIT 1) UNION ALL (SELECT broker_code FROM s GROUP BY broker_code ORDER BY SUM(amount_uzs) DESC LIMIT 1)"}
 - {id: q08, lang: ru, answerable: true, question: "Сколько сделок было в 2023 году?", key_columns: [deals_all, deals_valid],
    gold_sql: "SELECT COUNT(*) AS deals_all, COUNT(*) FILTER (WHERE NOT is_cancelled) AS deals_valid FROM deals WHERE year = 2023"}
 - {id: q09, lang: uz, answerable: true, question: "2024-yilda nechta bitim tuzilgan?", key_columns: [deals_all, deals_valid],
@@ -40,11 +40,11 @@
    gold_sql: "SELECT SUM(volume_tonnes) AS tonnes_valid FROM deals WHERE product_canonical = 'Хлопок-сырец' AND year = 2025 AND NOT is_cancelled"}
 - {id: q21, lang: uz, answerable: true, question: "2025-yilda paxta xom ashyosining o‘rtacha narxi bir kilogramm uchun qancha bo‘lgan?", key_columns: [avg_price_uzs_per_kg],
    gold_sql: "SELECT SUM(amount_uzs) FILTER (WHERE volume_tonnes IS NOT NULL) / (SUM(volume_tonnes) * 1000) AS avg_price_uzs_per_kg FROM deals WHERE product_canonical = 'Хлопок-сырец' AND year = 2025 AND NOT is_cancelled"}
-- {id: q22, lang: ru, answerable: true, question: "Какой брокер провёл больше всего сделок на стороне покупателя в 2024 году?", key_columns: [buyer_broker],
+- {id: q22, lang: ru, answerable: true, top1: true, question: "Какой брокер провёл больше всего сделок на стороне покупателя в 2024 году?", key_columns: [buyer_broker],
    gold_sql: "SELECT buyer_broker FROM deals WHERE year = 2024 AND NOT is_cancelled GROUP BY buyer_broker ORDER BY COUNT(*) DESC LIMIT 1"}
 - {id: q23, lang: ru, answerable: true, question: "Сколько сделок исполнено частично в 2026 году?", key_columns: [partial],
    gold_sql: "SELECT COUNT(*) AS partial FROM deals WHERE year = 2026 AND status = 'Исполнен(Частично)'"}
-- {id: q24, lang: ru, answerable: true, question: "Какая самая крупная сделка 2023 года по сумме в сумах?", key_columns: [deal_id, amount_uzs],
+- {id: q24, lang: ru, answerable: true, top1: true, question: "Какая самая крупная сделка 2023 года по сумме в сумах?", key_columns: [amount_uzs],
    gold_sql: "SELECT deal_id, amount_uzs FROM deals WHERE year = 2023 AND NOT is_cancelled ORDER BY amount_uzs DESC LIMIT 1"}
 - {id: q25, lang: ru, answerable: true, question: "Сколько сделок заключено на двустороннем аукционе в 2025 году?", key_columns: [deals_all, deals_valid],
    gold_sql: "SELECT COUNT(*) AS deals_all, COUNT(*) FILTER (WHERE NOT is_cancelled) AS deals_valid FROM deals WHERE year = 2025 AND trade_type = 'Двусторонний аукцион'"}
@@ -58,7 +58,7 @@
    gold_sql: "SELECT COUNT(*) AS contracts FROM contracts WHERE year(registered_date) = 2024"}
 - {id: q30, lang: ru, answerable: true, question: "Сколько разных компаний покупали бензин в 2025 году?", key_columns: [buyers_valid],
    gold_sql: "SELECT COUNT(DISTINCT buyer_inn) AS buyers_valid FROM deals WHERE product_canonical = 'Бензин автомобильный' AND year = 2025 AND NOT is_cancelled"}
-- {id: q31, lang: ru, answerable: true, question: "Какая компания продала цемента на наибольшую сумму в 2024 году?", key_columns: [seller_inn],
+- {id: q31, lang: ru, answerable: true, top1: true, question: "Какая компания продала цемента на наибольшую сумму в 2024 году?", key_columns: [seller_inn],
    gold_sql: "SELECT seller_inn FROM deals WHERE product_canonical = 'Портландцемент' AND year = 2024 AND NOT is_cancelled GROUP BY seller_inn ORDER BY SUM(amount_uzs) DESC LIMIT 1"}
 - {id: q32, lang: uz, answerable: true, question: "2023-yilda kaustik soda bo‘yicha nechta bitim bo‘lgan?", key_columns: [deals_all, deals_valid],
    gold_sql: "SELECT COUNT(*) AS deals_all, COUNT(*) FILTER (WHERE NOT is_cancelled) AS deals_valid FROM deals WHERE year = 2023 AND product_canonical = 'Сода каустическая'"}
@@ -74,9 +74,9 @@
    gold_sql: "SELECT COUNT(*) AS vat_payers FROM participants WHERE vat_payer"}
 - {id: q38, lang: ru, answerable: true, question: "Какова сумма экспортных сделок в долларах за 2025 год?", key_columns: [total_usd_all, total_usd_valid],
    gold_sql: "SELECT SUM(amount_usd) AS total_usd_all, SUM(amount_usd) FILTER (WHERE NOT is_cancelled) AS total_usd_valid FROM deals WHERE year = 2025 AND contract_type = 'Экспортный'"}
-- {id: q39, lang: ru, answerable: true, question: "Какой товар принёс наибольшую сумму сделок в 2025 году?", key_columns: [product_canonical],
+- {id: q39, lang: ru, answerable: true, top1: true, question: "Какой товар принёс наибольшую сумму сделок в 2025 году?", key_columns: [product_canonical],
    gold_sql: "SELECT product_canonical FROM deals WHERE year = 2025 AND NOT is_cancelled GROUP BY product_canonical ORDER BY SUM(amount_uzs) DESC LIMIT 1"}
-- {id: q40, lang: uz, answerable: true, question: "2026-yilda eng ko‘p bitim tuzgan sotuvchi kompaniya qaysi?", key_columns: [seller_inn],
+- {id: q40, lang: uz, answerable: true, top1: true, question: "2026-yilda eng ko‘p bitim tuzgan sotuvchi kompaniya qaysi?", key_columns: [seller_inn],
    gold_sql: "SELECT seller_inn FROM deals WHERE year = 2026 AND NOT is_cancelled GROUP BY seller_inn ORDER BY COUNT(*) DESC LIMIT 1"}
 - {id: q41, lang: ru, answerable: true, question: "Сколько сделок по карбамиду было в 2024 году и на какую сумму?", key_columns: [deals_valid, total_uzs_valid],
    gold_sql: "SELECT COUNT(*) AS deals_valid, SUM(amount_uzs) AS total_uzs_valid FROM deals WHERE product_canonical = 'Карбамид' AND year = 2024 AND NOT is_cancelled"}

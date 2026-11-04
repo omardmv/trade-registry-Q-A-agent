@@ -32,7 +32,30 @@ def value_in_text(gold, text: str) -> bool:
     if _is_num(gold):
         return any(abs(t.value - gold) <= t.tolerance + 1e-6 * abs(gold) for t in extract_numbers(text))
     g = normalize_name(str(gold))
-    return (g in normalize_name(text)) if g else str(gold) in text
+    if not g:
+        return str(gold) in text
+    if g in normalize_name(text):
+        return True
+    words = normalize_name(text).split()
+    return all(any(w.startswith(gw[:_stem_len(gw)]) for w in words) for gw in g.split())
+
+
+def _stem_len(word: str) -> int:
+    """Prefix length tolerating up to 3 trailing inflection chars (min 3): 'xlopok'/'xlopka', 'sirets'/'sirtsa'."""
+    return min(len(word), max(3, len(word) - 3))
+
+
+def value_in_rows_top1(gold, columns, rows) -> bool:
+    """Gold value must be a cell of the first row of some partition (by a leading ranking/role column)."""
+    if columns and columns[0] in ("ranking", "role"):
+        firsts, seen = [], set()
+        for r in rows:
+            if r[0] not in seen:
+                seen.add(r[0])
+                firsts.append(r)
+    else:
+        firsts = rows[:1]
+    return value_in_rows(gold, firsts)
 
 
 def evaluate(q: dict, pipeline, db: Database) -> dict:
@@ -47,11 +70,19 @@ def evaluate(q: dict, pipeline, db: Database) -> dict:
     latency = time.monotonic() - t0
     row.update(latency_s=round(latency, 2), result=asdict(res))
     if q["answerable"]:
-        gold = db.query(q["gold_sql"])
+        try:
+            gold = db.query(q["gold_sql"])
+        except Exception as e:
+            row.update(error=f"gold SQL failed: {type(e).__name__}: {e}", sql_ok=False, answer_ok=False,
+                       hallucination=res.answered and not res.verified)
+            return row
         keys = [[to_jsonable(dict(zip(gold.columns, r))[k]) for k in q["key_columns"]] for r in gold.rows[:5]]
         flat = [v for r in keys for v in r]
         row["gold_keys"] = flat
-        row["sql_ok"] = res.answered and all(value_in_rows(v, res.rows) for v in flat)
+        if q.get("top1"):
+            row["sql_ok"] = res.answered and all(value_in_rows_top1(v, res.columns, res.rows) for v in flat)
+        else:
+            row["sql_ok"] = res.answered and all(value_in_rows(v, res.rows) for v in flat)
         row["answer_ok"] = res.answered and res.verified and all(value_in_text(v, res.answer) for v in flat)
         row["hallucination"] = res.answered and not res.verified
     else:
@@ -89,6 +120,7 @@ def main() -> int:
         "answer_correct": f"{sum(r['answer_ok'] for r in answerable)}/{len(answerable)}",
         "refused_correctly": f"{sum(r['answer_ok'] for r in unanswerable)}/{len(unanswerable)}",
         "hallucinations": sum(r["hallucination"] for r in rows),
+        "answered_wrong": sum(1 for r in answerable if r["result"].get("answered") and not r["answer_ok"]),
         "errors": sum(1 for r in rows if r.get("error")),
         "latency_p50_s": latencies[len(latencies) // 2] if latencies else None,
         "latency_p95_s": latencies[max(int(len(latencies) * 0.95) - 1, 0)] if latencies else None,
