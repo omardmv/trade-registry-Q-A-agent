@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Биржа — вопросы по данным / Birja — ma’lumotlar bo‘yicha savollar</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 860px; margin: 0 auto; padding: 16px; }
+  #log { display: flex; flex-direction: column; gap: 12px; margin-bottom: 96px; }
+  .q { align-self: flex-end; background: #e8f0fe; padding: 8px 12px; border-radius: 12px; max-width: 80%; }
+  .a { background: #f4f4f4; padding: 8px 12px; border-radius: 12px; white-space: pre-wrap; }
+  .a.nodata { background: #fff4e5; }
+  details { margin-top: 6px; font-size: 13px; }
+  pre { white-space: pre-wrap; background: #fff; padding: 8px; border: 1px solid #ddd; }
+  table { border-collapse: collapse; font-size: 13px; }
+  td, th { border: 1px solid #ddd; padding: 2px 6px; }
+  form { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; padding: 12px; border-top: 1px solid #ddd; }
+  form > div { max-width: 860px; margin: 0 auto; display: flex; gap: 8px; }
+  input { flex: 1; font: inherit; padding: 8px; }
+  .meta { color: #777; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Реестр сделок биржи · Birja bitimlari</h1>
+<div id="log"></div>
+<form id="f">
+  <div>
+    <input id="q" autocomplete="off" placeholder="Сколько сделок было в октябре 2025 года? / 2025-yilda nechta bitim tuzilgan?">
+    <button>Спросить / So‘rash</button>
+  </div>
+</form>
+<script>
+const log = document.getElementById("log");
+let previous = null;
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function table(columns, rows) {
+  const t = el("table");
+  const head = el("tr");
+  columns.forEach(c => head.appendChild(el("th", null, c)));
+  t.appendChild(head);
+  rows.slice(0, 50).forEach(r => {
+    const tr = el("tr");
+    r.forEach(v => tr.appendChild(el("td", null, v === null ? "—" : String(v))));
+    t.appendChild(tr);
+  });
+  return t;
+}
+
+document.getElementById("f").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const input = document.getElementById("q");
+  const question = input.value.trim();
+  if (!question) return;
+  input.value = "";
+  log.appendChild(el("div", "q", question));
+  const answer = el("div", "a", "…");
+  log.appendChild(answer);
+  answer.scrollIntoView();
+  try {
+    const r = await fetch("/ask", {method: "POST", headers: {"Content-Type": "application/json"},
+                                   body: JSON.stringify({question, previous})});
+    const body = await r.json();
+    answer.textContent = body.answer || JSON.stringify(body.detail || body);
+    if (!body.answered) answer.classList.add("nodata");
+    if (body.sql) {
+      const d = el("details");
+      d.appendChild(el("summary", null, "SQL и данные / SQL va ma’lumotlar"));
+      d.appendChild(el("pre", null, body.sql));
+      d.appendChild(table(body.columns, body.rows));
+      answer.appendChild(d);
+      previous = {question, sql: body.sql};
+    }
+    answer.appendChild(el("div", "meta",
+      `${body.source} · ${body.verified ? "verified" : "unverified"} · ${(body.timings || {}).total_s ?? "?"} s`));
+  } catch (e) {
+    answer.textContent = "Ошибка сети / Tarmoq xatosi: " + e;
+  }
+});
+</script>
+</body>
+</html>
