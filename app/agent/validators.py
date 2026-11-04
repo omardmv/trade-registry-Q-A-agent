@@ -8,10 +8,15 @@ from sqlglot import exp
 from app.db import Database, QueryError
 
 KNOWN_TABLES = {"deals", "contracts", "participants", "brokers", "usd_rates", "products", "regions"}
-NAME_COLUMNS = {"name", "name_norm", "product_name", "product_name_full", "warehouse_address"}
+NAME_COLUMNS = {"name", "name_norm", "product_name", "warehouse_address"}
 MONEY_COLUMNS = {"amount", "start_price", "unit_price", "base_price"}
 RESOLVED_COLUMNS = {"product_canonical", "product_family", "region", "seller_inn", "buyer_inn", "inn",
-                    "seller_broker", "buyer_broker", "broker_code", "contract_id", "deal_id"}
+                    "seller_broker", "buyer_broker", "broker_code", "contract_id", "deal_id",
+                    "buyer_region", "seller_region", "product_name_full"}
+# enum-like columns: compared only with = / IN against values of the database catalog (app/catalog.py)
+CATALOG_COLUMNS = {"category": "category", "industry": "industry", "product_group": "product_group",
+                   "delivery_basis": "delivery_basis", "packaging": "packaging", "activity": "activity",
+                   "buyer_activity": "activity", "seller_activity": "activity", "unit": "unit", "hs_code": "hs_code"}
 BLOCKED_FUNCTIONS = {"glob", "getenv", "current_setting", "query", "query_table", "sniff_csv"}
 FORBIDDEN_NODES = tuple(getattr(exp, n) for n in
                         ("Insert", "Update", "Delete", "Create", "Drop", "Alter", "Command", "Copy")
@@ -60,7 +65,8 @@ def missing_message(value: str) -> str:
 _COLUMN_KIND = {"product_canonical": "product", "product_family": "product_family", "region": "region",
                 "seller_inn": "inn", "buyer_inn": "inn", "inn": "inn",
                 "seller_broker": "broker", "buyer_broker": "broker", "broker_code": "broker",
-                "contract_id": "contract", "deal_id": "deal"}
+                "contract_id": "contract", "deal_id": "deal", "buyer_region": "region", "seller_region": "region",
+                "product_name_full": "product_variant"}
 
 
 @dataclass
@@ -71,7 +77,7 @@ class Validation:
 
 
 def validate_sql(sql: str, allowed: set[tuple[str, str]], question: str, db: Database | None = None,
-                 check_ids: bool = True, row_limit: int = 1000, exists=None) -> Validation:
+                 check_ids: bool = True, row_limit: int = 1000, exists=None, catalog=None) -> Validation:
     sql = sql.strip().rstrip(";").strip()
     try:
         statements = [s for s in sqlglot.parse(sql, read="duckdb") if s is not None and not isinstance(s, exp.Semicolon)]
@@ -136,6 +142,16 @@ def validate_sql(sql: str, allowed: set[tuple[str, str]], question: str, db: Dat
                           "broker_code / product_canonical / region")
             continue
         if bare or _is_count_arg(col):
+            continue
+        if check_ids and catalog and _n(col) in CATALOG_COLUMNS and not (bases(col) - {_n(col)}):
+            known = catalog.get(CATALOG_COLUMNS[_n(col)])
+            ok, literals = _check_comparison(col)
+            if not ok:
+                errors.append(f"compare {_n(col)} only with = / IN to exact values from the Value catalog")
+            elif known is not None:
+                for value in literals:
+                    if value not in known:
+                        errors.append(f"unknown {_n(col)} value {value!r}; allowed: {', '.join(sorted(known))}")
             continue
         via_alias = sorted((bases(col) - {_n(col)}) & RESOLVED_COLUMNS)
         if via_alias:

@@ -578,3 +578,55 @@ def test_quarter_question_with_compare_periods_months_accepted(parts):
     res = writer.run("Как изменилось число сделок в первом квартале 2025 по сравнению с первым кварталом 2024?",
                      "ru", deadline())
     assert res.status == "ok" and "change_pct" in res.result.columns[-1]
+
+
+def test_guard_cannot_be_bypassed_with_free_sql(parts):
+    q = "Сколько транспортных компаний зарегистрировано?"
+    writer, llm = make(parts, [call("compile_query", spec={"kind": "registry_count", "entity": "participants"},
+                                    assumptions=[]),
+                               call("submit_sql", sql="SELECT COUNT(*) FROM participants", splits=[], assumptions=[]),
+                               call("declare_unanswerable", reason="x")])
+    res = writer.run(q, "ru", deadline())
+    assert res.status != "ok"
+    assert "declare_unanswerable" in llm.chat.sent[2][1][0][1]["error"]
+
+
+def test_free_sql_alone_is_checked_for_dropped_conditions(parts):
+    q = "Сколько транспортных компаний зарегистрировано?"
+    writer, llm = make(parts, [call("submit_sql", sql="SELECT COUNT(*) FROM participants", splits=[], assumptions=[]),
+                               call("submit_sql", sql="SELECT COUNT(*) AS n FROM participants "
+                                                      "WHERE activity = 'Транспортная компания'",
+                                    splits=[], assumptions=[])])
+    res = writer.run(q, "ru", deadline())
+    assert "Транспортная компания" in llm.chat.sent[1][1][0][1]["error"]
+    assert res.status == "ok" and res.result.rows == [(2108,)]
+
+
+@pytest.mark.parametrize("q,bad,good", [
+    ("Какой продавец продал меньше всего цемента?",
+     "SELECT seller_inn, SUM(amount_uzs) s FROM deals GROUP BY 1 ORDER BY s DESC LIMIT 1",
+     "SELECT seller_inn, SUM(amount_uzs) s FROM deals GROUP BY 1 ORDER BY s ASC LIMIT 1"),
+    ("Сколько разных покупателей было в 2024?", "SELECT COUNT(buyer_inn) FROM deals WHERE year = 2024",
+     "SELECT COUNT(DISTINCT buyer_inn) FROM deals WHERE year = 2024"),
+    ("Какая доля экспортных сделок?", "SELECT COUNT(*) FROM deals WHERE contract_type = 'Экспортный'",
+     "SELECT 100.0 * COUNT(*) FILTER (WHERE contract_type = 'Экспортный') / COUNT(*) FROM deals"),
+])
+def test_free_sql_wording_cues(parts, q, bad, good):
+    from app.agent.guard import sql_missing_condition_error
+    writer, _ = make(parts, [])
+    assert sql_missing_condition_error(q, bad, writer._guard_index) is not None
+    assert sql_missing_condition_error(q, good, writer._guard_index) is None
+
+
+def test_variant_filter_must_cover_all_resolved_spellings(parts, db):
+    cands = parts[1].resolve("product_variant", "Хлопок-сырец 1 сорт")
+    ids = [c.id for c in cands]
+    spec = {"kind": "deals_aggregate", "measures": ["deal_count"], "status_scope": "all",
+            "filters": {"product_variants": ids[:3]}}
+    full = {**spec, "filters": {"product_variants": ids}}
+    writer, llm = make(parts, [call("resolve", kind="product_variant", text="Хлопок-сырец 1 сорт"),
+                               call("compile_query", spec=spec, assumptions=[]),
+                               call("compile_query", spec=full, assumptions=[])])
+    res = writer.run("Сколько сделок по хлопку-сырцу 1 сорта?", "ru", deadline())
+    assert f"3 of the {len(ids)}" in llm.chat.sent[2][1][0][1]["error"]
+    assert res.status == "ok"

@@ -32,6 +32,47 @@ def _fuzzy(q, keys, limit):
     return out
 _ALL = 100_000
 
+_GRADE_KEYS = {"sort": "sort", "sorta": "sort", "sortu": "sort", "klass": "klass", "klassa": "klass"}
+_GRADE_NUMS = {"i": "1", "ii": "2", "iii": "3", "iv": "4", "v": "5", "perviy": "1", "pervogo": "1", "pervaya": "1",
+               "vtoroy": "2", "vtorogo": "2", "tretiy": "3", "tretego": "3", "chetvertiy": "4", "birinchi": "1",
+               "ikkinchi": "2", "uchinchi": "3"}
+
+
+def _is_num(t: str) -> bool:
+    return t.isdigit()
+
+
+def canonical_variant_tokens(text: str) -> list[str]:
+    """normalize_text tokens with grade expressions folded into one token: "Сорт 1 сорт", "1-сорта",
+    "первый сорт", "I сорт" -> "sort:1"; the same for класс -> "klass:N"."""
+    raw = [_GRADE_KEYS.get(t, t) for t in normalize_text(text).split()]
+    toks = []
+    for i, t in enumerate(raw):  # roman / word numerals count only next to сорт/класс
+        near = (i > 0 and raw[i - 1] in ("sort", "klass")) or (i + 1 < len(raw) and raw[i + 1] in ("sort", "klass"))
+        toks.append(_GRADE_NUMS.get(t, t) if near else t)
+    out: list[str] = []
+    i, n = 0, len(toks)
+    while i < n:
+        t = toks[i]
+        if t in ("sort", "klass") and i + 1 < n and _is_num(toks[i + 1]):
+            out.append(f"{t}:{toks[i + 1]}")
+            i += 2
+            if i < n and toks[i] == t:      # "Сорт 1 сорт"
+                i += 1
+            continue
+        if _is_num(t) and i + 1 < n and toks[i + 1] in ("sort", "klass"):
+            out.append(f"{toks[i + 1]}:{t}")
+            i += 2
+            continue
+        out.append(t)
+        i += 1
+    return out
+
+
+def _in_order(q: list[str], name: list[str]) -> bool:
+    it = iter(name)
+    return all(any(t == x for x in it) for t in q)
+
 
 @dataclass
 class Candidate:
@@ -59,7 +100,8 @@ class Resolver:
         self._variants = db.query(
             """SELECT product_name_full, product_canonical, COUNT(*) FROM deals GROUP BY 1, 2
                ORDER BY 3 DESC, 1""", max_rows=_ALL).rows
-        self._variant_tokens = [set(normalize_text(r[0]).split()) for r in self._variants]
+        self._variant_seqs = [canonical_variant_tokens(r[0]) for r in self._variants]
+        self._variant_tokens = [set(t) for t in self._variant_seqs]
         self._product_keys, self._product_targets = self._index_products()
         self._region_keys, self._region_targets = self._index_regions()
 
@@ -182,28 +224,31 @@ class Resolver:
                 best[key] = Candidate(kind, value, value, float(score), {"product_family": family})
         return sorted(best.values(), key=lambda c: -c.score)[:limit]
 
-    def _product_variant(self, text, limit):
-        """Raw registry spellings (deals.product_name_full) containing every word of the text.
+    def _product_variant(self, text, limit=None):
+        """Every raw registry spelling (deals.product_name_full) that contains the words of the text in order.
 
-        Grades and marks differ by one character (М00К / М0К), so plain fuzzy similarity is not enough: every
-        query word must be a whole word of the name; if no name has them all, fall back to fuzzy matching but
-        still require every word with a digit to match exactly."""
-        q_tokens = normalize_text(text).split()
-        if not q_tokens:
+        Grades are folded into single tokens ("1 сорт" = "Сорт 1 сорт" = "первый сорт" -> sort:1), so "1 класс" never
+        matches a "1 сорт" query; marks differ by one character (М00К / М0К) and must match exactly. If no spelling
+        has the words in order, the word set is used. The result is never truncated: a variant filter must cover
+        all spellings that match, so `limit` is ignored."""
+        q_seq = canonical_variant_tokens(text)
+        if not q_seq:
             return []
-        q = set(q_tokens)
-        hits = [i for i, toks in enumerate(self._variant_tokens) if q <= toks]
+        q = set(q_seq)
+        hits = [i for i, seq in enumerate(self._variant_seqs) if _in_order(q_seq, seq)]
+        if not hits:
+            hits = [i for i, toks in enumerate(self._variant_tokens) if q <= toks]
         if not hits:
             digits = {t for t in q if any(ch.isdigit() for ch in t)}
-            keys = [normalize_text(r[0]) for r in self._variants]
-            hits = [i for _, _, i in _fuzzy(" ".join(q_tokens), keys, None)
-                    if digits <= self._variant_tokens[i]]
+            keys = [" ".join(seq) for seq in self._variant_seqs]
+            hits = [i for _, _, i in _fuzzy(" ".join(q_seq), keys, None) if digits <= self._variant_tokens[i]]
         hits.sort(key=lambda i: (len(self._variant_tokens[i] - q), -self._variants[i][2]))
         out = []
-        for i in hits[:limit]:
+        for i in hits:
             name, canonical, n = self._variants[i]
             score = 100.0 if self._variant_tokens[i] == q else 90.0
-            out.append(Candidate("product_variant", name, name, score, {"product_canonical": canonical, "deals": n}))
+            out.append(Candidate("product_variant", name, name, score,
+                                 {"product_canonical": canonical, "deals": n, "matches": len(hits)}))
         return out
 
     def _region(self, text, limit):

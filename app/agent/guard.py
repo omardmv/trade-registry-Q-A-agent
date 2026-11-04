@@ -45,6 +45,8 @@ _DISTINCT_RE = re.compile(r"сколько\s+(?:\w+\s+)?(?:разных|разл
 _SHARE_RE = re.compile(r"(?<!\w)(?:дол[яиюей]|процент\w*|foiz\w*|ulush\w*|фоиз\w*|улуш\w*)(?!\w)|%",
                        re.IGNORECASE)
 _PERCENT_MEASURES = {"share_pct", "cancelled_pct", "avg_price_change_pct"}
+_NEGATION_RE = re.compile(r"(?<!\w)(?:кроме|без|не|bundan\s+tashqari|tashqari|emas|siz)(?!\w)", re.IGNORECASE)
+_EACH_RE = re.compile(r"по\s+кажд\w*|по\s+всем|har\s+bir", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -182,4 +184,47 @@ def missing_condition_error(question: str, spec: Spec, index: list[_Value], igno
         return ("the question asks for a share / percentage: use share_pct with share_of {field, value} "
                 "(or cancelled_pct for the cancelled share); if the share is of something share_of cannot "
                 "express, call declare_unanswerable")
+    return None
+
+
+# catalog field -> columns whose use in free SQL shows the condition is applied
+_SQL_COLUMNS = {
+    "category": {"category"}, "industry": {"industry"}, "product_group": {"product_group"},
+    "delivery_basis": {"delivery_basis"}, "packaging": {"packaging"},
+    "activity": {"activity", "buyer_activity", "seller_activity"}, "status": {"status", "is_cancelled"},
+    "contract_form": {"contract_form"}, "contract_type": {"contract_type"}, "trade_type": {"trade_type"},
+    "unit": {"unit", "volume", "volume_tonnes"},
+}
+
+
+def sql_missing_condition_error(question: str, sql: str, index: list[_Value], ignore_names=()) -> str | None:
+    """The same checks for free SQL: a named catalog value must appear as a literal (or its column must be grouped
+    / used), least wording needs an ascending order or MIN, distinct wording COUNT(DISTINCT), share wording a ratio."""
+    import sqlglot
+    from sqlglot import exp
+    try:
+        tree = sqlglot.parse_one(sql, read="duckdb")
+    except Exception:
+        return None  # the SQL validator reports parse errors
+    literals = {normalize_text(str(lit.this)) for lit in tree.find_all(exp.Literal) if lit.is_string}
+    columns = {c.name.lower() for c in tree.find_all(exp.Column)}
+    grouped = {c.name.lower() for g in tree.find_all(exp.Group) for c in g.find_all(exp.Column)}
+    negated = bool(_NEGATION_RE.search(question))
+    for v in mentioned_values(question, index, ignore_names):
+        cols = _SQL_COLUMNS[v.field]
+        if normalize_text(v.value) in literals or cols & grouped or (negated and cols & columns):
+            continue
+        if v.field == "unit" and cols & columns:
+            continue
+        return (f"the question names «{v.value}» ({v.field}) but the SQL does not filter or group by it; "
+                "add the condition, or call declare_unanswerable — never drop a condition")
+    q = question.replace("ё", "е").replace("Ё", "Е")
+    if _LEAST_RE.search(q) and not _EACH_RE.search(q) and tree.find(exp.Limit) is not None:
+        orders = list(tree.find_all(exp.Ordered))
+        if orders and not any(not o.args.get("desc") for o in orders) and tree.find(exp.Min) is None:
+            return "the question asks for the least / cheapest / fewest: order the ranking ascending"
+    if _DISTINCT_RE.search(q) and not any(isinstance(c.this, exp.Distinct) for c in tree.find_all(exp.Count)):
+        return "the question asks how many distinct items: use COUNT(DISTINCT ...)"
+    if _SHARE_RE.search(q) and tree.find(exp.Div) is None:
+        return "the question asks for a share / percentage: compute it as a ratio column in SQL"
     return None

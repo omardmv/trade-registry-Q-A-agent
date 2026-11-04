@@ -457,3 +457,31 @@ def test_reaggregated_currency_sums_scoped_outer_ok():
 def test_literal_rule_error_has_month_hint():
     r = v("SELECT 'Jan-2025' AS m, COUNT(*) FROM deals")
     assert any("date_trunc('month', deal_date)" in e for e in r.errors)
+
+
+CAT = {"category": {"Нефтепродукты"}, "activity": {"Кластер", "Транспортная компания"}, "unit": {"литр", "тонна"},
+       "industry": {"Металлургия"}, "product_group": {"Прочие товары"}, "delivery_basis": {"EXW"},
+       "packaging": {"навалом"}, "hs_code": {"520100"}}
+
+
+def test_buyer_seller_region_must_be_resolved():
+    sql = "SELECT COUNT(*) FROM deals WHERE buyer_region = 'Buxoro viloyati'"
+    assert not v(sql).ok
+    assert v(sql, allowed={("region", "Buxoro viloyati")}).ok
+    assert not v("SELECT COUNT(*) FROM deals WHERE seller_region ILIKE '%bux%'").ok
+
+
+def test_catalog_columns_checked_against_catalog():
+    assert v("SELECT COUNT(*) FROM participants WHERE activity = 'Кластер'", catalog=CAT).ok
+    bad = v("SELECT COUNT(*) FROM participants WHERE activity = 'Шахта'", catalog=CAT)
+    assert not bad.ok and any("Кластер" in e for e in bad.errors)
+    assert not v("SELECT COUNT(*) FROM deals WHERE category LIKE '%нефт%'", catalog=CAT).ok
+    assert not v("SELECT COUNT(*) FROM deals WHERE unit IN ('литр', 'ведро')", catalog=CAT).ok
+    assert v("SELECT unit, SUM(volume) FROM deals WHERE seller_activity = 'Кластер' GROUP BY unit", catalog=CAT).ok
+
+
+def test_product_name_full_needs_resolved_variant():
+    sql = "SELECT COUNT(*) FROM deals WHERE product_name_full = 'Сахар белый'"
+    assert not v(sql).ok
+    assert v(sql, allowed={("product_variant", "Сахар белый")}).ok
+    assert v("SELECT product_name_full, COUNT(*) FROM deals GROUP BY 1").ok

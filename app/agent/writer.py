@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, field, replace
 from typing import Literal
 
 from app import config
-from app.agent.guard import build_index, missing_condition_error
+from app.agent.guard import build_index, missing_condition_error, sql_missing_condition_error
 from app.agent.llm import LLM, ToolSpec, call_with_retry
 from app.agent.validators import grounding_status, missing_message, validate_sql
 from app.catalog import load_catalog, render_catalog
@@ -154,6 +154,22 @@ def period_error(question: str, spec: Spec) -> str | None:
     return None
 
 
+def variant_subset_error(spec: Spec, groups: list[tuple[str, frozenset]]) -> str | None:
+    """product_variants must be a union of complete resolve(product_variant) results: a filter that keeps only part
+    of the spellings found for a text would silently cover part of the product."""
+    if not isinstance(spec, DealsAggregate) or not spec.filters.product_variants or not groups:
+        return None
+    chosen = set(spec.filters.product_variants)
+    covered = set().union(*(g for _, g in groups if g <= chosen))
+    partial = chosen - covered
+    if not partial:
+        return None
+    text, group = next((t, g) for t, g in groups if g & partial)
+    return (f"filters.product_variants has {len(chosen & group)} of the {len(group)} spellings that "
+            f"resolve(product_variant, {text!r}) returned; include all of them, or resolve a more specific text "
+            "and use its complete result")
+
+
 def _json(value):
     """Recursively make a value JSON-safe (dates -> ISO strings, Decimal -> float)."""
     if isinstance(value, dict):
@@ -205,6 +221,8 @@ class Writer:
     def run(self, question: str, lang: str, deadline: float, previous: dict | None = None) -> WriterResult:
         allowed: set[tuple[str, str]] = set()
         names: list[str] = []
+        # per-question state: product_variant groups returned by resolve (text, ids); first guard error, if any
+        state: dict = {"variants": [], "guard": None}
         trace: list[dict] = []
         calls = fixes = 0
         nudged = False
@@ -247,9 +265,9 @@ class Writer:
                 if calls > self.max_tool_calls:
                     return failed("tool budget exceeded")
                 if tc.name in ("compile_query", "submit_sql"):
-                    outcome = (self._compile(tc.args, allowed, question, deadline, names)
+                    outcome = (self._compile(tc.args, allowed, question, deadline, names, state)
                                if tc.name == "compile_query"
-                               else self._sql(tc.args, allowed, question, deadline))
+                               else self._sql(tc.args, allowed, question, deadline, names, state))
                     if isinstance(outcome, WriterResult):
                         outcome.trace, outcome.resolved_names = trace, names
                         return outcome
@@ -260,7 +278,7 @@ class Writer:
                     results.append((tc.name, {"error": outcome}))
                     continue
                 try:
-                    payload = self._tool(tc.name, tc.args, allowed, question, deadline, names)
+                    payload = self._tool(tc.name, tc.args, allowed, question, deadline, names, state)
                 except (KeyError, ValueError, TypeError) as e:
                     payload = {"error": f"bad arguments: {e}"}
                 results.append((tc.name, payload))
@@ -277,7 +295,8 @@ class Writer:
     def _timeout(deadline, cap):
         return max(1.0, min(cap, deadline - time.monotonic()))
 
-    def _compile(self, args, allowed, question, deadline, names=()) -> WriterResult | str:
+    def _compile(self, args, allowed, question, deadline, names=(), state=None) -> WriterResult | str:
+        state = state if state is not None else {"variants": [], "guard": None}
         try:
             spec = parse_spec(args.get("spec") or {})
             check_catalog(spec, self.catalog)
@@ -287,6 +306,9 @@ class Writer:
         if (err := period_error(question, spec)) is not None:
             return err
         if (err := missing_condition_error(question, spec, self._guard_index, names)) is not None:
+            state["guard"] = state["guard"] or err
+            return err
+        if (err := variant_subset_error(spec, state["variants"])) is not None:
             return err
         statuses = {(k, v): grounding_status(v, k, allowed, question, self._exists)
                     for k, v in entity_values(spec)}
@@ -306,8 +328,14 @@ class Writer:
         return WriterResult("ok", "compiled", compiled.sql, result, spec, compiled.splits, compiled.notes,
                             [str(a) for a in args.get("assumptions") or []])
 
-    def _sql(self, args, allowed, question, deadline) -> WriterResult | str:
-        v = validate_sql(str(args.get("sql", "")), allowed, question, self.db, exists=self._exists)
+    def _sql(self, args, allowed, question, deadline, names=(), state=None) -> WriterResult | str:
+        if state is not None and state.get("guard"):
+            return ("submit_sql is not allowed after compile_query reported a missing condition "
+                    f"({state['guard'][:160]}...): fix the spec, or call declare_unanswerable")
+        sql = str(args.get("sql", ""))
+        if (err := sql_missing_condition_error(question, sql, self._guard_index, names)) is not None:
+            return err
+        v = validate_sql(sql, allowed, question, self.db, exists=self._exists, catalog=self.catalog)
         if not v.ok:
             return "; ".join(v.errors)
         try:
@@ -318,9 +346,11 @@ class Writer:
         return WriterResult("ok", "sql", v.sql, result, None, splits, [],
                             [str(a) for a in args.get("assumptions") or []])
 
-    def _tool(self, name, args, allowed, question, deadline, names=None) -> dict:
+    def _tool(self, name, args, allowed, question, deadline, names=None, state=None) -> dict:
         if name == "resolve":
             cands = self.resolver.resolve(args["kind"], str(args["text"]))
+            if args["kind"] == "product_variant" and state is not None and cands:
+                state["variants"].append((str(args["text"]), frozenset(c.id for c in cands)))
             allowed.update((_KIND.get(c.kind, c.kind), c.id) for c in cands)
             if names is not None:
                 for c in cands:

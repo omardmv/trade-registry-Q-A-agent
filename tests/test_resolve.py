@@ -104,3 +104,36 @@ def test_product_variant_tokens_match_all_spellings(resolver):
 
 def test_product_variant_unknown(resolver):
     assert resolver.resolve("product_variant", "квантовый компьютер") == []
+
+
+def _grade_ok(name, sort):
+    from app.resolve import canonical_variant_tokens
+    toks = canonical_variant_tokens(name)
+    return f"sort:{sort}" in toks
+
+
+def test_variant_grade_tokens_are_canonical():
+    from app.resolve import canonical_variant_tokens as c
+    assert c("Хлопок-сырец (спот) Сорт 1 сорт Класс II класс")[-2:] == ["sort:1", "klass:2"]
+    assert c("Хлопок сырец (спот) Сорт первый сорт Класс I класс")[-2:] == ["sort:1", "klass:1"]
+    assert c("Хлопок-сырец (спот) I сорт 1-класс")[-2:] == ["sort:1", "klass:1"]
+    assert c("Хлопок-сырец (спот) Сорт 3-сорта Класс 1-класс")[-2:] == ["sort:3", "klass:1"]
+    assert c("Пшеница Класс IV класс") == ["pshenitsa", "klass:4"]
+    assert c("1 сорт") == c("сорт 1") == c("первый сорт") == c("I сорт") == ["sort:1"]
+
+
+def test_variant_grade_query_returns_complete_correct_set(resolver, db):
+    cands = resolver.resolve("product_variant", "Хлопок-сырец 1 сорт")
+    ids = {c.id for c in cands}
+    all_cotton = [r[0] for r in db.query("SELECT DISTINCT product_name_full FROM deals "
+                                         "WHERE product_canonical = 'Хлопок-сырец'", max_rows=10_000).rows]
+    want = {n for n in all_cotton if _grade_ok(n, "1")}
+    assert want and ids == want          # complete (no cap) and no other grades via "1 класс"
+    assert len(ids) > 10
+
+
+def test_variant_word_order_matters_when_an_ordered_match_exists(resolver):
+    ids = [c.id for c in resolver.resolve("product_variant", "катод медный М00К")]
+    assert ids and all(i.lower().startswith("катод медный") for i in ids)
+    # no ordered spelling exists: fall back to the word set
+    assert resolver.resolve("product_variant", "хлопковая пряжа")
