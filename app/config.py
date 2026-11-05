@@ -110,3 +110,6 @@ CLOSED_VOCAB = os.environ.get("UZEX_CLOSED_VOCAB", "1").strip().lower() not in (
 # balanced: unknown words go to the judge, the judge runs only for them, free SQL allowed with the judge.
 SAFETY = os.environ.get("UZEX_SAFETY", "max").strip().lower()
 JUDGE = os.environ.get("UZEX_JUDGE", "1").strip().lower() not in ("0", "false", "no", "off")
+# word classifier (app/plan/wordclass.py, max safety): unknown words get one closed-choice label (wording / a concept
+# the data has / other) from one LLM call instead of the noun gate's refusal; 0 restores the noun gate
+WORD_CLASSIFIER = os.environ.get("UZEX_WORD_CLASSIFIER", "0").strip().lower() not in ("0", "false", "no", "off")

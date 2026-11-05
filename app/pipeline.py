@@ -15,6 +15,7 @@ from app.db import to_jsonable
 from app.plan.dictionary import load_dictionary
 from app.plan.explain import explain_plan
 from app.plan.model import Plan
+from app.plan import wordclass
 from app.plan.vocab import log_refusal
 from app.text import detect_lang
 
@@ -84,14 +85,20 @@ class Pipeline:
         t0 = time.monotonic()
         deadline = t0 + self.deadline_s
         lang = detect_lang(question)
-        if (refused := self._vocab_refusal(question, lang)) is not None:
+        stage1: list[dict] = []
+        if (refused := self._vocab_refusal(question, lang, deadline, stage1)) is not None:
             refused.timings = {"writer_s": 0.0, "total_s": round(time.monotonic() - t0, 2)}
+            refused.trace = [{k: v for k, v in t.items() if k != "classes"} for t in stage1]
             return refused
+        classes = stage1[0]["classes"] if stage1 else None
+        token = wordclass.CURRENT.set(classes)      # stage 2 (the writer) checks the concept words in the plan
         try:
             wr = self.writer.run(question, lang, deadline - self.llm_timeout_s, previous)
         except Exception as e:  # never surface a stack trace as an answer
             log.exception("writer crashed")
             wr = WriterResult("failed", reason=f"error: {type(e).__name__}")
+        finally:
+            wordclass.CURRENT.reset(token)
         timings = {"writer_s": round(time.monotonic() - t0, 2)}
         try:
             res = self._answer(question, lang, wr, deadline)
@@ -100,10 +107,11 @@ class Pipeline:
             res = AskResult(templates.failed(lang), lang, False, "failed", reason="error: answer stage")
         timings["total_s"] = round(time.monotonic() - t0, 2)
         res.timings = timings
-        res.trace = wr.trace
+        res.trace = [{k: v for k, v in t.items() if k != "classes"} for t in stage1] + list(wr.trace)
         return res
 
-    def _vocab_refusal(self, question: str, lang: str) -> AskResult | None:
+    def _vocab_refusal(self, question: str, lang: str, deadline: float | None = None,
+                       stage1: list | None = None) -> AskResult | None:
         """Stage 1 of the closed vocabulary, before any LLM call, a narrow pre-filter: refuse only when the
         question names no subject the data has, or an unknown word is the subject of a rate («курс юаня»). Other
         unknown words go on: the writer judges the ones its plan does not use (stage 2)."""
@@ -117,6 +125,8 @@ class Pipeline:
             except Exception:
                 log.exception("vocabulary check crashed")
                 return AskResult(templates.failed(lang), lang, False, "failed", reason="vocabulary check crashed")
+            if config.WORD_CLASSIFIER:
+                return self._classify(question, lang, gate, deadline, stage1)
             if not gate.blocking:
                 if gate.wording:
                     log.info("closed vocabulary (stage 1, max safety): wording words %s go to the judge",
@@ -138,6 +148,30 @@ class Pipeline:
         log_refusal(f"stage 1, {pre.why}", question, [pre.refuse])
         return AskResult(templates.no_data(lang, pre.refuse.word), lang, False, "no_data",
                          reason=f"not in the data ({pre.why}): " + ", ".join(u.word for u in pre.unknown))
+
+    def _classify(self, question: str, lang: str, gate, deadline: float | None, stage1: list | None) -> AskResult | None:
+        """Max safety with the word classifier (app/plan/wordclass.py): every unknown word (nouns included) gets one
+        closed-choice label from one LLM call. "other" refuses naming the word, no verdict refuses; concept words
+        are checked against the plan at stage 2; wording words go on to the judge."""
+        words = list(dict.fromkeys(u.word for u in gate.blocking + gate.wording))
+        if not words:
+            return None
+        if deadline is None:
+            deadline = time.monotonic() + self.deadline_s
+        classes = wordclass.classify(self.llm, question, words, deadline, self.llm_timeout_s)
+        if stage1 is not None:
+            stage1.append({"tool": "word_classifier", "args": {"words": words}, "labels": dict(classes.labels),
+                           "error": classes.error, "classes": classes})
+        if not classes.ok:
+            return AskResult(templates.failed(lang), lang, False, "failed",
+                             reason=f"word classifier: {classes.error}")
+        other = classes.other()
+        if other:
+            log.warning("closed vocabulary (stage 1, word classifier): no data about %s in %r",
+                        ", ".join(f"«{w}»" for w in other), question)
+            return AskResult(templates.no_data(lang, other[0]), lang, False, "no_data",
+                             reason="not in the data (word classifier): " + ", ".join(other))
+        return None
 
     def _supported_assumptions(self, assumptions, question, shown, extra) -> list[str]:
         """Assumptions are model text: keep only those whose numbers/ids/dates/names the data supports."""

@@ -14,6 +14,7 @@ from app.plan.build import build_sql
 from app.plan.checks import apply_defaults, consistency_error, plan_missing_condition_error
 from app.plan.dictionary import Dictionary, load_dictionary
 from app.plan.explain import explain_plan
+from app.plan import wordclass
 from app.plan.judge import judge, term_for
 from app.plan.mentions import Resolution, mention_error
 from app.plan.model import PlanError, parse_plan
@@ -76,7 +77,8 @@ class GrammarWriter(Writer):
                     out.append(v)
         return out
 
-    def _vocab_gate(self, question: str, names, calculation: str, deadline: float, trace=None) -> WriterResult | None:
+    def _vocab_gate(self, question: str, names, calculation: str, deadline: float, trace=None,
+                    plan=None) -> WriterResult | None:
         """Stage 2 of the closed vocabulary, after the plan passed every check: question words outside the lexicon
         that are not words of an entity the query uses go to the judge with the calculation in words; the judge
         says whether the calculation still answers the question. Not covered -> unanswerable (not a fix: the
@@ -89,11 +91,29 @@ class GrammarWriter(Writer):
             # unknown words that can be nouns refuse; the other unknown words (wording) go to the judge, which
             # confirms every answer
             gate = self.vocab.gate_in_plan(question, names)
-            if gate.blocking:
-                log_refusal("stage 2, max safety", question, gate.blocking)
-                blocked = ", ".join(u.word for u in gate.blocking)
-                return WriterResult("unanswerable", reason="not in the data: " + blocked, term=gate.blocking[0].word)
-            wording = [u.word for u in gate.wording]
+            classes = wordclass.CURRENT.get()
+            blocking, wording = list(gate.blocking), [u.word for u in gate.wording]
+            if classes is not None:
+                # word classifier (app/plan/wordclass.py): a word labelled at stage 1 is wording or a concept the
+                # plan must use; a word stage 1 did not label (a name word of an entity the plan does not use) keeps
+                # the noun gate
+                labelled = [u for u in blocking if classes.label_of(u.word) is not None]
+                blocking = [u for u in blocking if classes.label_of(u.word) is None]
+                wording += [u.word for u in labelled]
+                missing = wordclass.unused_concepts(classes, wording, plan, self.dictionary) if plan is not None \
+                    else [(w, classes.label_of(w)) for w in wording if classes.label_of(w) != wordclass.WORDING]
+                if trace is not None and (labelled or wording):
+                    trace.append({"tool": "concept_check", "args": {"words": wording},
+                                  "unused": [f"{w} -> {c}" for w, c in missing]})
+                if missing and not blocking:
+                    w, c = missing[0]
+                    log.info("word classifier (stage 2): «%s» means %s, the plan does not use it | %s", w, c, question)
+                    return WriterResult("unanswerable", reason=f"word classifier: «{w}» means {c}, not in the plan",
+                                        term=w)
+            if blocking:
+                log_refusal("stage 2, max safety", question, blocking)
+                blocked = ", ".join(u.word for u in blocking)
+                return WriterResult("unanswerable", reason="not in the data: " + blocked, term=blocking[0].word)
             verdict = judge(self.llm, question, calculation, wording, deadline, self.llm_timeout_s)
             if trace is not None:
                 trace.append({"tool": "judge", "args": {"words": wording, "calculation": calculation},
@@ -155,7 +175,7 @@ class GrammarWriter(Writer):
             return f"could not build the plan: {e}"
         calculation = explain_plan(plan, d, built.notes, detect_lang(question))
         if (gate := self._vocab_gate(question, self._plan_names(plan), calculation, deadline,
-                                     (state or {}).get("trace"))) is not None:
+                                     (state or {}).get("trace"), plan)) is not None:
             return gate
         try:
             result = self.db.query(built.sql, timeout_s=self._timeout(deadline, 10.0))

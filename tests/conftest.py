@@ -26,3 +26,11 @@ def _balanced_safety_by_default(monkeypatch, request):
     from app import config
     if "max_safety" not in request.keywords:
         monkeypatch.setattr(config, "SAFETY", "balanced")
+
+
+@pytest.fixture(autouse=True)
+def _noun_gate_by_default(monkeypatch, request):
+    """Max-safety tests written for the noun gate run with the word classifier off (UZEX_WORD_CLASSIFIER=0); tests of
+    the classifier mark themselves with @pytest.mark.word_classifier."""
+    from app import config
+    monkeypatch.setattr(config, "WORD_CLASSIFIER", "word_classifier" in request.keywords)

@@ -21,5 +21,6 @@ dev = ["pytest>=8", "httpx>=0.27"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-markers = ["live: calls the real OpenAI API (needs OPENAI_API_KEY)", "max_safety: runs with UZEX_SAFETY=max (the default in production)"]
+markers = ["live: calls the real OpenAI API (needs OPENAI_API_KEY)", "max_safety: runs with UZEX_SAFETY=max (the default in production)",
+           "word_classifier: runs with UZEX_WORD_CLASSIFIER=1 (the default in production)"]
 addopts = "-m 'not live'"
