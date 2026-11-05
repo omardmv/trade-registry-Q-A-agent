@@ -210,3 +210,24 @@ def test_price_per_kg_is_shown_per_tonne_too(results):
     text = plan_templates.render(p, D, columns, rows, "ru")
     assert not verify_answer(text, "", rows, row_count=len(rows)).ok
     check(text, rows, derived)
+
+
+@pytest.mark.parametrize("lang, seller, buyer, code", [("ru", "брокер продавца", "брокер покупателя", "код"),
+                                                       ("uz", "sotuvchi brokeri", "xaridor brokeri", "kod"),
+                                                       ("uz-Cyrl", "сотувчи брокери", "харидор брокери", "код")])
+def test_deal_card_names_the_brokers(db, resolver, lang, seller, buyer, code):
+    """h002: the deal card shows the broker of each side as «name» (код BKxxx), like the companies, and the
+    explanation lists the broker names among the columns it shows."""
+    from app.plan.explain import explain_plan
+    deal = db.query("SELECT MIN(d.deal_id) FROM deals d JOIN brokers bs ON bs.broker_code = d.seller_broker "
+                    "JOIN brokers bb ON bb.broker_code = d.buyer_broker").rows[0][0]
+    names = db.query(f"SELECT bs.name, d.seller_broker, bb.name, d.buyer_broker FROM deals d "
+                     f"JOIN brokers bs ON bs.broker_code = d.seller_broker "
+                     f"JOIN brokers bb ON bb.broker_code = d.buyer_broker WHERE d.deal_id = {deal}").rows[0]
+    res, built, p = run_plan(db, resolver, {"subject": "deals", "filters": [F("deal", deal)], "group_by": ["deal"]})
+    text = plan_templates.render(p, D, res.columns, res.rows, lang)
+    assert f"{seller}: «{names[0]}» ({code} {names[1]})" in text
+    assert f"{buyer}: «{names[2]}» ({code} {names[3]})" in text
+    check(text, res.rows)
+    shown = explain_plan(p, D, built.notes, lang)
+    assert seller in shown and buyer in shown

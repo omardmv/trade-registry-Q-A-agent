@@ -48,7 +48,7 @@ deals:
       sql: d.deal_id
       col: deal_id
       ground: deal
-      joins: [ps, pb]
+      joins: [ps, pb, bs, bb]
       columns: ["d.deal_id AS deal_id", "d.deal_date AS deal_date", "d.product_canonical AS product",
                 "d.product_name_full AS product_variant", "d.seller_inn AS seller_inn", "ps.name AS seller_name",
                 "d.buyer_inn AS buyer_inn", "pb.name AS buyer_name", "d.volume AS volume", "d.unit AS unit",
@@ -56,7 +56,8 @@ deals:
                 "d.amount_usd AS amount_usd", "d.status AS status", "d.contract_id AS contract_id",
                 "d.contract_type AS contract_type", "d.contract_form AS contract_form", "d.trade_type AS trade_type",
                 "d.region AS region", "d.delivery_basis AS delivery_basis", "d.seller_broker AS seller_broker",
-                "d.buyer_broker AS buyer_broker", "d.quantity AS lots", "d.delivered_lots AS delivered_lots",
+                "bs.name AS seller_broker_name", "d.buyer_broker AS buyer_broker", "bb.name AS buyer_broker_name",
+                "d.quantity AS lots", "d.delivered_lots AS delivered_lots",
                 "d.price_vs_start_pct AS price_change_pct", "d.payment_term_days AS payment_term_days",
                 "d.delivery_term_days AS delivery_term_days", "d.payment_date AS payment_date",
                 "d.days_to_payment AS days_to_payment", "d.payment_late AS payment_late",
