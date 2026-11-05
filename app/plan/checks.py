@@ -116,7 +116,8 @@ def consistency_error(plan: Plan, d: Dictionary, question: str) -> str | None:
                         f"without group_by and one numerator value, or group_by {grouped[0]} with sum/count only")
     return (period_error(plan, d, question) or period_value_error(plan, d, question)
             or named_day_error(plan, d, question) or grain_word_error(plan, d, question)
-            or not_in_data_error(question) or role_word_error(plan, d, question))
+            or not_in_data_error(question) or role_word_error(plan, d, question)
+            or currency_error(plan, question) or side_error(plan, question))
 
 
 # ---- a calendar day named in the question must be a day in the plan, not its month or year ----
@@ -252,6 +253,81 @@ def role_word_error(plan: Plan, d: Dictionary, question: str) -> str | None:
         return (f"the question is about {named[0]} companies: add the filter role = {named[0]} (the registry lists "
                 "buyers and sellers)")
     return "the question names buyers and sellers: group_by role, or filter role for the one asked"
+
+
+# ---- concept identity: a currency / side the question names must be the one the plan computes ----
+_DOLLAR_RE = re.compile(r"доллар|долл\b|dollar|usd|\$", re.IGNORECASE)
+_SOM_RE = re.compile(r"(?<!\w)(?:сум(?:ах|ов|ам|ы|е|а)?|so[‘'’`ʻ]?m\w*|сўм\w*|uzs)(?!\w)", re.IGNORECASE)
+_RATE_RE = re.compile(r"курс|kurs", re.IGNORECASE)
+_UZS_MONEY = {"amount_uzs", "deal_price_per_kg", "unit_price_uzs", "price_per_kg", "bought_uzs_valid",
+              "sold_uzs_valid"}
+_USD_MONEY = {"amount_usd"}
+
+
+def _plan_field_names(plan: Plan) -> set[str]:
+    """Fields a plan computes or filters on: measure fields and named measures, filters (incl. share numerators),
+    group_by."""
+    out = {m.of for m in plan.measures if m.of} | {m.agg for m in plan.measures}
+    out |= {f.field for f in _plan_filters(plan)} | set(plan.group_by)
+    return out
+
+
+def currency_error(plan: Plan, question: str) -> str | None:
+    """The dollar rate only for a question that names the dollar or a bare rate («курс на 15.03.2024»: the data's
+    only rate); money in the currency the question names. (Other currencies by name: not_in_data_error.)"""
+    if not question.strip():
+        return None
+    dollar, som = bool(_DOLLAR_RE.search(question)), bool(_SOM_RE.search(question))
+    if plan.subject == "usd_rates":
+        if not dollar and not _RATE_RE.search(question):
+            return ("usd_rates is the US dollar rate only and the question names neither the dollar nor a rate: "
+                    "if it asks about something else, call declare_unanswerable")
+        return None
+    used = _plan_field_names(plan)
+    usd_filter = any(f.field == "currency" and f.value in ("USD", ("USD",)) for f in _plan_filters(plan))
+    uzs_filter = any(f.field == "currency" and f.value in ("UZS", ("UZS",)) for f in _plan_filters(plan))
+    if dollar and not som and used & _UZS_MONEY and not used & _USD_MONEY and not usd_filter:
+        return ("the question asks for an amount in US dollars but the plan computes so‘m "
+                f"({', '.join(sorted(used & _UZS_MONEY))}): use amount_usd; if the dollar figure is not in the "
+                "data, call declare_unanswerable")
+    if som and not dollar and used & _USD_MONEY and not used & _UZS_MONEY and not uzs_filter:
+        return "the question asks for an amount in so‘m but the plan computes US dollars: use amount_uzs"
+    return None
+
+
+_BUYER_RE = re.compile(r"покупател|xaridor|харидор", re.IGNORECASE)
+_SELLER_RE = re.compile(r"продав(?:ец|ц)|sotuvchi|сотувчи", re.IGNORECASE)
+_SIDE_FIELDS = {
+    "buyer": {"buyer", "buyer_broker", "buyer_region", "buyer_activity", "deals_as_buyer", "deals_as_buyer_broker",
+              "bought_uzs_valid"},
+    "seller": {"seller", "seller_broker", "seller_region", "seller_activity", "deals_as_seller",
+               "deals_as_seller_broker", "sold_uzs_valid"},
+}
+_SIDE_VALUES = {"buyer": {"buyer", "Покупатель"}, "seller": {"seller", "Продавец"}}
+
+
+def _plan_sides(plan: Plan) -> set[str]:
+    used = _plan_field_names(plan)
+    sides = {side for side, names in _SIDE_FIELDS.items() if used & names}
+    for f in _plan_filters(plan):
+        if f.field in ("broker_side", "role"):
+            values = set(f.value) if isinstance(f.value, tuple) else {f.value}
+            sides |= {side for side, names in _SIDE_VALUES.items() if values & names}
+    return sides
+
+
+def side_error(plan: Plan, question: str) -> str | None:
+    """A question that names only buyers (or only sellers) must not be computed on the other side alone."""
+    named = {side for side, rx in (("buyer", _BUYER_RE), ("seller", _SELLER_RE)) if rx.search(question)}
+    if len(named) != 1:
+        return None
+    side = named.pop()
+    sides = _plan_sides(plan)
+    if not sides or side in sides:
+        return None
+    other = sides.pop()
+    return (f"the question is about the {side} side but the plan uses only {other}-side fields: use the {side} "
+            f"fields ({', '.join(sorted(_SIDE_FIELDS[side])[:4])}, ...)")
 
 
 # ---- period values: a year / month named in the question must be inside the plan's period ----
