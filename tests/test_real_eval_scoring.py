@@ -25,3 +25,9 @@ def test_numbers_still_strict():
 def test_common_uzbek_month_spellings():
     assert matches("month", 10, "oktabr oyida")
     assert matches("month", 9, "sentabrda")
+
+
+def test_booleans_match_yes_no_words():
+    from eval.real.run import matches
+    assert matches("vat_payer", True, "QQS to‘lovchi: ha;") and matches("vat_payer", True, "плательщик НДС: да")
+    assert matches("vat_payer", False, "ҚҚС тўловчи: йўқ") and not matches("vat_payer", True, "QQS to‘lovchi: yo‘q")

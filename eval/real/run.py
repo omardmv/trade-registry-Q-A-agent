@@ -65,6 +65,9 @@ def _month_named(n: int, text: str) -> bool:
 
 def matches(col: str, value, text: str) -> bool:
     """Is this expected value stated in the answer? Same value in any common format counts."""
+    if isinstance(value, bool):  # yes / no, as the answer templates write it
+        word = r"да|ha|ҳа" if value else r"нет|yo.q|йўқ"
+        return bool(re.search(rf"(?<!\w)(?:{word})(?!\w)", text, re.I))
     if isinstance(value, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
         y, m, d = value.split("-")
         if value in text or f"{d}.{m}.{y}" in text:
