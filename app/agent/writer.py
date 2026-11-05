@@ -7,7 +7,7 @@ from typing import Literal
 
 from app import config
 from app.agent.guard import build_index, missing_condition_error, sql_missing_condition_error
-from app.agent.llm import LLM, ToolSpec, call_with_retry, deadline_scope, safe_text
+from app.agent.llm import LLM, EmptyReplyError, ToolSpec, call_with_retry, deadline_scope, safe_text
 from app.agent.validators import grounding_status, missing_message, validate_sql
 from app.catalog import load_catalog, load_product_attrs, render_catalog
 from app.compiler.spec import (CONTRACT_FORMS, CONTRACT_TYPES, DIMENSIONS, FILTER_KEYS, KINDS, MEASURES, ORDERS,
@@ -190,10 +190,20 @@ class WriterResult:
     measure_columns: list[str] = field(default_factory=list)  # grammar planner: output columns holding measures
 
 
+def _with_note(results: list[tuple[str, dict]], note: str) -> list[tuple[str, dict]]:
+    """Tool results with a note added to the first payload (copies; the originals are in the trace)."""
+    out = [(name, dict(payload)) for name, payload in results]
+    if out:
+        name, payload = out[0]
+        payload["note"] = f"{payload['note']} {note}" if payload.get("note") else note
+    return out
+
+
 class Writer:
     tools = TOOLS
     compile_tool = "compile_query"
     nudge = "Do not answer in text. Call compile_query, submit_sql or declare_unanswerable."
+    empty_nudge = "Your last reply was empty. Reply with one tool call."
 
     def __init__(self, llm: LLM, db: Database, resolver: Resolver, examples: ExampleStore, schema_prompt: str,
                  max_tool_calls: int = 8, max_fixes: int = 2,
@@ -236,14 +246,37 @@ class Writer:
         def failed(reason):
             return WriterResult("failed", reason=reason, trace=trace)
 
-        def send(fn, *args):
-            """-> (reply, None) or (None, failed-result); checks the deadline before every send."""
+        def send_once(fn, arg):
+            """-> (reply, None) or (None, failed-result); checks the deadline before every send.
+            reply is None with no failure when the model replied with neither text nor tool calls."""
             if deadline - time.monotonic() < self.llm_timeout_s:
                 return None, failed("timeout")
             try:
-                return call_with_retry(lambda: fn(*args), deadline, self.llm_timeout_s), None
+                reply = call_with_retry(lambda: fn(arg), deadline, self.llm_timeout_s)
+            except EmptyReplyError:
+                return "raised", None
             except Exception as e:  # LLMError or transport failure from the chat
                 return None, failed(f"llm error: {safe_text(e)}")
+            if not (reply.text or "").strip() and not reply.tool_calls:
+                return "returned", None
+            return reply, None
+
+        def send(fn, arg):
+            """An empty reply on any turn is retried once with a short nudge (within the deadline). A raised empty
+            reply was not committed: the same turn is sent again with the nudge; a returned one stays in the history,
+            so the nudge follows it as a new user message."""
+            reply, err = send_once(fn, arg)
+            if err or not isinstance(reply, str):
+                return reply, err
+            if reply == "returned":
+                reply, err = send_once(chat.send_text, self.empty_nudge)
+            elif fn == chat.send_text:
+                reply, err = send_once(fn, f"{arg}\n\n{self.empty_nudge}")
+            else:
+                reply, err = send_once(fn, _with_note(arg, self.empty_nudge))
+            if isinstance(reply, str):
+                return None, failed("llm error: empty reply twice")
+            return reply, err
 
         if deadline - time.monotonic() < self.llm_timeout_s:
             return failed("timeout")

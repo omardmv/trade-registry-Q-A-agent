@@ -2,7 +2,7 @@
 import json
 
 from app import config
-from app.agent.llm import LLMError, LLMReply, ProviderError, ToolCall, ToolSpec, note_provider
+from app.agent.llm import EmptyReplyError, LLMError, LLMReply, ProviderError, ToolCall, ToolSpec, note_provider
 
 _TYPES = {"OBJECT": "object", "STRING": "string", "ARRAY": "array", "INTEGER": "integer",
           "BOOLEAN": "boolean", "NUMBER": "number"}
@@ -104,7 +104,7 @@ class OpenAIChat:
                            "function": {"name": fn.name, "arguments": fn.arguments or "{}"}})
         text = msg.content or ""
         if not text.strip() and not calls:
-            raise LLMError("OpenAI returned an empty reply")
+            raise EmptyReplyError("OpenAI returned an empty reply")
         assistant = {"role": "assistant", "content": msg.content}
         if native:
             assistant["tool_calls"] = native

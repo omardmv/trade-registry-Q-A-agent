@@ -10,13 +10,19 @@ class FakeChat:
         self.replies = list(replies)
         self.sent = []
 
+    def _next(self):
+        reply = self.replies.pop(0)
+        if isinstance(reply, BaseException):  # scripted provider failure (e.g. an empty reply)
+            raise reply
+        return reply
+
     def send_text(self, text):
         self.sent.append(("text", text))
-        return self.replies.pop(0)
+        return self._next()
 
     def send_tool_results(self, results):
         self.sent.append(("tools", results))
-        return self.replies.pop(0)
+        return self._next()
 
 
 class FakeLLM:

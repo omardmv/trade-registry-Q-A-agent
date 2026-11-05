@@ -47,6 +47,10 @@ class LLMError(RuntimeError):
     """The model returned no usable content (blocked, empty, or malformed response)."""
 
 
+class EmptyReplyError(LLMError):
+    """The model replied with neither text nor tool calls (nothing was committed to the chat history)."""
+
+
 class ProviderError(RuntimeError):
     """The provider refused or failed the call (HTTP status, connection error). transient=True: worth a retry."""
 
