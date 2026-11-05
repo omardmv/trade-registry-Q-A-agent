@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 
 from app import config
 from app.agent.writer import Writer, WriterResult
-from app.answer import templates
+from app.answer import plan_templates, templates
 from app.agent.llm import call_with_retry, deadline_scope, safe_text, track_providers
 from app.answer.composer import compose
 from app.answer.verifier import verify_answer
@@ -67,6 +67,8 @@ class Pipeline:
         self.writer, self.llm = writer, llm
         self.known_names, self.alias_groups = known_names, alias_groups
         self.deadline_s, self.llm_timeout_s = deadline_s, llm_timeout_s
+        # grammar planner: answers are rendered from the plan by code (app/answer/plan_templates.py)
+        self.grammar = getattr(writer, "compile_tool", None) == "run_plan"
 
     def ask(self, question: str, previous: dict | None = None) -> AskResult:
         with track_providers() as used:
@@ -139,6 +141,21 @@ class Pipeline:
         tail = templates.partial_note(lang) if result.truncated else ""
         feedback = None
         unsupported: list[str] = []
+        if self.grammar:
+            # grammar mode: the answer text is rendered by code from the plan and the rows; no composer call
+            text = (plan_templates.render(wr.spec, load_dictionary(), result.columns, shown, lang)
+                    if isinstance(wr.spec, Plan) else None)
+            if text:
+                answer = "\n\n".join(p for p in (text, explanation, tail) if p)
+                check = verify_answer(answer, question, shown, extra_text=context, row_count=count,
+                                      known_names=self.known_names, alias_groups=self.alias_groups)
+                if check.ok:
+                    return AskResult(answer, answered=True, source="plan_template", verified=True, **base)
+                log.error("plan template failed the answer check: %s", check.unsupported)
+                unsupported = check.unsupported
+            answer = templates.table_answer(lang, result.columns, result.rows,
+                                            "\n".join(p for p in (explanation, tail) if p))
+            return AskResult(answer, answered=True, source="template", verified=True, unsupported=unsupported, **base)
         for _ in range(2):
             if deadline - time.monotonic() < self.llm_timeout_s:
                 break
