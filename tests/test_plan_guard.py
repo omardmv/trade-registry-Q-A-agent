@@ -133,3 +133,15 @@ def test_share_of_count_spellings_mean_count():
         p = prepare({"subject": "deals", "measures": [{"agg": "share", "of": of}],
                      "filters": [{"field": "cancelled", "value": True, "numerator": True}]})
         assert p.measures[0].of is None
+
+
+def test_stored_percentage_in_a_record_listing_is_not_a_share():
+    from app.plan.checks import plan_missing_condition_error
+    from tests.plan_helpers import D, prepare
+    q = "базисная цена, валюта и залог в % по контракту 100001"
+    p = prepare({"subject": "contracts", "filters": [{"field": "contract", "op": "=", "value": 100001}],
+                 "group_by": ["contract"]}, q)
+    assert plan_missing_condition_error(q, p, D, []) is None
+    q2 = "Какой процент контрактов форвардные?"
+    p2 = prepare({"subject": "contracts", "measures": [{"agg": "count"}]}, q2)
+    assert "share" in plan_missing_condition_error(q2, p2, D, [])

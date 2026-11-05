@@ -206,7 +206,7 @@ contracts:
                 "c.seller_inn AS seller_inn", "pc.name AS seller_name", "c.registered_date AS registered_date",
                 "c.valid_until AS valid_until", "c.contract_form AS contract_form", "c.contract_type AS contract_type",
                 "c.base_price AS base_price", "c.currency AS currency", "c.unit AS unit",
-                "c.payment_term_days AS payment_term_days", "c.delivery_term_days AS delivery_term_days",
+                "c.deposit_pct AS deposit_pct", "c.payment_term_days AS payment_term_days", "c.delivery_term_days AS delivery_term_days",
                 "COALESCE(cd.deals_all, 0) AS deals_all", "COALESCE(cd.deals_valid, 0) AS deals_valid",
                 "cd.seller_brokers AS seller_brokers", "cd.buyer_brokers AS buyer_brokers"]
       label: {ru: контракт, uz: shartnoma}

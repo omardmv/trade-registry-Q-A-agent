@@ -441,6 +441,11 @@ def plan_missing_condition_error(question: str, plan: Plan, d: Dictionary, index
                 return ("the question asks for a share of money / volume, but cancelled_share is a share of the "
                         f"count: use {{agg: share, of: {of}}} with the filter cancelled = true marked numerator:true")
     percent = shares or any(m.agg == "cancelled_share" or (m.of or "").endswith("_pct") for m in plan.measures)
+    # a stored percentage (deposit %, price change %) read as a filter or in a record's listed columns is not a share
+    sub = d.subject(plan.subject)
+    percent = percent or any(f.field.endswith("_pct") for f in plan.filters) or any(
+        sub.fields[g].type == "record" and any("_pct" in c for c in (getattr(sub.fields[g], "columns", None) or ()))
+        for g in plan.group_by)
     if not (percent or plan.compare):
         return ("the question asks for a share / percentage: use {agg: share} with the part's filters marked "
                 "numerator:true (or cancelled_share); if the share cannot be expressed, call declare_unanswerable")
