@@ -1,0 +1,15 @@
+f001/ru
+f007/ru
+f007/uz_cyrl
+f012/uz_cyrl
+f016/uz_cyrl
+f026/uz_latn
+f029/uz_latn
+f029/uz_cyrl
+f032/uz_latn
+f034/uz_cyrl
+f035/ru
+f039/ru
+f039/uz_cyrl
+f054/uz_cyrl
+f059/uz_cyrl
