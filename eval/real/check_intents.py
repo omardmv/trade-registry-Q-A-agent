@@ -1,6 +1,6 @@
 """Validate eval/real/intents.yaml and run every reference query.
 
-Usage: uv run python -m eval.real.check_intents [--show] [--db build/uzex.duckdb]
+Usage: uv run python -m eval.real.check_intents [--show] [--db build/uzex.duckdb] [--file eval/real/fresh_intents.yaml]
 
 Checks field presence and values, runs `sql` (and `sql_check` when present) for each reading,
 requires answerable readings to return 1..5 rows with non-NULL key values, compares `sql` with
@@ -25,7 +25,7 @@ SHAPES = [
     "lookup", "count", "total", "average", "share", "top_n", "least", "distinct_count",
     "compare_periods", "trend", "breakdown", "date_of_extreme",
 ]
-SPLITS = {"dev", "test"}
+SPLITS = {"dev", "test", "fresh"}
 MAX_ROWS = 5
 
 
@@ -134,6 +134,8 @@ def report(intents: list[dict]) -> None:
     n_amb = sum(1 for i in intents if len(i.get("readings") or []) > 1)
     print(f"\ntotal {len(intents)}: answerable {n_ans}, unanswerable {len(intents) - n_ans}, ambiguous {n_amb}")
     for sp in sorted(SPLITS):
+        if not any(i["split"] == sp for i in intents):
+            continue
         sub = [i for i in intents if i["split"] == sp]
         a = sum(1 for i in sub if i["answerable"])
         amb = sum(1 for i in sub if len(i.get("readings") or []) > 1)

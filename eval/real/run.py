@@ -3,6 +3,7 @@
     uv run python -m eval.real.run --split test            # held-out half (score only)
     uv run python -m eval.real.run --split dev --langs ru  # tuning half, Russian only
     uv run python -m eval.real.run --only r001,r014
+    uv run python -m eval.real.run --intents eval/real/fresh_intents.yaml --split fresh   # another intents file
     uv run python -m eval.real.run --split dev --providers qwen_local      # one provider (or a chain: a,b)
     uv run python -m eval.real.run --paraphrases eval/real/unanswerable_paraphrases.yaml --providers openai \
         --max-cost 0.05                     # a paraphrase set instead of the intents (refusal / answered only)
@@ -92,7 +93,8 @@ def score_reading(gold: list[tuple[str, object]], answer: str) -> bool:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--split", choices=["dev", "test", "all"], default="test")
+    ap.add_argument("--split", choices=["dev", "test", "fresh", "all"], default="test")
+    ap.add_argument("--intents", default=str(INTENTS), help="intents file (default eval/real/intents.yaml)")
     ap.add_argument("--langs", default=",".join(LANGS))
     ap.add_argument("--only", default="")
     ap.add_argument("--workers", type=int, default=3)
@@ -110,13 +112,13 @@ def main() -> int:
     ap.add_argument("--rescore", default="", help="re-score a saved results file without calling the model")
     args = ap.parse_args()
     if args.rescore:
-        return rescore(args.rescore)
+        return rescore(args.rescore, args.intents)
 
     if args.paraphrases:
         intents = load_paraphrases(args.paraphrases)
         args.split = "all"
     else:
-        intents = yaml.safe_load(open(INTENTS, encoding="utf-8"))
+        intents = yaml.safe_load(open(args.intents, encoding="utf-8"))
     problems = schema_word_problems(intents)
     if problems:
         print("Questions with schema words or English hints (fix before scoring):", *problems, sep="\n  ")
@@ -220,6 +222,8 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     name = f"para-{Path(args.paraphrases).stem}" if args.paraphrases else args.split
+    if not args.paraphrases and Path(args.intents).resolve() != INTENTS.resolve():
+        name = f"{Path(args.intents).stem}-{args.split}"
     (out / f"real-{name}-{stamp}.json").write_text(json.dumps(
         {"summary": summary, "breakdown": breakdown, "rows": rows,
          "golds": {k: v for k, v in golds.items()}}, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
@@ -237,9 +241,9 @@ def load_paraphrases(path: str) -> list[dict]:
     return out
 
 
-def rescore(path: str) -> int:
+def rescore(path: str, intents_path: str | Path = INTENTS) -> int:
     saved = json.load(open(path, encoding="utf-8"))
-    intents = {i["id"]: i for i in yaml.safe_load(open(INTENTS, encoding="utf-8"))}
+    intents = {i["id"]: i for i in yaml.safe_load(open(intents_path, encoding="utf-8"))}
     db = Database(config.DB_PATH)
     golds = {iid: [gold_values(db, r) for r in intents[iid].get("readings") or []] for iid in {r["id"] for r in saved["rows"]}}
     changed = 0
