@@ -93,7 +93,7 @@ def main() -> int:
     ap.add_argument("--langs", default=",".join(LANGS))
     ap.add_argument("--only", default="")
     ap.add_argument("--workers", type=int, default=3)
-    ap.add_argument("--providers", default="", help="LLM providers in order, e.g. qwen_local or gemini,openai "
+    ap.add_argument("--providers", default="", help="LLM providers in order, e.g. qwen_local or qwen_local,openai "
                                                     "(default: LLM_PROVIDERS)")
     ap.add_argument("--pick", default="", help="file with id/lang lines: exactly these phrasings")
     ap.add_argument("--max-cost", type=float, default=0.0, help="stop starting questions once the estimated spend "

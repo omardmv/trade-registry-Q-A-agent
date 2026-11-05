@@ -1,4 +1,4 @@
-"""Writer agent: Gemini turns a question into a compiled spec (preferred) or validated SQL."""
+"""Writer agent: the LLM turns a question into a compiled spec (preferred) or validated SQL."""
 import json
 import re
 import time

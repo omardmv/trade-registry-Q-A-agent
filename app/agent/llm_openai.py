@@ -1,4 +1,4 @@
-"""OpenAI Chat Completions backend with the same Chat/LLM interface as GeminiChat/GeminiLLM."""
+"""OpenAI Chat Completions backend (any OpenAI-compatible server) implementing the Chat/LLM interface of app.agent.llm."""
 import json
 import re
 
@@ -11,7 +11,7 @@ _TYPES = {"OBJECT": "object", "STRING": "string", "ARRAY": "array", "INTEGER": "
 
 
 def to_json_schema(schema: dict) -> dict:
-    """Gemini-style OpenAPI schema (uppercase types) -> JSON Schema (lowercase types), recursively."""
+    """ToolSpec parameter schema (OpenAPI style, uppercase types) -> JSON Schema (lowercase types), recursively."""
     out = {}
     for key, value in schema.items():
         if key == "type":

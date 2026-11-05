@@ -1,14 +1,12 @@
-"""Offline stub clients shaped like the google-genai and openai SDKs (no network)."""
+"""Offline stub clients shaped like the openai SDK (no network)."""
 import copy
 import json
 import time
 
 import httpx2
 import openai
-from google.genai import errors, types
 from openai.types.chat import ChatCompletion
 
-from app.agent.llm import GeminiLLM
 from app.agent.llm_openai import OpenAILLM
 
 
@@ -31,42 +29,6 @@ def _produce(o):
     return o
 
 
-# ---- Gemini ----
-class GeminiModels:
-    def __init__(self, outcomes):
-        self.outcomes, self.calls = list(outcomes), []
-
-    def generate_content(self, model, contents, config):
-        self.calls.append(list(contents) if isinstance(contents, list) else contents)
-        return _produce(self.outcomes.pop(0))
-
-
-class GeminiClient:
-    def __init__(self, outcomes):
-        self.models = GeminiModels(outcomes)
-
-
-def gemini(outcomes) -> GeminiLLM:
-    llm = GeminiLLM("dummy-key", "gemini-test", 5)
-    llm._client = GeminiClient(outcomes)
-    return llm
-
-
-def g_text(text):
-    return types.GenerateContentResponse(candidates=[types.Candidate(
-        content=types.Content(role="model", parts=[types.Part.from_text(text=text)]))])
-
-
-def g_call(name, **args):
-    return types.GenerateContentResponse(candidates=[types.Candidate(content=types.Content(role="model", parts=[
-        types.Part(function_call=types.FunctionCall(name=name, args=args), thought_signature=b"sig")]))])
-
-
-def g_error(code, message="error"):
-    cls = errors.ServerError if code >= 500 else errors.ClientError
-    return cls(code, {"error": {"code": code, "message": message, "status": "X"}})
-
-
 # ---- OpenAI ----
 class OpenAICompletions:
     def __init__(self, outcomes):
@@ -83,8 +45,9 @@ class OpenAIClient:
         self.chat.completions = OpenAICompletions(outcomes)
 
 
-def openai_llm(outcomes) -> OpenAILLM:
-    return OpenAILLM("dummy-key", "gpt-test", 5, client=OpenAIClient(outcomes))
+def openai_llm(outcomes, name: str = "openai") -> OpenAILLM:
+    """An OpenAI-compatible provider called `name` whose calls produce `outcomes` in order."""
+    return OpenAILLM("dummy-key", "gpt-test", 5, client=OpenAIClient(outcomes), name=name)
 
 
 def o_resp(content=None, tool_calls=(), finish=None):

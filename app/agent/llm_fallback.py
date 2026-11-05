@@ -152,22 +152,20 @@ def build_llm(order: list[str], timeout_s: float, cooldown_s: float = 300.0,
     specs = {name: settings(name) for name in dict.fromkeys(order)}
     unknown = [n for n, s in specs.items() if s is None]
     if unknown:
-        raise ValueError(f"LLM_PROVIDERS: unknown provider(s) {unknown}; built in: gemini, openai, qwen_local "
-                         "(or set <NAME>_TYPE=gemini|openai for another one)")
-    usable = [(n, s) for n, s in specs.items() if s.get("api_key") or (s["type"] == "openai" and s.get("base_url"))]
+        raise ValueError(f"LLM_PROVIDERS: unknown provider(s) {unknown}; built in: openai, qwen_local "
+                         "(or set <NAME>_TYPE=openai for another OpenAI-compatible server)")
+    usable = [(n, s) for n, s in specs.items() if s.get("api_key") or s.get("base_url")]
     if not usable:
-        raise RuntimeError("No LLM provider configured: set an API key (GEMINI_API_KEY, OPENAI_API_KEY) or a local "
+        raise RuntimeError("No LLM provider configured: set an API key (OPENAI_API_KEY or <NAME>_API_KEY) or a local "
                            f"base_url (LLM_PROVIDERS={','.join(order)})")
     llms = [make_provider(n, s, timeout_s) for n, s in usable]
     return llms[0] if len(llms) == 1 else FallbackLLM(*llms, cooldown_s=cooldown_s, timeout_s=timeout_s)
 
 
 def make_provider(name: str, spec: dict, timeout_s: float) -> LLM:
-    if spec["type"] == "gemini":
-        from app.agent.llm import GeminiLLM
-        llm = GeminiLLM(spec["api_key"], spec["model"], timeout_s)
-        llm.name = name
-        return llm
+    """An OpenAI-compatible provider (the only provider type) named `name`."""
+    if spec["type"] != "openai":
+        raise ValueError(f"provider {name}: unknown type {spec['type']!r} (only openai is supported)")
     from app.agent.llm_openai import OpenAILLM
     return OpenAILLM(spec.get("api_key", ""), spec["model"], timeout_s, base_url=spec.get("base_url", ""),
                      temperature=spec.get("temperature", ""), text_tools=bool(spec.get("text_tools")), name=name)

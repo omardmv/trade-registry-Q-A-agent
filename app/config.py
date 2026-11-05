@@ -48,9 +48,6 @@ DB_PATH = Path(os.environ.get("UZEX_DB_PATH", ROOT / "build" / "uzex.duckdb"))
 EXAMPLES_PATH = ROOT / "examples" / "examples.yaml"
 SEMANTIC_PATH = ROOT / "app" / "semantic.yaml"
 
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_THINKING_BUDGET = int(os.environ.get("GEMINI_THINKING_BUDGET", "1024"))
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5.4-mini")
 OPENAI_REASONING_EFFORT = os.environ.get("OPENAI_REASONING_EFFORT", "").strip()  # empty: do not send. gpt-5.4-mini rejects it together with function tools on Chat Completions
@@ -60,13 +57,13 @@ OPENAI_TEMPERATURE = os.environ.get("OPENAI_TEMPERATURE", "").strip()
 # 1: tool calls through the prompt (<tool_call> text) instead of the API tools field, for local servers whose tool
 # parser drops calls (app.agent.llm_openai.TextToolChat)
 OPENAI_TEXT_TOOLS = os.environ.get("OPENAI_TEXT_TOOLS", "").strip().lower() in ("1", "true", "yes")
-# Providers tried in this order (fallback chain), by name. Built-in names: gemini, openai, qwen_local (a local
-# Ollama model through its OpenAI-compatible endpoint). Any name works when <NAME>_TYPE is set; per provider:
-# <NAME>_TYPE (gemini | openai = any OpenAI-compatible server), <NAME>_MODEL, <NAME>_API_KEY, <NAME>_BASE_URL,
-# <NAME>_TEMPERATURE, <NAME>_TEXT_TOOLS. Example: LLM_PROVIDERS=qwen_local,gemini,openai
-LLM_PROVIDERS = [p.strip().lower() for p in os.environ.get("LLM_PROVIDERS", "gemini,openai").split(",") if p.strip()]
+# Providers tried in this order (fallback chain), by name. Built-in names: openai, qwen_local (a local Ollama
+# model through its OpenAI-compatible endpoint). Any name works when <NAME>_TYPE is set; per provider:
+# <NAME>_TYPE (openai = any OpenAI-compatible server; the only type), <NAME>_MODEL, <NAME>_API_KEY, <NAME>_BASE_URL,
+# <NAME>_TEMPERATURE, <NAME>_TEXT_TOOLS. Example: LLM_PROVIDERS=qwen_local,openai
+LLM_PROVIDERS = [p.strip().lower() for p in os.environ.get("LLM_PROVIDERS", "openai").split(",") if p.strip()]
+PROVIDER_TYPES = ("openai",)
 _BUILTIN_PROVIDERS = {
-    "gemini": {"type": "gemini"},
     "openai": {"type": "openai"},
     "qwen_local": {"type": "openai", "base_url": "http://localhost:11434/v1", "model": "qwen2.5-7b-uzex",
                    "temperature": "0", "text_tools": "1"},
@@ -84,11 +81,10 @@ def provider_settings(name: str) -> dict | None:
         value = os.environ.get(prefix + field.upper())
         if value is not None:
             out[field] = value.strip()
-    if out.get("type") not in ("gemini", "openai"):
+    if out.get("type") not in PROVIDER_TYPES:
         return None
-    defaults = {"gemini": {"model": GEMINI_MODEL, "api_key": GEMINI_API_KEY},
-                "openai": {"model": OPENAI_MODEL, "api_key": OPENAI_API_KEY} if name == "openai" else {"model": ""}}
-    for field, value in defaults[out["type"]].items():
+    defaults = {"model": OPENAI_MODEL, "api_key": OPENAI_API_KEY} if name == "openai" else {"model": ""}
+    for field, value in defaults.items():
         out.setdefault(field, value)
     out.setdefault("api_key", "")
     out.setdefault("base_url", "")

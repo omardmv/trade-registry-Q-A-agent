@@ -81,7 +81,7 @@ rankings, trends, distinct counts and extremes from the same builder as deals.
    2022–2026; по покупателю; топ-3 по тоннам и по сумме".
 
 Kept as they are: name lookup (`resolve.py`), grounding of IDs, the answer checker, the time budget, the
-Gemini/OpenAI fallback, the evaluation sets. The keyword guard shrinks to the generic checks in step 2 plus the
+LLM provider fallback chain, the evaluation sets. The keyword guard shrinks to the generic checks in step 2 plus the
 period check (a month or date named in the question must appear in the plan).
 
 ## Prompt size

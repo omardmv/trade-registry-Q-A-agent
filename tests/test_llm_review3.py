@@ -14,7 +14,7 @@ from app.config import load_dotenv
 from app.examples import ExampleStore
 from app.resolve import Resolver
 from app.semantic import load_semantic, render_schema_prompt
-from tests.llm_stubs import FakeClock, Slow, g_error, g_text, gemini, o_call, o_resp, o_status, o_text, openai_llm
+from tests.llm_stubs import FakeClock, Slow, o_call, o_resp, o_status, o_text, openai_llm
 
 TOOL = ToolSpec("lookup", "Look up a deal.", {"type": "OBJECT", "properties": {"deal_id": {"type": "INTEGER"}}})
 REQ = httpx.Request("POST", "https://x")
@@ -28,19 +28,29 @@ def o_calls(llm):
     return llm._client.chat.completions.calls
 
 
+def primary(outcomes):
+    return openai_llm(outcomes, name="primary")
+
+
+def provider_error(code, message="error"):
+    with pytest.raises(Exception) as info:
+        openai_llm([o_status(code, message)]).complete("s", "p")
+    return info.value
+
+
 # ---- 1. a timeout retries on the other provider if a full timeout still fits ----
 def test_timeout_falls_back_to_other_provider_when_time_fits():
     clock = FakeClock()
-    g, o = gemini([Slow(1, timeout(), clock)]), openai_llm([o_text("from openai")])
-    chat = FallbackLLM(g, o, timeout_s=15, clock=clock).start_chat("s", [TOOL])
+    p, o = primary([Slow(1, timeout(), clock)]), openai_llm([o_text("from openai")])
+    chat = FallbackLLM(p, o, timeout_s=15, clock=clock).start_chat("s", [TOOL])
     assert chat.send_text("q", deadline=clock() + 60).text == "from openai"
     assert chat.provider == "openai"
 
 
 def test_timeout_with_too_little_time_does_not_call_secondary():
     clock = FakeClock()
-    g, o = gemini([Slow(1, timeout(), clock)]), openai_llm([o_text("never")])
-    chat = FallbackLLM(g, o, timeout_s=15, clock=clock).start_chat("s", [TOOL])
+    p, o = primary([Slow(1, timeout(), clock)]), openai_llm([o_text("never")])
+    chat = FallbackLLM(p, o, timeout_s=15, clock=clock).start_chat("s", [TOOL])
     with pytest.raises(httpx.ReadTimeout):
         chat.send_text("q", deadline=clock() + 10)
     assert o_calls(o) == []
@@ -48,7 +58,7 @@ def test_timeout_with_too_little_time_does_not_call_secondary():
 
 def test_complete_timeout_falls_back():
     clock = FakeClock()
-    llm = FallbackLLM(gemini([timeout()]), openai_llm([o_text("ok")]), timeout_s=15, clock=clock)
+    llm = FallbackLLM(primary([timeout()]), openai_llm([o_text("ok")]), timeout_s=15, clock=clock)
     assert llm.complete("s", "p", deadline=clock() + 60) == "ok"
 
 
@@ -62,30 +72,23 @@ def test_openai_replay_skips_empty_assistant_reply():
     assert [m["role"] for m in chat._messages] == ["system", "user", "user"]
 
 
-def test_gemini_replay_never_emits_empty_parts():
-    chat = gemini([]).start_chat("s", [TOOL])
-    chat.load_history(EMPTY)
-    assert chat._contents and all(c.parts for c in chat._contents)
-
-
 # ---- 3. permanent errors ----
-def test_gemini_invalid_key_and_unknown_model_are_permanent():
-    assert is_permanent(g_error(400, "API key not valid. Please pass a valid API key."))
-    assert is_permanent(g_error(400, "x API_KEY_INVALID x"))
-    assert is_permanent(g_error(404, "models/foo is not found"))
-    assert not is_permanent(g_error(400, "Request contains an invalid argument"))
+def test_invalid_key_and_unknown_model_are_permanent():
+    assert is_permanent(provider_error(401, "Incorrect API key provided"))
+    assert is_permanent(provider_error(404, "The model `foo` does not exist"))
+    assert not is_permanent(provider_error(400, "Invalid schema for function"))
 
 
 @pytest.mark.parametrize("code", [400, 404])
 def test_400_404_failures_are_logged_at_error_level(code, caplog):
-    llm = FallbackLLM(gemini([g_error(code, "malformed")]), openai_llm([o_text("ok")]))
+    llm = FallbackLLM(primary([o_status(code, "malformed")]), openai_llm([o_text("ok")]))
     with caplog.at_level(logging.INFO):
         llm.complete("s", "p")
     assert any(r.levelno >= logging.ERROR for r in caplog.records)
 
 
 def test_invalid_key_trips_breaker():
-    llm = FallbackLLM(gemini([g_error(400, "API key not valid")]), openai_llm([o_text("ok")]), clock=FakeClock())
+    llm = FallbackLLM(primary([o_status(401, "Incorrect API key provided")]), openai_llm([o_text("ok")]), clock=FakeClock())
     llm.complete("s", "p")
     assert llm.is_down(0)
 
@@ -176,9 +179,9 @@ SECRET = "Incorrect API key provided: sk-proj-abcdEFGH...abcd"
 
 @pytest.mark.parametrize("code", [401, 403])
 def test_auth_error_text_never_logged(code, caplog):
-    for primary, secondary in [(openai_llm([o_status(code, SECRET)]), gemini([g_text("ok")])),
-                               (gemini([g_error(code, SECRET)]), openai_llm([o_text("ok")]))]:
-        llm = FallbackLLM(primary, secondary)
+    for first, second in [(openai_llm([o_status(code, SECRET)]), primary([o_text("ok")])),
+                          (primary([o_status(code, SECRET)]), openai_llm([o_text("ok")]))]:
+        llm = FallbackLLM(first, second)
         with caplog.at_level(logging.DEBUG):
             llm.complete("s", "p")
     assert "sk-" not in caplog.text and "abcd" not in caplog.text
@@ -187,7 +190,7 @@ def test_auth_error_text_never_logged(code, caplog):
 
 def test_writer_reason_has_no_secret(db, caplog):
     ctx = (db, Resolver(db), ExampleStore.from_yaml(config.EXAMPLES_PATH), render_schema_prompt(load_semantic()))
-    for llm in (openai_llm([o_status(401, SECRET)]), gemini([g_error(403, SECRET)])):
+    for llm in (openai_llm([o_status(401, SECRET)]), primary([o_status(403, SECRET)])):
         res = Writer(llm, *ctx).run("Сколько сделок?", "ru", time.monotonic() + 60)
         assert res.status == "failed" and "sk-" not in res.reason and "abcd" not in res.reason
         assert "40" in res.reason
@@ -196,13 +199,13 @@ def test_writer_reason_has_no_secret(db, caplog):
 
 # ---- 9. last_provider is gone ----
 def test_no_last_provider_attribute():
-    assert not hasattr(FallbackLLM(gemini([]), openai_llm([])), "last_provider")
+    assert not hasattr(FallbackLLM(primary([]), openai_llm([])), "last_provider")
 
 
 # ---- 10. do not switch to a provider marked down (unless nothing healthier is left) ----
 def test_does_not_switch_to_down_provider_when_start_is_healthy():
     clock = FakeClock()
-    llm = FallbackLLM(gemini([g_error(503)]), openai_llm([o_text("never")]), clock=clock)
+    llm = FallbackLLM(primary([o_status(503)]), openai_llm([o_text("never")]), clock=clock)
     llm._down_until[1] = clock() + 100
     with pytest.raises(Exception, match="503"):
         llm.complete("s", "p")
@@ -211,6 +214,6 @@ def test_does_not_switch_to_down_provider_when_start_is_healthy():
 
 def test_switches_to_down_provider_when_both_down():
     clock = FakeClock()
-    llm = FallbackLLM(gemini([g_error(503)]), openai_llm([o_text("last resort")]), clock=clock)
+    llm = FallbackLLM(primary([o_status(503)]), openai_llm([o_text("last resort")]), clock=clock)
     llm._down_until = [clock() + 100, clock() + 100]
     assert llm.complete("s", "p") == "last resort"

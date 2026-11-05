@@ -304,8 +304,8 @@ class FlakyChat:
         self.calls += 1
         if self.calls <= self.fail_times:
             time.sleep(self.sleep_s)
-            from google.genai import errors
-            raise errors.ServerError(503, {})
+            from app.agent.llm import ProviderError
+            raise ProviderError("HTTP 503", transient=True, status=503)
         return call("declare_unanswerable", reason="x")
 
 

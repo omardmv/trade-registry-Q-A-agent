@@ -238,7 +238,7 @@ def test_known_names_reach_verifier():
 
 
 def test_composer_transient_error_retried_once():
-    from google.genai import errors
+    from app.agent.llm import ProviderError
 
     class Flaky(FakeLLM):
         n = 0
@@ -246,7 +246,7 @@ def test_composer_transient_error_retried_once():
         def complete(self, system, prompt):
             Flaky.n += 1
             if Flaky.n == 1:
-                raise errors.ServerError(503, {})
+                raise ProviderError("HTTP 503", transient=True, status=503)
             return super().complete(system, prompt)
 
     llm = Flaky(completions=["Заключено 9 912 сделок."])
@@ -255,7 +255,7 @@ def test_composer_transient_error_retried_once():
 
 
 def test_composer_transient_error_not_retried_without_time():
-    from google.genai import errors
+    from app.agent.llm import ProviderError
 
     class Slow(FakeLLM):
         n = 0
@@ -263,7 +263,7 @@ def test_composer_transient_error_not_retried_without_time():
         def complete(self, system, prompt):
             Slow.n += 1
             time.sleep(0.7)
-            raise errors.ServerError(503, {})
+            raise ProviderError("HTTP 503", transient=True, status=503)
 
     r = Pipeline(StubWriter(ok([(9912, 9300)])), Slow(), deadline_s=1.0, llm_timeout_s=0.4).ask(Q)
     assert r.source == "template" and Slow.n == 1

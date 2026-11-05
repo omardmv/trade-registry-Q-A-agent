@@ -1,23 +1,14 @@
-"""Every planner's tools must be accepted by every provider type: Gemini (OpenAPI schema objects) and
-OpenAI-compatible servers (JSON Schema, native tools or tools listed in the prompt). Offline: schemas only."""
+"""Every planner's tools must be accepted by OpenAI-compatible servers (JSON Schema, native tools or tools listed
+in the prompt). Offline: schemas only."""
 import json
 
 import pytest
-from google.genai import types
 
 from app.agent.llm_openai import _tool_payload
 from app.agent.writer import TOOLS as LEGACY_TOOLS
 from app.plan.prompt import TOOLS as GRAMMAR_TOOLS
 
 PLANNERS = {"legacy": LEGACY_TOOLS, "grammar": GRAMMAR_TOOLS}
-
-
-@pytest.mark.parametrize("planner", PLANNERS)
-def test_gemini_accepts_the_tool_schemas(planner):
-    decls = [types.FunctionDeclaration(name=t.name, description=t.description, parameters=t.parameters)
-             for t in PLANNERS[planner]]
-    tool = types.Tool(function_declarations=decls)
-    assert [d.name for d in tool.function_declarations] == [t.name for t in PLANNERS[planner]]
 
 
 def _walk(schema, path="$"):

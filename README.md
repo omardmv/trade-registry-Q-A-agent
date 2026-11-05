@@ -20,7 +20,7 @@ semantic layer.
 
 ```mermaid
 flowchart TD
-    Q[Question<br/>ru · uz Latin · uz Cyrillic] --> P[Planner<br/>LLM: Gemini / OpenAI / local Qwen]
+    Q[Question<br/>ru · uz Latin · uz Cyrillic] --> P[Planner<br/>LLM: OpenAI / local Qwen]
     P <-->|tool| R[Name lookup<br/>companies · brokers · products · regions · catalog]
     P -->|plan| CK[Plan checks<br/>validate · mentions · missing conditions · periods]
     CK -->|fix message| P
@@ -158,7 +158,7 @@ Each layer closes a different hole:
 
 The hard deadline is 75 s, under the 90 s requirement. Each LLM call is capped at 15 s, and a call only
 starts if a full 15 s still fits before its deadline, so the worst case stays near 75 s. In practice most
-answers take 2–5 s. A fallback to the second LLM provider (below) counts against the same deadline: it only
+answers take 2–5 s. A fallback to the next LLM provider (below) counts against the same deadline: it only
 starts if a full 15 s still fits.
 
 ### LLM providers and fallback
@@ -167,12 +167,13 @@ Every model runs the same pipeline (same planner, tools, checks and code-rendere
 connection differs. Providers are named and tried in the order of `LLM_PROVIDERS`:
 
 ```
-LLM_PROVIDERS=qwen_local,gemini,openai   # free local model first, paid ones only when it fails
-LLM_PROVIDERS=gemini,openai              # default
-LLM_PROVIDERS=qwen_local                 # local only
+LLM_PROVIDERS=openai              # default
+LLM_PROVIDERS=qwen_local,openai   # free local model first, the paid one only when it fails
+LLM_PROVIDERS=qwen_local          # local only
 ```
 
-Built-in names: `gemini`, `openai`, and `qwen_local` (Ollama at `http://localhost:11434/v1`, model
+Only OpenAI models (and OpenAI-compatible servers) are supported; Gemini support was removed. Built-in names:
+`openai` and `qwen_local` (Ollama at `http://localhost:11434/v1`, model
 `qwen2.5-7b-uzex`, temperature 0, tool calls through the prompt). Any other OpenAI-compatible server (vLLM,
 llama.cpp, another cloud) gets a name of its own through `<NAME>_TYPE=openai`, `<NAME>_BASE_URL`,
 `<NAME>_MODEL`, `<NAME>_API_KEY`, `<NAME>_TEMPERATURE`, `<NAME>_TEXT_TOOLS`; the same variables override the
@@ -212,7 +213,7 @@ docs/                 eval design, grammar redesign
 ```bash
 uv sync
 uv run python -m app.ingest.build
-GEMINI_API_KEY=... OPENAI_API_KEY=... uv run uvicorn app.api:app --port 8000
+OPENAI_API_KEY=... uv run uvicorn app.api:app --port 8000
 ```
 
 Keys can also go into a `.env` file in the project root (`KEY=value` lines; not committed). Variables already
@@ -228,7 +229,7 @@ curl -s localhost:8000/ask -H 'Content-Type: application/json' -d '{"question": 
 
 ```bash
 docker build -t uzex-qa .
-docker run -p 8000:8000 -e GEMINI_API_KEY=... -e OPENAI_API_KEY=... uzex-qa
+docker run -p 8000:8000 -e OPENAI_API_KEY=... uzex-qa
 ```
 
 ## Tests and evaluation
@@ -249,27 +250,21 @@ re-scores saved answers without calling a model. The test split is scored once, 
 
 The tests run offline. Before relying on the service, check it against the real model:
 
-1. `GEMINI_API_KEY=... OPENAI_API_KEY=... uv run pytest -m live` (the live round-trip tests; a provider
-   without a key is skipped).
+1. `OPENAI_API_KEY=... uv run pytest -m live` (the live round-trip tests; skipped without a key).
 2. Start the server and send one question to `/ask`, for example
    `curl -s localhost:8000/ask -H 'content-type: application/json' -d '{"question":"Сколько сделок было в 2025 году?"}'`.
-3. Confirm that the model named in `GEMINI_MODEL` is available for your key (a 404 / "model not found" error
-   means it is not); change `GEMINI_MODEL` if needed. `GEMINI_THINKING_BUDGET` must be supported by that model;
-   set it to `0` to disable thinking. Do the same for `OPENAI_MODEL`: the default name must be verified for
-   your OpenAI account.
+3. Confirm that the model named in `OPENAI_MODEL` is available for your key (a 404 / "model not found" error
+   means it is not); change `OPENAI_MODEL` if needed.
 4. Then run the full evaluation (`eval.run`); it exits non-zero on any hallucination.
 
 ## Settings
 
 | Env | Default | Meaning |
 |---|---|---|
-| `GEMINI_API_KEY` | none | Gemini key (at least one of the two keys is required) |
-| `GEMINI_MODEL` | `gemini-3.5-flash` | planner model |
-| `GEMINI_THINKING_BUDGET` | `1024` | thinking tokens per Gemini call |
-| `OPENAI_API_KEY` | none | OpenAI key for the fallback model |
-| `OPENAI_MODEL` | `gpt-5.4-mini` | fallback model; verify the name is available for your account |
+| `OPENAI_API_KEY` | none | OpenAI key (required unless only a local provider such as `qwen_local` is used) |
+| `OPENAI_MODEL` | `gpt-5.4-mini` | planner model; verify the name is available for your account |
 | `OPENAI_REASONING_EFFORT` | empty | sent as `reasoning_effort` to OpenAI; empty = not sent. `gpt-5.4-mini` rejects it together with function tools on Chat Completions, so leave it empty unless your model supports it |
-| `LLM_PROVIDERS` | `gemini,openai` | named providers in fallback order (`gemini`, `openai`, `qwen_local`, or your own via `<NAME>_TYPE`) |
+| `LLM_PROVIDERS` | `openai` | named providers in fallback order (`openai`, `qwen_local`, or your own OpenAI-compatible server via `<NAME>_TYPE=openai`) |
 | `OPENAI_TEMPERATURE` | empty | temperature for the `openai` provider; empty = not sent |
 | `OPENAI_TEXT_TOOLS` | off | `1`: tool calls through the prompt instead of the API tools field (for local servers) |
 | `PLANNER` | `grammar` | `grammar` (plan + semantic layer) or `legacy` (old structured form) |
