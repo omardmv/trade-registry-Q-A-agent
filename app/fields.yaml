@@ -76,6 +76,8 @@ deals:
     broker: {type: dimension, either: {seller: d.seller_broker, buyer: d.buyer_broker}, mode: once, col: broker_code,
              display: {sql: bk.name, col: broker_name, join: bk}, ground: broker, many: true,
              label: {ru: брокер (любая сторона), uz: broker (istalgan tomon)}}
+    broker_side: {type: dimension, side_of: broker, col: broker_side, values: [seller, buyer],
+                  label: {ru: сторона брокера, uz: broker tomoni}}
     region: {type: dimension, sql: d.region, ground: region, label: {ru: регион склада, uz: ombor hududi}}
     buyer_region: {type: dimension, sql: d.buyer_region, ground: region,
                    label: {ru: регион покупателя, uz: xaridor hududi}}
@@ -187,18 +189,26 @@ contracts:
   unit_field: unit
   joins:
     pc: LEFT JOIN participants pc ON pc.inn = c.seller_inn
+    # per-contract deal counts and brokers (lookup columns of the old structured form)
+    cd: >-
+      LEFT JOIN (SELECT contract_id, COUNT(*) AS deals_all, COUNT(*) FILTER (WHERE NOT is_cancelled) AS deals_valid,
+      string_agg(DISTINCT seller_broker, ', ' ORDER BY seller_broker) AS seller_brokers,
+      string_agg(DISTINCT buyer_broker, ', ' ORDER BY buyer_broker) AS buyer_brokers
+      FROM deals GROUP BY contract_id) cd ON cd.contract_id = c.contract_id
   fields:
     contract:
       type: record
       sql: c.contract_id
       col: contract_id
       ground: contract
-      joins: [pc]
+      joins: [pc, cd]
       columns: ["c.contract_id AS contract_id", "c.product_name AS product_name", "c.product_canonical AS product",
                 "c.seller_inn AS seller_inn", "pc.name AS seller_name", "c.registered_date AS registered_date",
                 "c.valid_until AS valid_until", "c.contract_form AS contract_form", "c.contract_type AS contract_type",
                 "c.base_price AS base_price", "c.currency AS currency", "c.unit AS unit",
-                "c.payment_term_days AS payment_term_days", "c.delivery_term_days AS delivery_term_days"]
+                "c.payment_term_days AS payment_term_days", "c.delivery_term_days AS delivery_term_days",
+                "COALESCE(cd.deals_all, 0) AS deals_all", "COALESCE(cd.deals_valid, 0) AS deals_valid",
+                "cd.seller_brokers AS seller_brokers", "cd.buyer_brokers AS buyer_brokers"]
       label: {ru: контракт, uz: shartnoma}
     product: {type: dimension, sql: c.product_canonical, col: product, ground: product, many: true,
               label: {ru: товар, uz: tovar}}
@@ -250,14 +260,31 @@ companies:
   alias: p
   count_col: companies
   count_label: {ru: число компаний, uz: kompaniyalar soni}
+  joins:
+    # per-company deals without annulled, totals and first / last deal date (lookup columns of the old form)
+    pd: >-
+      LEFT JOIN (SELECT x.inn,
+      COUNT(*) FILTER (WHERE x.side = 'buyer' AND NOT x.is_cancelled) AS deals_as_buyer_valid,
+      COUNT(*) FILTER (WHERE x.side = 'seller' AND NOT x.is_cancelled) AS deals_as_seller_valid,
+      SUM(x.amount_uzs) FILTER (WHERE x.side = 'buyer' AND NOT x.is_cancelled) AS bought_uzs_valid,
+      SUM(x.amount_uzs) FILTER (WHERE x.side = 'seller' AND NOT x.is_cancelled) AS sold_uzs_valid,
+      MIN(x.deal_date) AS first_deal_date, MAX(x.deal_date) AS last_deal_date
+      FROM (SELECT buyer_inn AS inn, 'buyer' AS side, is_cancelled, amount_uzs, deal_date FROM deals
+      UNION ALL SELECT seller_inn, 'seller', is_cancelled, amount_uzs, deal_date FROM deals) x
+      GROUP BY x.inn) pd ON pd.inn = p.inn
   fields:
     company:
       type: record
       sql: p.inn
       col: inn
       ground: company
+      joins: [pd]
       columns: ["p.inn AS inn", "p.name AS name", "p.region AS region", "p.activity AS activity", "p.role AS role",
-                "p.vat_payer AS vat_payer", "p.deals_as_buyer AS deals_as_buyer", "p.deals_as_seller AS deals_as_seller"]
+                "p.vat_payer AS vat_payer", "p.deals_as_buyer AS deals_as_buyer", "p.deals_as_seller AS deals_as_seller",
+                "COALESCE(pd.deals_as_buyer_valid, 0) AS deals_as_buyer_valid",
+                "COALESCE(pd.deals_as_seller_valid, 0) AS deals_as_seller_valid",
+                "pd.bought_uzs_valid AS bought_uzs_valid", "pd.sold_uzs_valid AS sold_uzs_valid",
+                "pd.first_deal_date AS first_deal_date", "pd.last_deal_date AS last_deal_date"]
       label: {ru: компания, uz: kompaniya}
     region: {type: dimension, sql: p.region, ground: region, label: {ru: регион регистрации, uz: ro‘yxatdan o‘tgan hudud}}
     activity: {type: dimension, sql: p.activity, ground: catalog, catalog: activity,
@@ -273,14 +300,28 @@ brokers:
   alias: b
   count_col: brokers
   count_label: {ru: число брокеров, uz: brokerlar soni}
+  joins:
+    # per-broker deals without annulled per side, and deals on either side (lookup columns of the old form)
+    bd: >-
+      LEFT JOIN (SELECT x.code,
+      COUNT(*) FILTER (WHERE x.side = 'seller' AND NOT x.is_cancelled) AS deals_as_seller_broker_valid,
+      COUNT(*) FILTER (WHERE x.side = 'buyer' AND NOT x.is_cancelled) AS deals_as_buyer_broker_valid,
+      COUNT(DISTINCT x.deal_id) AS deals_either_side
+      FROM (SELECT seller_broker AS code, 'seller' AS side, is_cancelled, deal_id FROM deals
+      UNION ALL SELECT buyer_broker, 'buyer', is_cancelled, deal_id FROM deals) x
+      GROUP BY x.code) bd ON bd.code = b.broker_code
   fields:
     broker:
       type: record
       sql: b.broker_code
       col: broker_code
       ground: broker
+      joins: [bd]
       columns: ["b.broker_code AS broker_code", "b.name AS broker_name", "b.inn AS inn", "b.region AS region",
-                "b.deals_as_seller_broker AS deals_as_seller_broker", "b.deals_as_buyer_broker AS deals_as_buyer_broker"]
+                "b.deals_as_seller_broker AS deals_as_seller_broker", "b.deals_as_buyer_broker AS deals_as_buyer_broker",
+                "COALESCE(bd.deals_as_seller_broker_valid, 0) AS deals_as_seller_broker_valid",
+                "COALESCE(bd.deals_as_buyer_broker_valid, 0) AS deals_as_buyer_broker_valid",
+                "COALESCE(bd.deals_either_side, 0) AS deals_either_side"]
       label: {ru: брокер, uz: broker}
     region: {type: dimension, sql: b.region, ground: region, label: {ru: регион, uz: hudud}}
     deals_as_seller_broker: {type: number, sql: b.deals_as_seller_broker,

@@ -129,6 +129,8 @@ def _coerce_one(f: Field, v, catalog: dict | None):
 
 def _filter(s: Subject, flt: Filter, catalog: dict | None, where: str) -> Filter:
     f = _field(s, flt.field, where)
+    if f.side_of:
+        raise PlanError(f"{f.name} is only for group_by (with a filter on {f.side_of}), not a filter")
     ops = ("=",) if f.filter_sql else ("=", "in") if f.either else OPS_BY_TYPE[f.type]
     if f.ground == "product_variant":
         ops = ("=",)
@@ -305,6 +307,12 @@ def validate_plan(plan: Plan, d: Dictionary, catalog: dict | None = None) -> Pla
         raise PlanError("group_by takes at most one either-side field (participant, broker)")
     if any(f.either for f in fs) and any(f.type == "record" for f in fs):
         raise PlanError("an either-side field cannot be grouped together with a record")
+    for f in fs:
+        if f.side_of and not any(x.field == f.side_of and x.op in ("=", "in") for x in filters):
+            raise PlanError(f"group_by {f.name} splits one {f.side_of} into its seller and buyer side: add a filter "
+                            f"{f.side_of} = <code from resolve()>")
+        if f.side_of and (any(x.either for x in fs) or any(x.type == "record" for x in fs)):
+            raise PlanError(f"group_by {f.name} cannot be combined with {', '.join(x.name for x in fs if x is not f)}")
     if not measures and not any(f.type == "record" for f in fs):
         raise PlanError("measures needs 1-2 items (e.g. {agg: count}); only a record listing "
                         "(group_by deal / contract / company / broker) may have no measures")

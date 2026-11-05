@@ -23,6 +23,37 @@ def to_latin(text: str) -> str:
     return "".join(_CYR_TO_LAT.get(ch, ch) for ch in text.lower())
 
 
+_LAT_TO_CYR_2 = {"o‘": "ў", "o'": "ў", "oʻ": "ў", "o’": "ў", "g‘": "ғ", "g'": "ғ", "gʻ": "ғ", "g’": "ғ",
+                 "sh": "ш", "ch": "ч", "ya": "я", "yo": "ё", "yu": "ю", "ye": "е"}
+_LAT_TO_CYR_1 = dict(zip("abdefghijklmnopqrstuvxyz", "абдэфгҳижклмнопқрстувхйз"))
+
+
+def to_cyrillic(text: str) -> str:
+    """Uzbek Latin -> Uzbek Cyrillic, for fixed template words (not for data values)."""
+    out, i = [], 0
+    while i < len(text):
+        pair = text[i:i + 2]
+        low = pair.lower()
+        if low in _LAT_TO_CYR_2:
+            cyr = _LAT_TO_CYR_2[low]
+            out.append(cyr.upper() if pair[0].isupper() else cyr)
+            i += 2
+            continue
+        ch = text[i]
+        lo = ch.lower()
+        if lo == "e":   # э at the start of a word, е inside
+            cyr = "э" if i == 0 or not text[i - 1].isalpha() else "е"
+        elif lo in _LAT_TO_CYR_1:
+            cyr = _LAT_TO_CYR_1[lo]
+        elif ch in "‘’ʻ'":
+            cyr = "ъ" if i > 0 and text[i - 1].isalpha() and i + 1 < len(text) and text[i + 1].isalpha() else ch
+        else:
+            cyr = ch
+        out.append(cyr.upper() if ch.isupper() else cyr)
+        i += 1
+    return "".join(out)
+
+
 def normalize_text(text: str) -> str:
     """Latin, lower case, no apostrophes, punctuation collapsed to single spaces."""
     t = to_latin(text)

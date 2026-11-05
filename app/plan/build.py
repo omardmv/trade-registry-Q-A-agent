@@ -8,7 +8,7 @@ to every matching registry spelling with resolve's matcher; deterministic tiebre
 """
 import datetime as dt
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from app.plan.dictionary import Dictionary, Field, Subject
 from app.plan.model import Filter, Measure, Period, Plan, PlanError
@@ -16,6 +16,7 @@ from app.plan.model import Filter, Measure, Period, Plan, PlanError
 VariantMatcher = Callable[[str], list[str]]
 _SQL_AGG = {"sum": "SUM", "avg": "AVG", "median": "MEDIAN", "min": "MIN", "max": "MAX"}
 UZS_FIELDS = ("amount_uzs", "deal_price_per_kg", "unit_price_uzs")
+TIES_CAP = 50                           # a top-1 keeps every tied row, up to this many
 
 
 @dataclass
@@ -159,7 +160,10 @@ def _group(s: Subject, plan: Plan, per_unit: bool) -> tuple[_Group, Field | None
     for i, name in enumerate(plan.group_by):
         f = s.fields[name]
         sels: list[str] = []
-        if f.type == "record":
+        if f.side_of:                   # seller / buyer side of one filtered broker: one row per side
+            either = replace(s.fields[f.side_of], mode="per_side")
+            sels.append(f"{s.alias}._side AS {f.col}")
+        elif f.type == "record":
             sels = list(f.columns)
             g.joins += list(f.joins)
         elif f.either:
@@ -183,7 +187,7 @@ def _group(s: Subject, plan: Plan, per_unit: bool) -> tuple[_Group, Field | None
         if i == 0 and len(plan.group_by) == 2:
             g.partition += [_expr_of(x) for x in new]
     if either is not None and either.mode == "per_side":
-        g.partition.insert(0, "d._side")
+        g.partition.insert(0, f"{s.alias}._side")
     if per_unit and s.unit_field and s.unit_field not in plan.group_by and not any(
             x.endswith(f" AS {s.fields[s.unit_field].col}") for x in g.select):
         uf = s.fields[s.unit_field]
@@ -293,10 +297,17 @@ def _ranked(select: list[str], from_sql: str, g: _Group, rank_expr: str, rank_al
         tie = ", ".join(g.group)
         part = ", ".join(g.partition)
         part_alias = ", ".join(_alias_of(x) for x in g.select if _expr_of(x) in g.partition) or part
-        if "d._side" in g.partition and "role" not in part_alias:
-            part_alias = "role, " + part_alias
+        side = next((_alias_of(x) for x in g.select if _expr_of(x).endswith("._side")), None)
+        if side and side not in part_alias:
+            part_alias = f"{side}, " + part_alias
+        if plan.limit == 1:             # ties at the top are all kept (every date with the extreme rate, ...)
+            return (f"({base} QUALIFY RANK() OVER (PARTITION BY {part} ORDER BY {rank_expr} {direction} NULLS LAST) "
+                    f"= 1 ORDER BY {part_alias}, {tie_cols} LIMIT {TIES_CAP})")
         return (f"({base} QUALIFY ROW_NUMBER() OVER (PARTITION BY {part} ORDER BY {rank_expr} {direction} NULLS LAST, "
                 f"{tie}) <= {int(plan.limit)} ORDER BY {part_alias}, {rank_alias} {direction} NULLS LAST, {tie_cols})")
+    if plan.limit == 1:
+        return (f"({base} QUALIFY RANK() OVER (ORDER BY {rank_expr} {direction} NULLS LAST) = 1 "
+                f"ORDER BY {tie_cols} LIMIT {TIES_CAP})")
     return f"({base} ORDER BY {rank_alias} {direction} NULLS LAST, {tie_cols} LIMIT {int(plan.limit)})"
 
 
@@ -346,8 +357,10 @@ def build_sql(plan: Plan, d: Dictionary, variants: VariantMatcher | None = None)
 
     g, either = _group(s, plan, per_unit)
     if either is not None:
-        notes.append("role_split" if either.mode == "per_side" else "broker_both_sides")
-        if either.mode == "per_side":
+        side_split = any(s.fields[n].side_of for n in plan.group_by)
+        notes.append("broker_side_split" if side_split else "role_split" if either.mode == "per_side"
+                     else "broker_both_sides")
+        if either.mode == "per_side" and not side_split:
             splits.append("role")
     from_sql = _from(s, ctx, plan, where, either, g.joins)
     notes += [f"variant_spellings_{n}" for n in ctx.spellings.values()]
@@ -369,6 +382,8 @@ def build_sql(plan: Plan, d: Dictionary, variants: VariantMatcher | None = None)
         sql = f"SELECT {', '.join(select)} {from_sql} GROUP BY {', '.join(g.group)}{having} ORDER BY {', '.join(order)}"
         return Built(sql, splits, notes, measure_aliases)
     notes.append(f"ranked_top_{plan.limit}")
+    if plan.limit == 1:
+        notes.append("ties_kept")
     ranked_measures = pairs
     if len(plan.measures) == 2:
         splits.append("measure")

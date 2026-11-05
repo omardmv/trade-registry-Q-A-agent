@@ -26,6 +26,8 @@ _T = {
         "usd_converted": "суммы в долларах (сумовые сделки пересчитаны по курсу на дату сделки)",
         "broker_both_sides": "брокер учитывается и со стороны продавца, и со стороны покупателя (сделка — один раз)",
         "role_split": "отдельно как покупатель и как продавец",
+        "broker_side_split": "отдельно как брокер продавца и как брокер покупателя",
+        "ties_kept": "при равных значениях показаны все",
         "volume_by_unit": "по единицам измерения",
         "record": "записи",
     },
@@ -50,12 +52,14 @@ _T = {
         "usd_converted": "summalar dollarda (so‘mdagi bitimlar bitim sanasidagi kurs bo‘yicha)",
         "broker_both_sides": "broker sotuvchi va xaridor tomonida ham hisobga olingan (bitim bir marta)",
         "role_split": "xaridor va sotuvchi sifatida alohida",
+        "broker_side_split": "sotuvchi brokeri va xaridor brokeri sifatida alohida",
+        "ties_kept": "teng qiymatlarda hammasi ko‘rsatilgan",
         "volume_by_unit": "o‘lchov birliklari bo‘yicha",
         "record": "yozuvlar",
     },
 }
 _NOTE_KEYS = ("excluded_cancelled", "all_statuses", "status_split", "uzs_converted", "usd_converted",
-              "broker_both_sides", "role_split", "volume_by_unit")
+              "broker_both_sides", "role_split", "broker_side_split", "volume_by_unit", "ties_kept")
 _TIME = ("year", "quarter", "month", "day")
 
 

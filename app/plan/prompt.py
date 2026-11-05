@@ -89,7 +89,7 @@ condition cannot be expressed: never drop a condition. Assumptions: short, in th
 """
 
 # hints shown next to field names whose meaning is not obvious
-_HINTS = {"deals.participant": "buyer or seller", "deals.broker": "either side", "deals.product_variant": "grade/mark",
+_HINTS = {"deals.participant": "buyer or seller", "deals.product_variant": "grade/mark",
           "deals.region": "warehouse", "contracts.region": "warehouse", "deals.lots": "lots bought",
           "deals.volume": "in units", "deals.deal_price_per_kg": "one deal", "deals.unit_price_uzs": "per unit",
           "deals.price_change_pct": "vs start price", "contracts.validity_days": "days valid",

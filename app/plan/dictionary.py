@@ -44,6 +44,7 @@ class Field:
     filter_only: bool = False
     range: tuple[int, int] | None = None
     with_year: bool = False
+    side_of: str = ""                   # group-only: the side (seller / buyer) of this either-side field
 
 
 @dataclass(frozen=True)
@@ -107,7 +108,8 @@ def _field(name: str, d: dict) -> Field:
                  catalog=d.get("catalog", ""), either=d.get("either"), mode=d.get("mode", "once"),
                  columns=tuple(d.get("columns") or ()), joins=tuple(d.get("joins") or ()),
                  filter_sql=d.get("filter_sql", ""), filter_only=bool(d.get("filter_only")),
-                 range=tuple(d["range"]) if d.get("range") else None, with_year=bool(d.get("with_year")))
+                 range=tuple(d["range"]) if d.get("range") else None, with_year=bool(d.get("with_year")),
+                 side_of=d.get("side_of", ""))
 
 
 def _subject(name: str, d: dict) -> Subject:

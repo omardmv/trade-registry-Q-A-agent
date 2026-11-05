@@ -285,7 +285,7 @@ def test_contracts_least_product(db, resolver):
     check(db, resolver, {"subject": "contracts", "measures": [{"agg": "count"}], "filters": [F("year", 2023)],
                          "group_by": ["product"], "order": "asc", "limit": 1},
           "SELECT product_canonical, COUNT(*) n FROM contracts WHERE year(registered_date) = 2023 GROUP BY 1 "
-          "ORDER BY n, 1 LIMIT 1")
+          "QUALIFY RANK() OVER (ORDER BY n) = 1 ORDER BY 1")      # a top-1 keeps every tie
 
 
 def test_contracts_distinct_products(db, resolver):
