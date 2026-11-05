@@ -181,10 +181,45 @@ def test_pipeline_shows_the_judge_term(parts):
 # ---- max safety (the production default): fail-closed ----
 
 @pytest.mark.max_safety
-def test_max_any_unknown_word_refuses_before_any_llm_call(parts):
+def test_max_an_unknown_noun_refuses_before_any_llm_call(parts):
     writer, llm = writer_for(parts, seller_replies())
+    res = Pipeline(writer, FakeLLM()).ask("Сколько сделок в рассрочку оформила Pudexiz Plast в 2025?")
+    assert res.source == "no_data" and "«рассрочку»" in res.answer and llm.chat.sent == []
+    assert "оформила" not in res.reason
+
+
+@pytest.mark.max_safety
+def test_max_an_unknown_verb_goes_to_the_judge_as_wording(parts):
+    writer, llm = writer_for(parts, seller_replies(), [verdict(True)])
     res = Pipeline(writer, FakeLLM()).ask("Сколько сделок оформила Pudexiz Plast в 2025?")
-    assert res.source == "no_data" and "«оформила»" in res.answer and llm.chat.sent == []
+    assert res.answered, res.reason
+    [j] = judge_calls(res)
+    assert j["args"]["words"] == ["оформила"] and "Words not in the vocabulary: оформила" in llm.prompts[0]
+
+
+@pytest.mark.max_safety
+def test_max_the_judge_refuses_wording_that_names_a_missing_fact(parts):
+    writer, llm = writer_for(parts, seller_replies(), [verdict(False, "расторгли досрочно")])
+    res = Pipeline(writer, FakeLLM()).ask("Сколько сделок Pudexiz Plast расторгли досрочно в 2025?")
+    assert not res.answered and res.source == "no_data" and "«расторгли досрочно»" in res.answer
+
+
+@pytest.mark.max_safety
+def test_max_an_unknown_uzbek_verb_form_goes_to_the_judge(parts):
+    writer, llm = writer_for(parts, seller_replies(), [verdict(True)])
+    res = Pipeline(writer, FakeLLM()).ask("Pudexiz Plast 2025 yilda nechta bitim egallagan?")
+    [j] = judge_calls(res)
+    assert j["args"]["words"] == ["egallagan"] and res.answered, res.reason
+
+
+@pytest.mark.max_safety
+def test_max_stage2_refuses_a_noun_the_plan_does_not_use(parts):
+    # stage 2 checks the names of the plan's entities only: a company word the plan dropped is a proper noun
+    dropped = {"subject": "deals", "measures": [{"agg": "count"}], "filters": [F("year", 2025)],
+               "mentions": [M("2025", "filter:year")]}
+    writer, llm = writer_for(parts, [call("run_plan", plan=dropped, assumptions=[])])
+    res = writer.run("Сколько продала Pudexiz Plast в 2025?", "ru", deadline())
+    assert res.status == "unanswerable" and res.term == "Pudexiz" and llm.prompts == []
 
 
 @pytest.mark.max_safety

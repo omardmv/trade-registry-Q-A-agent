@@ -11,6 +11,8 @@ dependencies = [
   "rapidfuzz>=3",
   "numpy>=2.5.4",
   "openai>=1.40",
+  "pymorphy3>=2.0.6",
+  "pymorphy3-dicts-ru>=2.4.417150.4580142",
 ]
 
 [dependency-groups]

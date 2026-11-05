@@ -1,7 +1,8 @@
 """Stage 2 judge: does the calculation the plan describes answer what the question asks?
 
-Runs only when the question has words outside the closed vocabulary (app/plan/vocab.py) that the plan does not use
-as names. One LLM call (the writer's provider chain, LLM_TIMEOUT_S, inside the request deadline) gets the
+Balanced safety: runs only when the question has words outside the closed vocabulary (app/plan/vocab.py) that the
+plan does not use as names. Max safety: runs on every plan; its unknown words are the wording words (verbs, adverbs,
+...; app/plan/wordkind.py), since an unknown word that can be a noun refuses before the judge. One LLM call (the writer's provider chain, LLM_TIMEOUT_S, inside the request deadline) gets the
 question, the deterministic explanation of the plan (app/plan/explain.py: the calculation in words, built before
 the SQL runs) and the unknown words, and answers {"covered": true|false, "missing": "..."}.
 

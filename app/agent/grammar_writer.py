@@ -81,19 +81,22 @@ class GrammarWriter(Writer):
         that are not words of an entity the query uses go to the judge with the calculation in words; the judge
         says whether the calculation still answers the question. Not covered -> unanswerable (not a fix: the
         model must not relink the word to a nearby fact); no verdict -> failed (refuse, never answer). With the
-        judge off any such word refuses."""
+        judge off any such word refuses. Max safety: such a word that can be a noun refuses (app/plan/wordkind.py);
+        the judge runs on every plan, with the other unknown words (wording)."""
         if self.vocab is None:
             return None
-        unknown = self.vocab.unknown_in_plan(question, names)
-        words = [u.word for u in unknown]
         if self.safety == "max":
-            if unknown:
-                log_refusal("stage 2, max safety", question, unknown)
-                return WriterResult("unanswerable", reason="not in the data: " + ", ".join(words),
-                                    term=unknown[0].word)
-            verdict = judge(self.llm, question, calculation, [], deadline, self.llm_timeout_s)
+            # unknown words that can be nouns refuse; the other unknown words (wording) go to the judge, which
+            # confirms every answer
+            gate = self.vocab.gate_in_plan(question, names)
+            if gate.blocking:
+                log_refusal("stage 2, max safety", question, gate.blocking)
+                blocked = ", ".join(u.word for u in gate.blocking)
+                return WriterResult("unanswerable", reason="not in the data: " + blocked, term=gate.blocking[0].word)
+            wording = [u.word for u in gate.wording]
+            verdict = judge(self.llm, question, calculation, wording, deadline, self.llm_timeout_s)
             if trace is not None:
-                trace.append({"tool": "judge", "args": {"words": [], "calculation": calculation},
+                trace.append({"tool": "judge", "args": {"words": wording, "calculation": calculation},
                               "covered": verdict.covered, "missing": verdict.missing, "error": verdict.error})
             if verdict.covered is True:
                 return None
@@ -101,7 +104,9 @@ class GrammarWriter(Writer):
                 return WriterResult("failed", reason=f"judge: {verdict.error}")
             log.info("judge (max safety): not covered: %s | %s", verdict.missing, question)
             return WriterResult("unanswerable", reason=f"judge: not covered: {verdict.missing}",
-                                term=term_for(verdict, question, []))
+                                term=term_for(verdict, question, wording))
+        unknown = self.vocab.unknown_in_plan(question, names)
+        words = [u.word for u in unknown]
         if not unknown:
             return None
         if not self.use_judge:

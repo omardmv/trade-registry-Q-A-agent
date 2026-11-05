@@ -29,6 +29,7 @@ from typing import Iterable
 import yaml
 from rapidfuzz.distance import Levenshtein
 
+from app.plan.wordkind import is_noun, occurrences, russian_lemma, word_kind
 from app.text import detect_lang, normalize_name, normalize_text
 
 log = logging.getLogger(__name__)
@@ -352,6 +353,46 @@ class Vocab:
     def unknown_in_plan(self, question: str, plan_names: Iterable[str]) -> list[Unknown]:
         """Stage 2: lexicon misses that are not words of the entities the plan uses."""
         return self.unknown(question, NameWords(plan_names))
+
+    def gate(self, question: str, names: NameWords | None = None) -> "Gate":
+        """Max safety: the unknown words split by word kind (app/plan/wordkind.py). A Russian word whose lemma is
+        in the lexicon is known («меди» -> «медь»); a word that can be a noun blocks; the other unknown words are
+        wording (passed to the judge, not a refusal reason by themselves)."""
+        unknown = self.unknown(question, names)
+        if not unknown:
+            return Gate([], [], {})
+        lang = detect_lang(question)
+        occ: dict[str, list] = {}
+        for token, piece, initial, prev in occurrences(question):
+            occ.setdefault(token, []).append((piece, initial, prev))
+        blocking, wording, kinds = [], [], {}
+        for u in unknown:
+            seen = occ.get(u.token) or [(u.word, False, "")]
+            if lang == "ru" and all(self._lemma_known(piece) for piece, _, _ in seen):
+                continue
+            ks = [word_kind(u.token, piece, lang, initial, prev) for piece, initial, prev in seen]
+            kind = next((k for k in ks if is_noun(k)), ks[0])
+            kinds[u.word] = kind
+            (blocking if is_noun(kind) else wording).append(u)
+        return Gate(blocking, wording, kinds)
+
+    def gate_in_plan(self, question: str, plan_names: Iterable[str]) -> "Gate":
+        """Stage 2 of max safety: gate() against the names of the entities the plan uses."""
+        return self.gate(question, NameWords(plan_names))
+
+    def _lemma_known(self, piece: str) -> bool:
+        lemma = russian_lemma(piece)
+        if not lemma:
+            return False
+        return all(self.lexicon.known(t, typos=False) for t in normalize_text(lemma).split())
+
+
+@dataclass(frozen=True)
+class Gate:
+    """Max safety: unknown words that can be nouns (refuse) and the other unknown words (to the judge)."""
+    blocking: list[Unknown]
+    wording: list[Unknown]
+    kinds: dict              # word as written -> word kind
 
 
 _SPLIT_PRODUCT = re.compile(r"[;,]")
