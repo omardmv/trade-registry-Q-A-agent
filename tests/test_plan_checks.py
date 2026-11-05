@@ -129,3 +129,68 @@ def test_all_statuses_word_makes_grouped_scope_all():
     # a "without annulled" filter the planner added is dropped when the question asks for all statuses
     p = prepare({**plan, "filters": plan["filters"] + [F("cancelled", False)]}, "по годам, все статусы")
     assert p.scope == "all" and not p.filters_on("cancelled")
+
+
+def test_share_of_a_named_party_takes_the_party_as_the_part():
+    """«Доля SITO‘TOM в продажах хлопка», «... paxta sotuvining necha foizini egallagan», «... сотувида неча фоиз
+    улушга эга»: the seller is the numerator, the product / period the scope (fresh f029)."""
+    inside = {"subject": "deals", "measures": [{"agg": "share", "of": "amount_uzs",
+                                                "where": [F("product", "Хлопок-сырец")]}],
+              "filters": [F("seller", "925910430"), F("year", 2024)]}
+    right = {"subject": "deals", "measures": [{"agg": "share", "of": "amount_uzs",
+                                               "where": [F("seller", "925910430")]}],
+             "filters": [F("product", "Хлопок-сырец"), F("year", 2024)]}
+    for q in ("Какая доля SITO‘TOM TEKSTIL в продажах хлопка-сырца за 2024 год?",
+              "Sitotom Tekstil 2024 yilda paxta xomashyosi sotuvining necha foizini egallagan?",
+              "СИТЎТОМ ТЕКСТИЛ 2024 йилда пахта хом ашёси сотувида неча фоиз улушга эга бўлган?"):
+        assert "numerator:true" in (check(inside, q) or ""), q
+        assert check(right, q) is None, q
+    # the party's own deals as the scope, said so: «в своих продажах», «o‘z sotuvida», «ўз сотувида»
+    for q in ("Какую долю в своих продажах за 2024 год SITO‘TOM TEKSTIL получила от хлопка-сырца?",
+              "Sitotom Tekstil 2024 yilda o‘z sotuvida paxtaning ulushi necha foiz?",
+              "СИТЎТОМ ТЕКСТИЛ 2024 йилда ўз сотувида пахтанинг улуши неча фоиз?"):
+        assert check(inside, q) is None, q
+    # a broker on either side as the part (r083): fine; a broker as a plain filter with another part: fix
+    assert check({"subject": "deals", "measures": [{"agg": "share", "where": [F("broker", "BK111")]}],
+                  "filters": [F("year", 2025)]}, "В каком проценте сделок 2025 года участвовал брокер BK111?") is None
+    assert "numerator:true" in check({"subject": "deals", "measures": [{"agg": "share",
+                                                                        "where": [F("product", "Сахар")]}],
+                                      "filters": [F("broker", "BK111"), F("year", 2025)]},
+                                     "Доля брокера BK111 в сделках с сахаром за 2025 год")
+
+
+def test_time_grain_only_when_the_question_asks_per_period():
+    """«харидорлар сони нечта» split by month answers another question (fresh f012); per-period, which-period,
+    when and trend words, or several periods named, allow the grain."""
+    by_month = {"subject": "deals", "measures": [{"agg": "distinct", "of": "buyer"}], "filters": [F("year", 2025)],
+                "group_by": ["month"]}
+    for q in ("Сколько разных покупателей купили медный катод в 2025 году?",
+              "2025-yilda mis katodni nechta turli xaridor sotib olgan?",
+              "2025 йилда мис катодни сотиб олган харидорлар сони нечта?"):
+        assert "drop month" in (check(by_month, q) or ""), q
+    for q in ("Сколько покупателей было в каждом месяце 2025 года?", "в каком месяце 2025 года больше всего покупателей",
+              "2025 yilda oylar bo‘yicha xaridorlar soni", "2025 yilning qaysi oyida xaridorlar ko‘p bo‘lgan?",
+              "2025 йилда ойма-ой харидорлар сони", "Как менялось число покупателей в 2025 году?",
+              "2025 йилда харидорлар сони қандай ўзгарган?"):
+        assert check(by_month, q) is None, q
+    by_year = {"subject": "deals", "measures": [{"agg": "count"}], "group_by": ["year"],
+               "filters": [{"field": "year", "op": "in", "values": [2024, 2025]}]}
+    assert check(by_year, "Сколько сделок было в 2024 и 2025 годах?") is None
+    assert "drop year" in check({**by_year, "filters": [F("product", "Сахар")]}, "Сколько всего сделок с сахаром?")
+    assert check({**by_year, "filters": []}, "Сколько сделок по годам?") is None
+
+
+def test_extreme_period_is_ranked_by_a_total():
+    """«В какой день был самый большой оборот», «qaysi kuni eng katta savdo aylanmasi», «қайси кунида энг катта
+    пуллик савдо»: the day with the largest total, not the day of the largest single deal (fresh f016)."""
+    plan = {"subject": "deals", "measures": [{"agg": "max", "of": "amount_uzs"}], "filters": [F("year", 2026)],
+            "group_by": ["day"], "limit": 1}
+    for q in ("В какой день 2026 года на бирже был самый большой оборот в сумах?",
+              "2026 yilda qaysi kuni birjada eng katta savdo aylanmasi bo‘lgan (so‘mda)?",
+              "2026 йилнинг қайси кунида биржада энг катта пуллик савдо бўлган?"):
+        assert "agg: sum" in (check(plan, q) or ""), q
+        assert check({**plan, "measures": [{"agg": "sum", "of": "amount_uzs"}]}, q) is None, q
+    # a single deal named: the largest deal of each day is what is asked
+    for q in ("В какой день 2026 года была самая крупная сделка?", "2026 yilda eng katta bitim qaysi kuni bo‘lgan?",
+              "2026 йилда энг катта битим қайси куни тузилган?"):
+        assert check(plan, q) is None, q

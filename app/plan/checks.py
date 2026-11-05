@@ -127,11 +127,47 @@ def consistency_error(plan: Plan, d: Dictionary, question: str) -> str | None:
                 return (f"the share numerator filters {grouped[0]} while grouping by {grouped[0]}: every group is "
                         f"then 0% or 100%. For the share of each {grouped[0]} in the total, use {{agg: share}} "
                         f"without group_by and one numerator value, or group_by {grouped[0]} with sum/count only")
+    if (err := share_party_error(plan, d, question)) is not None:
+        return err
     return (period_error(plan, d, question) or period_value_error(plan, d, question)
             or named_day_error(plan, d, question) or grain_word_error(plan, d, question)
+            or unasked_grain_error(plan, d, question) or extreme_period_error(plan, d, question)
             or not_in_data_error(question) or role_word_error(plan, d, question)
             or currency_error(plan, question) or side_error(plan, question)
             or counted_parties_error(plan, d, question) or elapsed_vs_term_error(plan, d, question))
+
+
+# ---- share of a named party: the party is the part, the product / period is the scope ----
+_PARTY_GROUNDS = ("company", "broker")
+# «в своих продажах», «его покупок», «o‘z sotuvida», «ўз сотувида»: the party's own deals are the scope
+_OWN_SCOPE_RE = re.compile(
+    r"(?<!\w)(?:сво\w*|его|её|ее|их|o.z\w*|ўз\w*)\s+(?:\w+\s+)?(?:продаж|покуп|оборот|закуп|sotuv|xarid|savdo|"
+    r"сотув|харид|савдо)", re.IGNORECASE)
+
+
+def share_party_error(plan: Plan, d: Dictionary, question: str) -> str | None:
+    """«Доля Sitotom в продажах хлопка», «Sitotom paxta sotuvining necha foizini egallagan»: the named seller / buyer /
+    broker is the numerator and the product / period the scope. A share plan that keeps the party as a plain filter
+    while the numerator is something else computes the share inside the party's own deals (100% when it sells only
+    that product)."""
+    s = d.subject(plan.subject)
+    shares = [m for m in plan.measures if m.agg == "share"]
+    if not shares or _OWN_SCOPE_RE.search(question):
+        return None
+    parties = [f for f in plan.filters if f.field in s.fields and s.fields[f.field].ground in _PARTY_GROUNDS
+               and f.op in ("=", "in")]
+    if not parties:
+        return None
+    for m in shares:
+        if any(w.field in s.fields and s.fields[w.field].ground in _PARTY_GROUNDS for w in m.where):
+            continue
+        p = parties[0]
+        part = ", ".join(sorted({w.field for w in m.where})) or "nothing"
+        return (f"the question asks for the share of the named {p.field} ({_show_value(p)}): that filter is the part — "
+                f"mark it numerator:true and keep the product / period / other conditions as plain filters (the "
+                f"scope). As written the numerator is {part} inside that {p.field}'s own deals, which is a different "
+                "share (100% when it trades only that)")
+    return None
 
 
 # ---- a calendar day named in the question must be a day in the plan, not its month or year ----
@@ -217,6 +253,70 @@ def grain_word_error(plan: Plan, d: Dictionary, question: str) -> str | None:
                 continue
             return (f"the question asks per {grain} («{m.group(0)}»): add {grain} to group_by (one row per {grain}); "
                     "keep the period as a filter")
+    return None
+
+
+# ---- a time grain the question does not ask for; the extreme period vs the extreme single deal ----
+_YEAR_PHRASE_RE = re.compile(r"(?<!\d)20[12]\d\s*-?\s*(?:год\w*|г\.|гг\.|yil\w*|йил\w*)", re.IGNORECASE)
+_GRAIN_NOUNS = {
+    "year": re.compile(r"(?<!\w)(?:год|года|году|годам|годах|годы|лет|ежегодн\w*|yil\w*|йил\w*)(?!\w)", re.IGNORECASE),
+    "quarter": re.compile(r"квартал|chorak|чорак", re.IGNORECASE),
+    "month": re.compile(r"месяц|помесячн|(?<!\w)(?:oy|ой)(?:i|и|da|да|lar|лар|ma|ма|ning|нинг|ida|ида)?\w*(?!\w)|"
+                        r"oyma|ойма", re.IGNORECASE),
+    "day": re.compile(r"(?<!\w)(?:день|дня|дни|дням|днях|дней|ежедневн\w*|сутк\w*|числ\w*|дат\w*|kun\w*|кун\w*|"
+                      r"sana\w*|сана\w*)(?!\w)", re.IGNORECASE),
+    "hour": re.compile(r"(?<!\w)(?:час\w*|soat\w*|соат\w*|время\s+суток|vaqt\w*|вақт\w*)(?!\w)", re.IGNORECASE),
+}
+# "when", "which period", trends: the question asks for one row per period or for the period itself
+_PERIOD_ASK_RE = re.compile(
+    r"когда|в\s+как\w+\s+(?:период|время)|динамик|тренд|как\s+(?:менял|изменял|рос|рост|снижал|падал)|"
+    r"по\s+периодам|qachon|қачон|dinamika|динамика|qanday\s+o.zgar|қандай\s+ўзгар|davr(?:lar)?\s+bo.yicha|"
+    r"давр(?:лар)?\s+бўйича", re.IGNORECASE)
+_TIME_GRAINS = ("year", "quarter", "month", "day", "hour")
+
+
+def _grain_asked(grain: str, question: str) -> bool:
+    if _PERIOD_ASK_RE.search(question) or (grain in _GRAIN_WORDS and _GRAIN_WORDS[grain].search(question)):
+        return True
+    q = _YEAR_PHRASE_RE.sub(" ", question) if grain == "year" else question
+    if _GRAIN_NOUNS[grain].search(q):
+        return True
+    if grain == "year" and len(set(_YEAR_RE.findall(question))) >= 2:
+        return True          # «2024 и 2025», «2022–2026»: the years listed
+    if grain == "month" and len(named_months(question)) >= 2:
+        return True
+    return grain == "day" and len(named_days(question)) >= 2
+
+
+def unasked_grain_error(plan: Plan, d: Dictionary, question: str) -> str | None:
+    """A time grain in group_by needs a question that asks per period, which period or when (or names several
+    periods): «харидорлар сони нечта» split by month answers another question."""
+    s = d.subject(plan.subject)
+    if plan.compare or not s.date_field or not question.strip():
+        return None
+    for g in plan.group_by:
+        if g in _TIME_GRAINS and s.fields[g].type == "grain" and not _grain_asked(g, question):
+            return (f"the question does not ask per {g} (no per-period, which-{g} or when words): drop {g} from "
+                    "group_by and keep the period as a filter")
+    return None
+
+
+_SINGLE_DEAL_RE = re.compile(r"сделк|контракт|договор|лот(?!\w)|лота|bitim|битим|shartnoma|шартнома|(?<!\w)lot",
+                             re.IGNORECASE)
+
+
+def extreme_period_error(plan: Plan, d: Dictionary, question: str) -> str | None:
+    """«В какой день был самый большой оборот» / «қайси кунида энг катта савдо»: the period with the largest total,
+    not the period of the largest single deal, unless the question speaks of a deal."""
+    s = d.subject(plan.subject)
+    if not any(g in _TIME_GRAINS for g in plan.group_by) or _SINGLE_DEAL_RE.search(question):
+        return None
+    for m in plan.measures:
+        f = s.fields.get(m.of or "")
+        if m.agg in ("max", "min") and f is not None and f.type == "number" and "sum" in f.aggs:
+            return (f"the question asks for the period with the {'largest' if m.agg == 'max' else 'smallest'} total, "
+                    f"not the single largest deal: rank by {{agg: sum, of: {m.of}}} (or count) per period instead "
+                    f"of {m.agg}")
     return None
 
 
