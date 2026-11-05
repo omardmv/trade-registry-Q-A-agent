@@ -104,5 +104,5 @@ MAX_FIX_RETRIES = 2
 # the grammar planner has more checks (mentions, guard): more fix rounds, still bounded by the deadline
 GRAMMAR_MAX_FIX_RETRIES = int(os.environ.get("UZEX_GRAMMAR_MAX_FIX_RETRIES", "4"))
 ROW_LIMIT = 1000
-# Planner: legacy (structured form, compile_query) or grammar (small general plan, run_plan; app/plan/)
-PLANNER = os.environ.get("PLANNER", "legacy").strip().lower() or "legacy"
+# Planner: grammar (small general plan, run_plan; app/plan/; default) or legacy (old structured form, compile_query)
+PLANNER = os.environ.get("PLANNER", "grammar").strip().lower() or "grammar"
