@@ -250,8 +250,8 @@ def degenerate_share_error(s: Subject, plan: Plan, m) -> str | None:
 
 
 def _degenerate_msg(plan: Plan, m, pct: str, key: str) -> str:
-    part = ", ".join(f"{w.field} {w.op} {_show_value(w)}" for w in m.where)
-    scope = ", ".join(f"{f.field} {f.op} {_show_value(f)}" for f in plan.filters) or "no filter"
+    part = ", ".join(f"{w.field} {_show_value(w)}" for w in m.where)
+    scope = ", ".join(f"{f.field} {_show_value(f)}" for f in plan.filters) or "no filter"
     same = (" (in the data cancelled = true, payment_late = true and status «Аннулирован(Не оплачен)» are the same "
             "deals)") if key == "status" else ""
     return (f"the share is {pct} by construction: the scope ({scope}) already decides the numerator ({part}){same}. "
