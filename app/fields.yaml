@@ -135,9 +135,9 @@ deals:
     price_change_pct: {type: number, sql: d.price_vs_start_pct, aggs: [avg, median, min, max],
                        label: {ru: отклонение цены от стартовой %, uz: boshlang‘ich narxdan farq %}}
     days_to_payment: {type: number, sql: d.days_to_payment, aggs: [avg, median, min, max],
-                      label: {ru: дней до оплаты, uz: to‘lovgacha kunlar}}
+                      label: {ru: дней от сделки до оплаты, uz: bitimdan to‘lovgacha kunlar}}
     days_to_delivery: {type: number, sql: d.days_to_delivery, aggs: [avg, median, min, max],
-                       label: {ru: дней от оплаты до поставки, uz: yetkazishgacha kunlar}}
+                       label: {ru: дней от оплаты до поставки, uz: to‘lovdan yetkazishgacha kunlar}}
     delivery_late_days: {type: number, sql: d.delivery_late_days, aggs: [avg, median, min, max],
                          label: {ru: дней просрочки поставки, uz: yetkazish kechikishi (kun)}}
     payment_term_days: {type: number, sql: d.payment_term_days, aggs: [avg, median, min, max],
