@@ -181,6 +181,48 @@ class Resolver:
                 out.append(names)
         return out
 
+    def product_rows(self) -> list[tuple]:
+        """(product_name, product_canonical, product_family, synonyms) of the products dictionary."""
+        return list(self._product_rows)
+
+    def region_rows(self) -> list[tuple]:
+        """(region, region_ru, synonyms) of the regions dictionary."""
+        return list(self._regions)
+
+    def all_entity_names(self) -> list[str]:
+        """Every name a question may use for an entity: companies, brokers, products (+ synonyms), product
+        variants and regions (+ synonyms)."""
+        out = [r[1] for r in self._companies] + [r[1] for r in self._brokers] + [r[0] for r in self._variants]
+        for product_name, canonical, family, synonyms in self._product_rows:
+            out += [product_name, canonical, family, *(synonyms or "").split(";")]
+        for region, region_ru, synonyms in self._regions:
+            out += [region, region_ru, *(synonyms or "").split(";")]
+        return [n for n in out if n]
+
+    def entity_names(self, kind: str, value: str) -> list[str]:
+        """Names of one entity as a plan uses it: kind is a field ground (company, broker, product,
+        product_family, product_variant, region); value an INN / broker code / catalog value / variant phrase."""
+        value = str(value)
+        if kind == "company":
+            row = self._company_by_inn.get(value)
+            return [row[1]] if row else []
+        if kind == "broker":
+            row = self._broker_by_code.get(value.upper())
+            return [row[1]] if row else []
+        if kind in ("product", "product_family"):
+            col = 1 if kind == "product" else 2
+            out = []
+            for row in self._product_rows:
+                if row[col] == value:
+                    out += [row[0], row[1], row[2], *(row[3] or "").split(";")]
+            out += [r[0] for r in self._variants if r[1] in {row[1] for row in self._product_rows if row[col] == value}]
+            return out or [value]
+        if kind == "product_variant":
+            return [value, *self.variant_names(value)]
+        if kind == "region":
+            return [n for r in self._regions if value in (r[0], r[1]) for n in (r[0], r[1], *(r[2] or "").split(";"))]
+        return [value]
+
     def exists(self, kind: str, value: str) -> bool:
         """Exact existence of an id: kind in inn / broker / contract / deal."""
         if kind == "inn":

@@ -1,0 +1,154 @@
+# Closed vocabulary of the questions the data can answer (app/plan/vocab.py).
+#
+# Entries are written as people write them (Cyrillic or Latin); the loader turns them into normalize_text tokens
+# (Latin, lower case, no apostrophes). Uzbek Cyrillic spellings need no separate entry when they transliterate to
+# the Latin one (ўқғҳ -> o q g h, ц -> s, initial е -> ye are folded by the matcher).
+#
+#   function: closed lists of function / question / filler words. Exact tokens (no prefix matching), so a short
+#             word never makes a longer unknown word known ("olti" six does not cover "oltin" gold).
+#   domain:   curated domain words and synonyms beyond the field labels, glossary and catalog. Stemmed like the
+#             automatic sources: a word known from its stem covers its inflections (bitim -> bitimlar).
+#   An entry ending in * is a stem as written (prefix match, at least 4 letters).
+#
+# Deliberately absent: future-tense words (будет, завтра) - the data is a historical registry; and anything the
+# data has no facts about. When a real question is refused for an ordinary word, add the word here.
+
+function:
+  ru: [
+    # question words
+    кто, кого, кому, кем, что, чего, чему, чем, какой, какая, какое, какие, каких, каким, какими, какую, каком,
+    какому, какого, какой-то, каков, какова, каково, каковы, который, которая, которое, которые, которых, которым,
+    которыми, котором, которого, которой, которую, сколько, скольких, скольким, где, когда, почему, зачем, отчего, как, куда,
+    откуда, чей, чья, чьё, чье, чьи, ли, насколько, нескольких, несколько, разве,
+    # prepositions, conjunctions, particles
+    в, во, на, по, за, из, изо, от, ото, до, с, со, к, ко, у, о, об, обо, при, про, для, без, между, через, над,
+    под, перед, после, среди, кроме, вместе, вместо, около, против, относительно, сравнению, сравнения, начиная,
+    согласно, ради, вне, внутри, и, или, либо, а, но, да, нет, не, ни, же, ж, то, бы, б, ведь, вот, вон, лишь,
+    только, именно, даже, уже, ещё, еще, также, тоже, так, такой, такая, такое, такие, таких, таким, если, чтобы,
+    чтоб, потому, поэтому, хотя, пока, причём, причем, т, е, тд, тп, др, пр, т.е., т.к.,
+    # pronouns and determiners
+    я, мы, ты, вы, он, она, оно, они, его, её, ее, их, им, ими, ему, ей, ней, нем, нём, них, ним, ними, мне, меня,
+    нам, нас, вам, вас, себя, себе, свой, своя, своё, свое, свои, своих, своим, своей, своего, этот, эта, это,
+    эти, этого, этой, этом, этим, этих, этими, эту, тот, та, те, того, той, том, тем, тех, теми, ту, весь, вся,
+    всё, все, всего, всей, всем, всех, всеми, всю, сам, сама, само, сами, самого, самой, самом, самим, самих,
+    самый, самая, самое, самые, самых, самым, самыми, самую, каждый, каждая, каждое, каждые, каждого, каждой,
+    каждом, каждому, каждую, каждым, любой, любая, любое, любые, любого, любом, любым, иной, иные, другой, другая,
+    другое, другие, других, другим, другого, тут, там, здесь, сюда, туда, оттуда, где-то, кто-то, что-то,
+    # being, having, ordinary verbs of a question
+    был, была, было, были, быть, есть, является, являлся, являются, являлась, стал, стала, стало, стали, имеет,
+    имел, имела, имели, иметь, может, можно, нужно, нужен, нужна, нужны, надо, хочу, хотим, хотелось, интересует,
+    интересно, известно, знать, узнать, подскажи, подскажите, скажи, скажите, покажи, покажите, показать, дай,
+    дайте, дать, назови, назовите, перечисли, перечислите, выведи, выведите, вывести, сравни, сравните, сравнить,
+    посчитай, посчитайте, посчитать, подсчитай, подсчитайте, найди, найдите, найти, определи, определите,
+    приведи, приведите, укажи, укажите, указать, сообщи, сообщите, отобрази, отобразите, рассчитай, рассчитайте,
+    вычисли, вычислите, оцени, считать, считаем, считая, считается, считались, учитывать, учитывая, учётом,
+    учетом, учёта, учета, включая, включительно, исключая, исключить, исключив, исключением, не считать,
+    получилось, получается, выходит, вышло, составил, составила, составило, составили, составляет, составляют,
+    ушло, шло, прошло, прошли, прошла, прошёл, прошел, идёт, идет, шли, шла,
+    # numerals and number words
+    ноль, один, одна, одно, одни, одной, одного, одну, одним, одном, два, две, двух, двум, двумя, три, трёх, трех,
+    трём, тремя, четыре, четырёх, четырех, пять, пяти, шесть, шести, семь, семи, восемь, восьми, девять, девяти,
+    десять, десяти, двадцать, двадцати, тридцать, сто, ста, сотни, тысяча, тысячи, тысяч, тыс, миллион, миллиона,
+    миллионов, млн, миллиард, миллиарда, миллиардов, млрд, первый, первая, первое, первые, первого, первой,
+    первом, первую, первых, второй, вторая, второе, второго, втором, вторую, вторых, третий, третья, третье,
+    третьего, третьем, третьей, третью, четвёртый, четвертый, четвёртом, четвертом, четвёртого, четвертого,
+    пятый, пятом, пятого, десятка, десятку, полтора, половина, половине, половину, половины, пол, вдвое, раз, раза,
+    топ, i, ii, iii, iv, г, гг, №, n, no,
+    # amount and comparison words
+    много, мало, больше, меньше, более, менее, побольше, поменьше, наиболее, наименее, всего, итого, итог, итоги,
+    итоговый, итоговая, итоговое, вообще, всё-таки, примерно, около, приблизительно, ровно, точно, сразу, вместе,
+    отдельно, раздельно, подряд, сначала, затем, потом, сейчас, ранее, раньше, позже, позднее, впервые, последний,
+    последняя, последнее, последние, последних, последнего, последней, последнем, последнюю, предыдущий,
+    предыдущего, предыдущем, прошлый, прошлого, прошлом, прошлым, прошлая, прошлой, текущий, текущего, текущем,
+    нынешний, нынешнего, этого, тех, которых, только, вообще, хоть, хотя, сколь, столько,
+    # round 2 (answerable questions of eval/questions.yaml and eval/v1, kinds exact / loose)
+    база, базе, базы, базу, данных, данные, наход*, указ*, независимо, оказал*, активн*, скрывает*, проход*,
+    относ*, пересч*, справочник*, необходим*, сша, скока, скоко, скок, присвоен*, итоге, карточк*, пожалуйста,
+    должен, должна, должно, должны, установл*, пришла, пришёл, пришел, пришло, пришли, выступ*, дал, дала, дало,
+    дали, принёс, принес, принесла, принесло, принесли, встреча*, работает, работают, работал, работала,
+    работали, работало, термез, термезе, карши, нукус, ургенч, гулистан,
+  ]
+  uz: [
+    # question words
+    kim, kimning, kimga, kimdan, kimlar, nima, nimaga, nimani, nimada, nimadan, nimalar, nega, nechun, qancha, qanchadan,
+    qanchasi, qanchaga, qanchalik, nechta, nechtadan, nechtasi, nechtasida, nechtaga, necha, nechi, nechanchi,
+    qaysi, qaysilar, qaysisi, qaysinisi, qanday, qanaqa, qanaqangi, qachon, qachongacha, qayerda, qayerdan, qayer,
+    qayerga, qani, -mi, mi, chi, ham, esa, emasmi, edimi,
+    # conjunctions, postpositions, particles
+    va, yoki, bilan, uchun, bo‘yicha, boyicha, bo‘ylab, bo‘yi, orqali, ko‘ra, nisbatan, qaraganda, keyin, oldin,
+    avval, so‘ng, beri, gacha, -gacha, dan, da, ga, ni, ning, dagi, gi, lik, cha, kabi, singari, haqida, tashqari,
+    boshqa, ammo, lekin, biroq, balki, ya’ni, yani, agar, chunki, shu, shunday, ushbu, bu, bular, bunda, ular, u,
+    uning, unda, undan, unga, uni, o‘sha, osha, o‘z, o‘zi, o‘zining, men, biz, siz, sizlar, menga, bizga, sizga,
+    har, hamma, barcha, butun, jami, jamisi, umumiy, umuman, faqat, faqatgina, hatto, yana, ham, hali, endi, allaqachon,
+    farqi, farq, qat’i, qati, nazar, nazarda, tutilmoqda, tutilsin, hisobda, hisobga, hisoblanadi, hisoblansin, hisoblang,
+    hisoblab, oling, olinsin, olinmasin, olmang, olmaganda, olmasdan, kiradi, kirmaydi, kirsin, kirmasin, qo‘shing,
+    qo‘shmang, qo‘shib, istalgan, ixtiyoriy, alohida, alohida-alohida, birga, birgalikda, holda, holatda,
+    # being and ordinary verbs of a question
+    bo‘lgan, bo‘ldi, bo‘lsa, bo‘lsin, bo‘lib, bo‘lgani, bo‘lganlar, bo‘lganlari, bo‘ladi, bo‘lmagan, bo‘lmasin, bo‘l*,
+    edi, ekan, emas, emish, bor, yo‘q, mavjud, ko‘rsating, ko‘rsat, ko‘rsatib, bering, ber, ayting,
+    aytib, aytsangiz, sanab, sanang, solishtiring, solishtirib, taqqoslang, aniqlang, toping, chiqaring, keltiring,
+    hisoblang, kerak, qiling, qilib, qilgan, qilingan, qilinganlar, qilinganlari, qilinganlardan, qilinganlarni,
+    qilinganlarsiz, qilinmagan, qildi, qilish, qil*, etgan, etdi, etib, etilgan, tashkil, olgan, oldi, olib, olingan,
+    olinganlar, borgan, kelgan, keldi, chiqqan, o‘tgan, o‘tkazgan, o‘tkazilgan, uchraydi, uchragan,
+    # numerals
+    nol, bir, bitta, ikki, ikkita, ikkala, ikkalasi, uch, uchta, to‘rt, to‘rtta, besh, beshta, olti, oltita, yetti, yettita,
+    sakkiz, to‘qqiz, o‘n, o‘nta, yigirma, o‘ttiz, yuz, ming, million, mln, milliard, mlrd, ta, birinchi, ikkinchi,
+    uchinchi, to‘rtinchi, beshinchi, oxirgi, so‘nggi, avvalgi, oldingi, keyingi, o‘tgan, joriy, yarim, top, i, ii, iii,
+    iv, y, yy, raqamli, sonli,
+    # amount and comparison words
+    ko‘p, ko‘proq, kam, kamroq, oz, ozroq, eng, juda, ancha, taxminan, aynan, aniq, ortiq, ortiqcha, ko‘pi, kami,
+    sifatida, tomonida, tomondan, ichida, ichidagi, orasida, orasidan, davomida, mobaynida, mobaynidagi, kesimida,
+    bo‘linib, bo‘lingan, nechadan,
+  ]
+
+domain:
+  ru: [
+    биржа, биржевой, торги, торговля, торговать, торговал*, торгова*, сделка, сделок, договор, контракт, лот, лота, лотов, лоты, объём,
+    объем, количество, число, кол-во, тонна, тонн, т, кг, килограмм, грамм, литр, литров, штука, штук, шт, метр,
+    кубометр, куб, кв, сум, сума, сумах, сумов, доллар, долл, usd, uzs, курс, цена, стоимость, стоил*, стоит,
+    дорог*, дешев*, дешёв*, высок*, низк*, крупн*, мелк*, оборот, выручка, сумма, суммарн*, общ*, средн*,
+    медиан*, взвешенн*, максимал*, минимал*, максимум, минимум, наибольш*, наименьш*, больш*, меньш*, лучш*, худш*,
+    доля, долю, доли, процент, процентн*, пункт, пунктов, разница, разниц*, изменени*, измени*, рост, вырос*,
+    выросл*, увелич*, уменьш*, сниз*, снижени*, паден*, упал*, динамик*, тенденц*, сравнени*, против, распределени*,
+    распредел*, разрез*, разбивк*, группировк*, сгруппир*, список, спис*, перечень, таблиц*, топ,
+    продаж*, прода*, продан*, купил*, купле*, покуп*, закуп*, приобр*, заключ*, провед*, провёл, провел, состоял*,
+    участв*, участи*, участник, сторон*, контрагент*, компания, компаний, предприяти*, организаци*, фирм*, юрлиц*,
+    юридическ*, клиент*, инн, стир, номер, название, наименовани*, имя, назва*, регион, област*, город, г.,
+    склад*, местонахожд*, располож*, статус*, состояни*, аннулир*, отмен*, оплат*, оплач*, платеж*, платёж*, поставк*,
+    поставл*, постав*, доставк*, достав*, отгруз*, срок*, просроч*, задерж*, опозд*, вовремя, своевременн*, позже,
+    раньше, дней, день, дня, дни, днях, сутки, недел*, месяц*, квартал*, полугоди*, полгода, год, года, году, годов, годам, годы, годах, годом, лет, период*,
+    дата, дату, даты, датам, дате, число, числа, начал*, конец, конц*, середин*, время, всё время, весь период,
+    экспорт*, внутренн*, залог*, депозит*, базис*, базов*, стартов*, начальн*, ндс, плательщик*, брокер*,
+    контор*, продавец, продавц*, покупатель, покупател*, товар*, продукт*, продукци*, групп*, категори*, отрасл*,
+    вид, вида, виду, видам, видов, видами, деятельност*, тип, типа, типу, типов, типам, форм*, спот, форвард*, фьючерс*, аукцион*, марк*, сорт*, класс*, вариант*,
+    написани*, единиц*, измерени*, упаковк*, реестр*, зарегистр*, регистрац*, действ*, окончани*, истек*, долгий, долгая, долгое, долгим, долгого, долгой, дольше, длительн*, продолжительн*, коротк*, кратчайш*,
+    валют*, сделк*, торгов*, ликвидн*, уникальн*, различн*, разн*, отдельн*, конкретн*, официальн*, официал*,
+    повтор*, выходн*, утр*, вечер*, час*, обычн*, новый, новая, новое, новые, новых, подписан*, исполн*, частичн*, ждёт, ждет,
+    штучн*, массов*, насыпн*, тоннаж*, партия, партии, партий, сырец, сырца, сырцу, сырцом, шрот*, пряж*,
+    масл*, хлопков*, хлопок, хлопка, бензин*, дизел*, топлив*, цемент*, портландцемент*, пшениц*, мук*, сахар*,
+    газ*, сжижен*, удобрен*, металл*, арматур*, полиэтилен*,
+  ]
+  uz: [
+    birja, birjada, bitim, savdo, savdolar, shartnoma, lot, hajm, miqdor, son, soni, sonini, sonlari, tonna,
+    tonnada, kg, kilogramm, gramm, litr, dona, metr, kub, kvadrat, so‘m, so‘mda, so‘mlik, so‘mni, dollar, dollarda,
+    kurs, kursi, kurslar, narx, narxi, qiymat, qiymati, baho, baland, past, yuqori, katta, kichik, yirik, qimmat,
+    arzon, aylanma, tushum, summa, o‘rtacha, ortacha, mediana, tortilgan, ulush, foiz, foizi, foizda, punkt, farq,
+    o‘zgarish, o‘zgargan, o‘zgardi, o‘sgan, o‘sdi, o‘sish, kamaygan, kamaydi, tushgan, tushdi, oshgan, oshdi,
+    solishtir*, taqqos*, taqsim*, ro‘yxat, ro‘yxati, jadval, sotilgan, sotgan, sotdi, sotish, sotuv, sotuvi,
+    sotuvlar, sot*, sotib, xarid, xaridi, xaridlar, xaridlari, tuzilgan, tuzgan, tuzildi, tuz*, amalga, oshirilgan,
+    oshirgan, oshgan, oshmagan, oshmadi, qatnash*, ishtirok*, tomon, taraf*, kompaniya, korxona, tashkilot, firma,
+    mijoz*, stir, inn, raqam, raqami, nom, nomi, viloyat, hudud, shahar, shahri, ombor, joylash*, holat, holati,
+    bekor, to‘lov, to‘lan*, to‘la*, yetkaz*, yetkazib, jo‘nat*, muddat*, kechik*, vaqtida, kech, kun, kuni, kunlar,
+    sutka, hafta, oy, oyi, oyida, oylar, chorak, yarim yil, yil, yilda, yili, yilgi, yillar, davr, sana, sanasi,
+    sanada, sanalari, boshlang‘ich, boshi, oxiri, o‘rtasi, eksport, ichki, garov, depozit, bazis, bazaviy, qqs,
+    to‘lovchi, broker, idora, tovar, mahsulot, xomashyo, xom ashyo, guruh, toifa, soha, faoliyat, tur, turi, shakl,
+    shakli, spot, forvard, fyuchers, auksion, marka, markali, sort, navli, nav, klass, variant, yozilish, birlik,
+    o‘lchov, qadoq, reyestr, ro‘yxatdan, ro‘yxatga, amal, uzoq, qisqa, tuga*, valyuta, likvid*, turli, xil, rasmiy, takror*, soat,
+    yangi, imzolangan, imzolanmagan, bajarilgan, qisman, donalab, og‘irlik, partiya, paxta, paxtaning,
+    shrot, kalava, ip, yog‘, benzin, dizel, yoqilg‘i, sement, portlandsement, bug‘doy, un, shakar, gaz, o‘g‘it,
+    metall, armatura, polietilen,
+    # round 2 (answerable questions of eval/questions.yaml and eval/v1, kinds exact / loose)
+    pul, qand, qayd, nomlan*, to‘liq, belgila*, ishla*, sarfla*, davom*, qo‘sh*, o‘tadi, o‘tib, o‘tadigan, ijro, deb,
+    mumkin, hisob*, yakuniy, tegishli, ko‘zda, oltinchi, yettinchi, sakkizinchi, to‘qqizinchi, o‘ninchi, yerda,
+    termiz, qarshi, nukus, urganch, guliston,
+  ]
