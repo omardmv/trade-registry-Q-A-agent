@@ -67,7 +67,7 @@ TOOLS = [
                  "kind": _enum(["company", "broker", "product", "product_variant", "region", "contract"]),
                  "text": S},
               "required": ["kind", "text"]}),
-    ToolSpec("get_examples", "Return verified example questions with their spec or SQL.",
+    ToolSpec("get_examples", "Optional: all verified examples are already listed in your instructions.",
              {"type": "OBJECT", "properties": {"question": S}, "required": ["question"]}),
     ToolSpec("compile_query", "PREFERRED. Run a structured query spec compiled by verified templates.",
              {"type": "OBJECT", "properties": {"spec": SPEC_SCHEMA, "assumptions": _arr(S)},
@@ -98,7 +98,8 @@ Steps:
    resolve(kind=product_variant, text=<phrase>) and put the same phrase into filters.product_variant_query (the
    compiler counts every matching spelling; never list spellings, never filter product names in SQL);
    "(спот)/(форвард)/(фьючерс)" in a product name is contract_form, not a variant. Enum-like values (category, activity, unit, ...) come from the Value catalog.
-3. Call get_examples() once.
+3. Find the closest of the verified Examples below (they cover Russian and Uzbek phrasings) and follow its
+   spec shape; adapt values, periods and filters to the question.
 4. Prefer compile_query(spec). Use submit_sql only if no spec kind/measure/dimension can express the question.
 5. Ambiguity: follow the Ambiguity registry. Compute the variants in ONE query: status_scope=split for counts
    and totals; two measures for "most/largest" without a measure; group_by=participant when the role is not
@@ -110,6 +111,9 @@ Steps:
    (percent, averages, differences) as SQL columns; include participant/broker names next to IDs.
 
 {schema}
+
+# Examples (verified question -> query)
+{examples}
 """
 
 
@@ -195,7 +199,8 @@ class Writer:
         self.catalog = catalog
         self._guard_index = build_index(catalog)
         self._product_attrs = load_product_attrs(db) if db is not None else {}
-        self.system = SYSTEM.format(schema=schema_prompt + ("\n\n" + render_catalog(catalog) if catalog else ""))
+        self.system = SYSTEM.format(schema=schema_prompt + ("\n\n" + render_catalog(catalog) if catalog else ""),
+                                     examples=examples.render_all() if examples is not None else "")
         self.max_tool_calls, self.max_fixes = max_tool_calls, max_fixes
         self.llm_timeout_s = llm_timeout_s
         self._exists_cache: dict[tuple[str, str], bool] = {}
@@ -374,7 +379,7 @@ class Writer:
                             names.append(text)
             return {"candidates": [_json(asdict(c)) for c in cands]}
         if name == "get_examples":
-            exs = self.examples.search(str(args.get("question") or question))
+            exs = self.examples.examples
             return {"examples": [{"question": e.question, "spec": json.dumps(e.spec, ensure_ascii=False) if e.spec
                                   else None, "sql": e.sql, "action": e.action, "note": e.note} for e in exs]}
         if name == "explore_sql":

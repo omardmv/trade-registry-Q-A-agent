@@ -205,7 +205,7 @@ The tests run offline. Before relying on the service, check it against the real 
 | `GEMINI_THINKING_BUDGET` | `1024` | thinking tokens per Gemini call |
 | `OPENAI_API_KEY` | none | OpenAI key for the fallback model |
 | `OPENAI_MODEL` | `gpt-5.4-mini` | fallback model; verify the name is available for your account |
-| `OPENAI_REASONING_EFFORT` | `low` | sent as `reasoning_effort` to OpenAI; empty = not sent |
+| `OPENAI_REASONING_EFFORT` | empty | sent as `reasoning_effort` to OpenAI; empty = not sent. `gpt-5.4-mini` rejects it together with function tools on Chat Completions, so leave it empty unless your model supports it |
 | `LLM_PROVIDERS` | `gemini,openai` | provider order: primary first, then fallback |
 | `UZEX_DEADLINE_S` | `75` | hard deadline per question |
 | `UZEX_LLM_TIMEOUT_S` | `15` | per-call LLM timeout |

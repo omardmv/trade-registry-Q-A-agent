@@ -628,3 +628,11 @@ def test_variant_query_must_be_the_resolved_phrase(parts):
     res = writer.run("Сколько сделок по хлопку-сырцу 1 сорта?", "ru", deadline())
     assert "resolve" in llm.chat.sent[2][1][0][1]["error"]
     assert res.status == "ok" and "variant_spellings_122" in res.notes
+
+
+def test_all_examples_are_in_the_planner_instructions(parts):
+    writer, _ = make(parts, [])
+    _, _, examples, _ = parts
+    for e in examples.examples:
+        assert e.question in writer.system
+    assert "get_examples() once" not in writer.system
