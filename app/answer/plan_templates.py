@@ -308,7 +308,8 @@ class _R:
         changes = [c for c in self.columns if c.endswith("change_pct") or c.endswith("change_pp")]
         for row in rows:
             y, mf, mt = (row[self.idx[c]] for c in ("year", "month_from", "month_to"))
-            period = str(y) if mf is None else (self.month(mf, y) if mf == mt
+            day = row[self.idx["day"]] if "day" in self.idx else None
+            period = f"{int(day):02d}.{int(mf):02d}.{y}" if day is not None else str(y) if mf is None else (self.month(mf, y) if mf == mt
                                                 else f"{self.month(mf)}–{self.month(mt)} {y}")
             if unit in self.idx and row[self.idx[unit]] is not None:
                 period += f", {row[self.idx[unit]]}"

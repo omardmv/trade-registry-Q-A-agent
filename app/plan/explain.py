@@ -151,6 +151,8 @@ def _period(s: Subject, filters, t) -> tuple[str, bool, list]:
 
 
 def _period_text(s: Subject, p: Period, t) -> str:
+    if p.day is not None:
+        return t["date_eq"].format(d=_d(p.date()))
     months = p.months()
     if p.quarter is not None:
         return t["quarter"].format(q=p.quarter, y=p.year)
@@ -201,7 +203,7 @@ def explain_plan(plan: Plan, d: Dictionary, notes: list[str], lang: str) -> str:
         p1, p2 = (_period_text(s, p, t) for p in plan.compare)
         text = t["compare"].format(p1=p1, p2=p2)
         hi = s.data_range[1]
-        if any(p.year == hi.year for p in plan.compare):
+        if any(p.year == hi.year and p.day is None for p in plan.compare):
             text += t["data_until"].format(d=_d(hi))
         parts.append(text)
         if any(m.agg in ("share", "cancelled_share") for m in plan.measures):

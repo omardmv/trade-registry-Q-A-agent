@@ -254,6 +254,14 @@ def _check_compare(s: Subject, plan: Plan) -> None:
     if a == b:
         raise PlanError("compare needs two different periods")
     lo_d, hi_d = s.data_range
+    days = [p.day is not None for p in plan.compare]
+    if any(days):
+        if not all(days):
+            raise PlanError("compare a day with a day: give day in both periods, or in neither")
+        for p in plan.compare:
+            if not lo_d <= p.date() <= hi_d:
+                raise _outside(_fmt(p.date()), s)
+        return
     for p in plan.compare:
         if not lo_d.year <= p.year <= hi_d.year:
             raise _outside(f"year {p.year}", s)

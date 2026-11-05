@@ -9,7 +9,7 @@ SUBJECTS = ("deals", "contracts", "companies", "brokers", "usd_rates")
 AGGS = ("count", "sum", "avg", "median", "min", "max", "distinct", "share")
 OPS = ("=", "in", "!=", "between", ">=", "<=")
 ORDERS = ("desc", "asc")
-PERIOD_KEYS = ("year", "quarter", "month_from", "month_to")
+PERIOD_KEYS = ("year", "quarter", "month_from", "month_to", "day")
 PLAN_KEYS = ("subject", "measures", "filters", "numerator", "group_by", "order", "limit", "compare", "mentions")
 MAX_LIMIT = 50
 
@@ -44,6 +44,11 @@ class Period:
     quarter: int | None = None
     month_from: int | None = None
     month_to: int | None = None
+    day: int | None = None          # one calendar day: year + month_from + day
+
+    def date(self):
+        import datetime as _dt
+        return _dt.date(self.year, self.month_from, self.day) if self.day is not None else None
 
     def months(self) -> tuple[int, int] | None:
         if self.quarter is not None:
@@ -168,11 +173,19 @@ def parse_period(d) -> Period:
     if year is None:
         raise PlanError("each compare item needs a year")
     p = Period(year, _opt_int(d, "quarter", "compare.quarter"), _opt_int(d, "month_from", "compare.month_from"),
-               _opt_int(d, "month_to", "compare.month_to"))
+               _opt_int(d, "month_to", "compare.month_to"), _opt_int(d, "day", "compare.day"))
     if p.quarter is not None and (p.month_from is not None or p.month_to is not None):
         raise PlanError("a compare item has either quarter or month_from/month_to")
     if p.month_from is None and p.month_to is not None:
         p = replace(p, month_from=p.month_to)
+    if p.day is not None:
+        if p.quarter is not None or p.month_from is None or (p.month_to not in (None, p.month_from)):
+            raise PlanError("a compare day is {year, month_from, day} (one month, no quarter)")
+        p = replace(p, month_to=p.month_from)
+        try:
+            p.date()
+        except ValueError:
+            raise PlanError(f"compare day {p.year}-{p.month_from}-{p.day} is not a calendar date") from None
     if p.month_from is not None and p.month_to is None:
         p = replace(p, month_to=p.month_from)
     return p

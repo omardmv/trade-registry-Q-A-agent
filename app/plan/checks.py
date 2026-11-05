@@ -109,7 +109,134 @@ def consistency_error(plan: Plan, d: Dictionary, question: str) -> str | None:
                 return (f"the share numerator filters {grouped[0]} while grouping by {grouped[0]}: every group is "
                         f"then 0% or 100%. For the share of each {grouped[0]} in the total, use {{agg: share}} "
                         f"without group_by and one numerator value, or group_by {grouped[0]} with sum/count only")
-    return period_error(plan, d, question) or period_value_error(plan, d, question)
+    return (period_error(plan, d, question) or period_value_error(plan, d, question)
+            or named_day_error(plan, d, question) or grain_word_error(plan, d, question)
+            or not_in_data_error(question) or role_word_error(plan, d, question))
+
+
+# ---- a calendar day named in the question must be a day in the plan, not its month or year ----
+_MONTH_STEMS = [r"январ|yanvar", r"феврал|fevral", r"март|mart", r"апрел|aprel", r"ма[йяе]|may", r"июн|iyun",
+                r"июл|iyul", r"август|avgust", r"сентябр|sentyabr|sentabr", r"октябр|oktyabr|oktabr", r"ноябр|noyabr",
+                r"декабр|dekabr"]
+_MONTH_ALT = "|".join(f"(?P<m{i}>{rx})" for i, rx in enumerate(_MONTH_STEMS, 1))
+# "1 января 2025", "1-yanvar 2025", "2025 йил 1 январь", "2025-yil 1-yanvar"
+_DAY_MONTH_RE = re.compile(rf"(?<![\d.])(?P<d>[0-3]?\d)\s*-?\s*(?:{_MONTH_ALT})\w*", re.IGNORECASE)
+_YEAR_AFTER_RE = re.compile(r"\s*,?\s*(20[12]\d)(?!\d)")                       # "1 января 2025"
+_YEAR_BEFORE_RE = re.compile(r"(?<!\d)(20[12]\d)\s*-?\s*(?:йил\w*|yil\w*|г\.|год[уа]?)?\s*$", re.IGNORECASE)  # "2025 йил 1 январь"
+
+
+def named_days(question: str) -> set:
+    """Calendar days named in the question with a year: dd.mm.yyyy, ISO, or a day + month word + a year next to it."""
+    import datetime as dt
+    out = set()
+    for m in _DATE_RE.finditer(question):
+        text = m.group(1)
+        try:
+            out.add(dt.date.fromisoformat(text) if "-" in text else
+                    dt.date(*reversed([int(x) for x in text.split(".")])))
+        except ValueError:
+            pass
+    for m in _DAY_MONTH_RE.finditer(question):
+        month = next(i for i in range(1, 13) if m.group(f"m{i}"))
+        after = _YEAR_AFTER_RE.match(question, m.end())
+        before = _YEAR_BEFORE_RE.search(question[:m.start()])
+        year = after.group(1) if after else before.group(1) if before else None
+        if year:
+            try:
+                out.add(dt.date(int(year), month, int(m.group("d"))))
+            except ValueError:
+                pass
+    return out
+
+
+def named_day_error(plan: Plan, d: Dictionary, question: str) -> str | None:
+    s = d.subject(plan.subject)
+    if not s.date_field:
+        return None
+    date_names = {n for n, f in s.fields.items() if f.type == "date"} | {"day"}
+    in_plan = {p.date() for p in plan.compare if p.day is not None}
+    for f in plan.filters:
+        if f.field in date_names and f.op != "!=":
+            for v in (f.value if isinstance(f.value, tuple) else (f.value,)):
+                in_plan.add(v if not isinstance(v, str) else __import__("datetime").date.fromisoformat(v[:10]))
+    for day in sorted(named_days(question)):
+        if day not in in_plan:
+            shown = day.strftime("%d.%m.%Y")
+            if plan.compare:
+                return (f"the question names the day {shown}: compare these days, not months — compare periods "
+                        f"{{year, month_from, day}} (e.g. {{year: {day.year}, month_from: {day.month}, day: {day.day}}})")
+            return (f"the question names the day {shown}: filter {s.date_field} on that date (op = / in / between "
+                    "with it as a bound), not its month or year")
+    return None
+
+
+# ---- "по годам" / "yillar bo'yicha": the question asks for one row per period ----
+_GRAIN_WORDS = {
+    "year": re.compile(r"по\s+годам|в\s+разрезе\s+лет|погодов|ежегодн|yillar\s+bo.yicha|yillar\s+kesimida|har\s+yili|"
+                       r"йиллар\s+бўйича|йиллар\s+кесимида|ҳар\s+йили", re.IGNORECASE),
+    "quarter": re.compile(r"по\s+кварталам|поквартальн|choraklar\s+bo.yicha|har\s+chorak|чораклар\s+бўйича|ҳар\s+чорак",
+                          re.IGNORECASE),
+    "month": re.compile(r"по\s+месяцам|помесячн|oylar\s+bo.yicha|oyma.oy|ойлар\s+бўйича|ойма.ой", re.IGNORECASE),
+}
+
+
+def grain_word_error(plan: Plan, d: Dictionary, question: str) -> str | None:
+    s = d.subject(plan.subject)
+    if plan.compare or not s.date_field:
+        return None
+    for grain, rx in _GRAIN_WORDS.items():
+        m = rx.search(question)
+        if m and grain in s.fields and grain not in plan.group_by:
+            if grain == "year" and "quarter" in plan.group_by or grain != "day" and "day" in plan.group_by:
+                continue      # a finer grain also gives one row per period
+            if grain == "year" and "month" in plan.group_by:
+                continue
+            return (f"the question asks per {grain} («{m.group(0)}»): add {grain} to group_by (one row per {grain}); "
+                    "keep the period as a filter")
+    return None
+
+
+# ---- the data has no such facts: answering with a nearby number would answer another question ----
+_NOT_IN_DATA = {
+    "employees": r"сотрудник|работник|численност\w*\s+персонал|персонал[аеу]?\b|xodim|ходим|ishchilar|ишчилар",
+    "profit": r"прибыл|рентабельн|маржинальн|foyda|фойда",
+    "salary": r"зарплат|заработн|maosh|маош|ish\s+haqi|иш\s+ҳақи",
+    "contacts": r"телефон|e-?mail|электронн\w*\s+почт|контакт|telefon|aloqa\s+ma.lumot",
+    "management": r"директор|руководител|владел|учредител|собственник|rahbar|раҳбар|direktor|egasi|эгаси|ta.sischi",
+    "rating": r"рейтинг|reyting|кредитоспособн",
+    "taxes": r"налог|soliq|солиқ",
+    "forecast": r"прогноз|спрогноз|будет\s+стоить|bashorat|башорат",
+}
+_NOT_IN_DATA_RE = re.compile("|".join(f"(?P<{k}>{v})" for k, v in _NOT_IN_DATA.items()), re.IGNORECASE)
+
+
+def not_in_data_error(question: str) -> str | None:
+    m = _NOT_IN_DATA_RE.search(question)
+    if m is None:
+        return None
+    return (f"the question asks about {m.lastgroup} («{m.group(0)}»), which the data does not contain (only deals, "
+            "contracts, participants, brokers and USD rates): call declare_unanswerable instead of answering a "
+            "nearby number")
+
+
+# ---- companies: "buyers" / "sellers" is the role, not all companies ----
+_ROLE_WORDS = {"Покупатель": re.compile(r"покупател|xaridor|харидор", re.IGNORECASE),
+               "Продавец": re.compile(r"продав|sotuvchi|сотувчи", re.IGNORECASE)}
+
+
+def role_word_error(plan: Plan, d: Dictionary, question: str) -> str | None:
+    s = d.subject(plan.subject)
+    if "role" not in s.fields:
+        return None
+    if any(f.field == "role" for f in plan.filters) or "role" in plan.group_by:
+        return None
+    named = [v for v, rx in _ROLE_WORDS.items() if rx.search(question)]
+    if not named:
+        return None
+    if len(named) == 1:
+        return (f"the question is about {named[0]} companies: add the filter role = {named[0]} (the registry lists "
+                "buyers and sellers)")
+    return "the question names buyers and sellers: group_by role, or filter role for the one asked"
 
 
 # ---- period values: a year / month named in the question must be inside the plan's period ----

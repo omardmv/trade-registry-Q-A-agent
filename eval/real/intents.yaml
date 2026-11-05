@@ -1052,7 +1052,7 @@
   questions:
     ru: Средний срок оплаты в днях по форвардным контрактам
     uz_latn: Forvard shartnomalarda to'lov muddati o'rtacha necha kun?
-    uz_cyrl: Форвард шартномалар бўйича ўртача тўлов муддати неча кун (битим санасидан бошлаб)?
+    uz_cyrl: Форвард шартномалар бўйича ўртача тўлов муддати неча кун?
 - id: r056
   split: test
   subject: contracts

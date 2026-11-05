@@ -25,7 +25,8 @@ PLAN_SCHEMA = {"type": "OBJECT", "properties": {
     "group_by": _arr(S),
     "order": {"type": "STRING", "enum": ["desc", "asc"]},
     "limit": I,
-    "compare": _arr({"type": "OBJECT", "properties": {"year": I, "quarter": I, "month_from": I, "month_to": I}}),
+    "compare": _arr({"type": "OBJECT", "properties": {"year": I, "quarter": I, "month_from": I, "month_to": I,
+                                                       "day": I}}),
     "mentions": _arr({"type": "OBJECT", "properties": {"text": S, "used_as": S}, "required": ["text", "used_as"]}),
 }, "required": ["subject", "mentions"]}
 RESOLVE_KINDS = ["company", "broker", "product", "product_variant", "region", "contract", "catalog"]
@@ -59,8 +60,8 @@ condition cannot be expressed: never drop a condition. Assumptions: short, in th
 - op: = in != between >= <=; in/between take values:[..]. year, month (1-12), quarter (1-4) are fields.
 - group_by: dimensions, time grains, or a record (deal, contract, company, broker) to list records ("largest
   deal": group_by [deal], limit 1). Two fields + limit = top-N per first field.
-- order desc | asc (least); limit = top-N. compare: two periods {{year, quarter | month_from, month_to}}, no time
-  filters then; gives change %.
+- order desc | asc (least); limit = top-N. compare: two periods {{year, quarter | month_from, month_to}}
+  or two days {{year, month_from, day}}, no time filters then; gives change %.
 - mentions: each phrase of the question you used, copied exactly, and what it sets: filter:<field> |
   group_by:<field> | measure:<i from 0> | order | limit | compare. Every filter and group_by needs one; every
   number, date, id or catalog word of the question must be in one.

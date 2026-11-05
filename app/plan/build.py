@@ -251,6 +251,8 @@ def _pairs(ctx: _Ctx, plan: Plan, valid_filter: bool) -> list[tuple[str, str, Me
 
 
 def _period_conds(s: Subject, p: Period) -> list[str]:
+    if p.day is not None:
+        return [f"{s.fields[s.date_field].sql} = DATE '{p.date().isoformat()}'"]
     out = [f"{s.fields['year'].sql} = {int(p.year)}"]
     months = p.months()
     if months is not None:
@@ -266,7 +268,9 @@ def _compare_sql(ctx: _Ctx, plan: Plan, status_where: list[str], pairs, unit_sel
         months = p.months()
         mf = "CAST(NULL AS INTEGER)" if months is None else str(int(months[0]))
         mt = "CAST(NULL AS INTEGER)" if months is None else str(int(months[1]))
-        cols = [f"{i} AS period_no", f"{int(p.year)} AS year", f"{mf} AS month_from", f"{mt} AS month_to"]
+        day = "CAST(NULL AS INTEGER)" if p.day is None else str(int(p.day))
+        cols = [f"{i} AS period_no", f"{int(p.year)} AS year", f"{mf} AS month_from", f"{mt} AS month_to",
+                f"{day} AS day"]
         cols += unit_sel + [f"{e} AS {a}" for e, a, _ in pairs]
         branch = f"SELECT {', '.join(cols)} FROM {s.table} {s.alias} WHERE {' AND '.join(where)}"
         if unit_sel:
@@ -283,7 +287,8 @@ def _compare_sql(ctx: _Ctx, plan: Plan, status_where: list[str], pairs, unit_sel
         else:
             name = "change_pct" if len(aliases) == 1 else f"{a}_change_pct"
             change.append(f"ROUND(100.0 * ({a} / NULLIF(LAG({a}) OVER ({window}), 0) - 1), 2) AS {name}")
-    head = ["year", "month_from", "month_to"] + unit + aliases + change
+    head = ["year", "month_from", "month_to"] + (["day"] if any(p.day is not None for p in plan.compare) else []) \
+        + unit + aliases + change
     order = ", ".join(["period_no"] + unit)
     return f"SELECT {', '.join(head)} FROM ({' UNION ALL '.join(branches)}) p ORDER BY {order}"
 
