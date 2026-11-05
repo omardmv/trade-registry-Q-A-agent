@@ -10,7 +10,7 @@ A normalize_text token (Latin, lower case; Russian / Uzbek Cyrillic transliterat
      the names of the whole database, stage 2 (after the plan) only the names of the entities the plan uses.
 
 Matching: a token is known when it equals an entry, starts with a stem of >= 4 letters, or (tokens of >= 6
-letters) is one edit away from a stem of >= 5 letters at the start ("prodovtsov" -> "prodav"). Spelling folds:
+letters) is one edit away from a stem of >= 6 letters at the start ("prodovtsov" -> "prodav"). Spelling folds:
 ts -> s (Cyrillic ц: цемент / sement) and an initial ye -> e (Cyrillic е: евро / yevro).
 """
 import logging
@@ -33,8 +33,7 @@ SEMANTIC_PATH = Path(__file__).resolve().parent.parent / "semantic.yaml"
 
 MIN_STEM = 4
 TYPO_MIN_TOKEN = 6
-TYPO_MIN_STEM = 5
-MAX_NAME_ENDING = 5        # a name word may carry a case ending ("Energoga", "Энергонинг")
+TYPO_MIN_STEM = 6
 
 MONTHS = ("январь января январе январю январском yanvar фев февраль февраля феврале fevral март марта марте mart "
           "апрель апреля апреле aprel май мая мае may iyun июнь июня июне iyul июль июля июле август августа "
@@ -87,7 +86,7 @@ def _forms(token: str) -> tuple[str, ...]:
 _SUFFIXES = frozenset({
     "lar", "ning", "ni", "li", "da", "dan", "ga", "ka", "qa", "gi", "dagi", "lik", "lig", "i", "si", "ini", "sini", "ida",
     "idan", "iga", "imiz", "ingiz", "mi", "cha", "gacha", "ta", "dir", "dek", "day",
-    "adi", "adigan", "digan", "gan", "kan", "qan", "ib", "sa", "moqda", "di", "mas", "may", "masdan", "ganda",
+    "il", "in", "adi", "adigan", "digan", "gan", "kan", "qan", "ib", "sa", "moqda", "di", "mas", "may", "masdan", "ganda",
     "gunch", "guncha", "sh", "ish", "ilgan", "ingan", "lgan", "ngan",
     "a", "u", "e", "y", "o", "ya", "yu", "om", "ov", "ev", "ax", "am", "ami", "oy", "ey", "em", "yax", "yam", "yami",
 })
@@ -160,7 +159,7 @@ class Lexicon:
 
 
 class NameWords:
-    """Words of entity names; a question token matches a name word in the same or an inflected form."""
+    """Words of entity names; a question token matches a name word as written or followed by suffixes."""
 
     def __init__(self, names: Iterable[str]):
         words = set()
@@ -174,7 +173,8 @@ class NameWords:
         for t in _forms(token):
             if t in self.words:
                 return True
-            if any(t[:k] in self._long for k in range(max(MIN_STEM, len(t) - MAX_NAME_ENDING), len(t))):
+            # a name word with case / possessive endings: Energo-ning, Zoket-a (the rest must be suffixes)
+            if any(t[:k] in self._long and _suffix_chain(t[k:]) for k in range(MIN_STEM, len(t))):
                 return True
         return False
 

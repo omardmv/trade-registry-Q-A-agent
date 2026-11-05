@@ -77,3 +77,19 @@ def test_vocab_is_built_from_the_database(resolver):
     v = build_vocab({"unit": {"тонна"}}, resolver)
     assert v.unknown("Сколько сделок у Pudexiz Plast?") == []
     assert [u.word for u in v.unknown("Сколько тонн золота продали в 2025 году?")] == ["золота"]
+
+
+def test_typos_need_a_long_stem():
+    assert not Lexicon(stems={"porod"}).known("pogoda")          # 1 edit in 5 letters is another word
+    assert Lexicon(stems={"prodav"}).known("prodovtsa")
+
+
+def test_name_word_endings_must_be_suffixes():
+    names = NameWords(["Komi Trade MChJ", "Linom Energo MChJ"])
+    assert names.has("energoning") and names.has("komiga")
+    assert not names.has("komissiya")                             # "komi" + "ssiya" is another word
+
+
+def test_uzbek_passive_suffixes():
+    lx = Lexicon(exact={"sot", "qil"})
+    assert lx.known("sotildi") and lx.known("qilingan") and lx.known("qilindi")
