@@ -118,8 +118,10 @@ class Pipeline:
         if self.vocab is None:
             return None
         if config.SAFETY == "max":
-            # fail-closed: a word outside the lexicon and outside every name in the database that can be a noun
-            # refuses (app/plan/wordkind.py); other unknown words (verbs, adverbs, ...) go on to the judge
+            # fail-closed. Word classifier on (default): every unknown word gets a closed-choice label
+            # (app/plan/wordclass.py). Off: a word outside the lexicon and outside every name in the database that
+            # can be a noun refuses (app/plan/wordkind.py); other unknown words (verbs, adverbs, ...) go on to the
+            # judge
             try:
                 gate = self.vocab.gate(question)
             except Exception:

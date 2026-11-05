@@ -98,7 +98,10 @@ dollar -> "other"; a director or employee is a person like a broker -> "other"; 
 cost is money like an amount -> "other"; a warehouse rent is a price like the deal price -> "other".
 - "other": anything else: an object, product property, currency, fee, person, place, event, document, condition \
 or action the list does not have; a verb or adjective that names such a fact (insured, terminated early, \
-smuggled) is "other" too. When unsure -> "other".
+smuggled) is "other" too. The given words are NOT in the database: a specific name among them (a product or \
+material such as gold or oil, a company, a person, a country, a city, a currency, an organisation) is a thing the \
+data does not have -> "other"; only a generic word that means the concept itself maps to it (goods, \
+merchandise -> product). When unsure -> "other".
 Reply with one JSON object and nothing else, each given word exactly as written -> its label: {"word": "label"}
 
 Concepts (id: meaning):
@@ -109,6 +112,7 @@ EXAMPLES = [
      {"Скажите": "wording", "реально": "wording"}),
     ("Кто лидер по объёму продаж сахара в 2023 году?", ["лидер"], {"лидер": "top"}),
     ("Какой средний курс евро в 2024 году?", ["евро"], {"евро": "other"}),
+    ("Сколько тонн платины продали в 2025?", ["платины"], {"платины": "other"}),
     ("Сколько директоров у брокеров из Ташкента?", ["директоров"], {"директоров": "other"}),
     ("Какую комиссию брокеры взяли за сделки 2024 года?", ["комиссию", "взяли"],
      {"комиссию": "other", "взяли": "wording"}),

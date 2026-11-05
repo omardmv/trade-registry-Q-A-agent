@@ -1,6 +1,7 @@
 """Word kind of a question word outside the closed vocabulary (max safety, app/plan/vocab.py).
 
-In max safety an unknown word refuses only when it can be a noun: a noun names a thing, and a thing outside the
+With the word classifier off (UZEX_WORD_CLASSIFIER=0; on by default, app/plan/wordclass.py, which then decides
+stage 1 and the words it labelled at stage 2) an unknown word refuses in max safety only when it can be a noun: a noun names a thing, and a thing outside the
 vocabulary is a thing the data does not have («евро», «директор», «склад», «pribyl»). Any other word (a verb, a
 participle, an adverb, a particle, ...) is wording: it does not refuse by itself; the judge (app/plan/judge.py),
 which confirms every answer in max safety, gets it as an unknown word and decides.

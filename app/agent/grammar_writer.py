@@ -84,7 +84,9 @@ class GrammarWriter(Writer):
         says whether the calculation still answers the question. Not covered -> unanswerable (not a fix: the
         model must not relink the word to a nearby fact); no verdict -> failed (refuse, never answer). With the
         judge off any such word refuses. Max safety: such a word that can be a noun refuses (app/plan/wordkind.py);
-        the judge runs on every plan, with the other unknown words (wording)."""
+        the judge runs on every plan, with the other unknown words (wording). With the word classifier
+        (app/plan/wordclass.py) a word labelled at stage 1 does not block: a concept word must be used by the plan,
+        and every labelled word goes to the judge."""
         if self.vocab is None:
             return None
         if self.safety == "max":

@@ -111,5 +111,6 @@ CLOSED_VOCAB = os.environ.get("UZEX_CLOSED_VOCAB", "1").strip().lower() not in (
 SAFETY = os.environ.get("UZEX_SAFETY", "max").strip().lower()
 JUDGE = os.environ.get("UZEX_JUDGE", "1").strip().lower() not in ("0", "false", "no", "off")
 # word classifier (app/plan/wordclass.py, max safety): unknown words get one closed-choice label (wording / a concept
-# the data has / other) from one LLM call instead of the noun gate's refusal; 0 restores the noun gate
-WORD_CLASSIFIER = os.environ.get("UZEX_WORD_CLASSIFIER", "0").strip().lower() not in ("0", "false", "no", "off")
+# the data has / other) from one LLM call instead of the noun gate's refusal; 0 restores the noun gate. On by
+# default since the no-answer proof: 0 of 279 no-answer phrasings answered (.superpowers/sdd/word-classifier-report.md)
+WORD_CLASSIFIER = os.environ.get("UZEX_WORD_CLASSIFIER", "1").strip().lower() not in ("0", "false", "no", "off")
