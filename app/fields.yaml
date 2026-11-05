@@ -17,6 +17,7 @@
 #   columns   (record) the columns listed for one record; the record key is `sql`
 #   filter_sql  filter template for `=` ({v} is the literal), for fields that are not a single column
 #   range     [min, max] for grains / ints
+#   per_kg    (number field or named measure) a price in so'm per kg: the answer also shows it per tonne (× 1000)
 #   label     {ru, uz}
 # Named measures: SQL defined once. {f} is the scope FILTER clause (status view), {w} the same plus the
 # measure's own `where`. scope_free measures are computed over every row of the filtered scope (they need the
@@ -128,7 +129,7 @@ deals:
     delivered_lots: {type: number, sql: d.delivered_lots, label: {ru: поставлено лотов, uz: yetkazilgan lotlar}}
     amount_uzs: {type: number, sql: d.amount_uzs, label: {ru: сумма в сумах, uz: summa (so‘m)}}
     amount_usd: {type: number, sql: d.amount_usd, label: {ru: сумма в долларах, uz: summa (dollar)}}
-    deal_price_per_kg: {type: number, sql: "d.amount_uzs / (d.volume_tonnes * 1000)", aggs: [avg, median, min, max],
+    deal_price_per_kg: {type: number, sql: "d.amount_uzs / (d.volume_tonnes * 1000)", aggs: [avg, median, min, max], per_kg: true,
                         label: {ru: цена сделки за кг в сумах, uz: bitim narxi (so‘m/kg)}}
     unit_price_uzs: {type: number, sql: d.amount_uzs / d.volume, per_unit: true, aggs: [avg, median, min, max],
                      label: {ru: цена за единицу в сумах, uz: birlik narxi (so‘m)}}
@@ -156,6 +157,7 @@ deals:
     price_per_kg:
       sql: "SUM(d.amount_uzs){w} / NULLIF(SUM(d.volume_tonnes){f} * 1000, 0)"
       where: d.volume_tonnes IS NOT NULL
+      per_kg: true
       label: {ru: средняя цена взвешенная по объёму (сумма ÷ объём) сум за кг, uz: o‘rtacha tortilgan narx (summa ÷ hajm) so‘m/kg}
     cancelled_share:
       sql: "ROUND(100.0 * COUNT(*) FILTER (WHERE d.is_cancelled) / NULLIF(COUNT(*), 0), 2)"

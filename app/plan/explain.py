@@ -32,6 +32,7 @@ _T = {
         "broker_side_split": "отдельно как брокер продавца и как брокер покупателя",
         "ties_kept": "при равных значениях показаны все",
         "volume_by_unit": "по единицам измерения",
+        "per_kg": "цена за тонну = цена за кг × 1000",
         "record": "записи",
     },
     "uz": {
@@ -58,6 +59,7 @@ _T = {
         "broker_side_split": "sotuvchi brokeri va xaridor brokeri sifatida alohida",
         "ties_kept": "teng qiymatlarda hammasi ko‘rsatilgan",
         "volume_by_unit": "o‘lchov birliklari bo‘yicha",
+        "per_kg": "tonna narxi = kg narxi × 1000",
         "record": "yozuvlar",
     },
 }
@@ -193,6 +195,12 @@ def _measure_phrase(s: Subject, plan: Plan, m: Measure, lang, t) -> str:
     return t[m.agg].format(v=label(s.fields[m.of], lang))
 
 
+def _per_kg(s: Subject, m: Measure) -> bool:
+    if m.agg in s.measures:
+        return s.measures[m.agg].per_kg
+    return bool(m.of) and m.of in s.fields and s.fields[m.of].per_kg and m.agg != "distinct"
+
+
 def explain_plan(plan: Plan, d: Dictionary, notes: list[str], lang: str) -> str:
     lang = "uz-Cyrl" if lang == "uz-Cyrl" else ("uz" if lang.startswith("uz") else "ru")
     t = _T[lang]
@@ -228,6 +236,8 @@ def explain_plan(plan: Plan, d: Dictionary, notes: list[str], lang: str) -> str:
         phrase = _measure_phrase(s, plan, m, lang, t)
         if phrase not in parts:
             parts.append(phrase)
+    if any(_per_kg(s, m) for m in plan.measures):
+        parts.append(t["per_kg"])
     if plan.group_by:
         parts.append(t["by"].format(g=t["and"].join(label(s.fields[g], lang) for g in plan.group_by)))
     if plan.limit is not None:

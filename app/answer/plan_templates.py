@@ -25,14 +25,14 @@ _W = {
            "hour": "{h} ч", "yes": "да", "no": "нет", "more": "… (остальные строки — в таблице результата)",
            "share": "доля", "no_value": "нет данных",
            "avg": "среднее — {v}", "median": "медиана — {v}", "min": "минимум — {v}", "max": "максимум — {v}",
-           "distinct": "число различных — {v}"},
+           "distinct": "число различных — {v}", "per_kg": "{kg} сум/кг = {t} сум/т"},
     "uz": {"valid": "bekor qilinganlarsiz", "change": "o‘zgarish", "pp": "f.p.", "inn": "STIR", "code": "kod",
            "buyer": "xaridor sifatida", "seller": "sotuvchi sifatida", "side_seller": "sotuvchi brokeri sifatida",
            "side_buyer": "xaridor brokeri sifatida", "by": "Ko‘rsatkich bo‘yicha: {m}",
            "quarter": "{y}-yil {q}-chorak", "hour": "soat {h}", "yes": "ha", "no": "yo‘q",
            "more": "… (qolgan qatorlar — so‘rov natijasi jadvalida)", "share": "ulush", "no_value": "ma’lumot yo‘q",
            "avg": "o‘rtacha — {v}", "median": "mediana — {v}", "min": "eng kichik — {v}", "max": "eng katta — {v}",
-           "distinct": "turli qiymatlar soni — {v}"},
+           "distinct": "turli qiymatlar soni — {v}", "per_kg": "{kg} so‘m/kg = {t} so‘m/t"},
 }
 # record / lookup columns that are not dictionary fields of the subject
 _COLS = {
@@ -80,6 +80,31 @@ _MONTH_NAMES = {
     "uz": ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentyabr", "oktyabr", "noyabr",
            "dekabr"],
 }
+
+
+def is_per_kg(s: Subject, m: Measure) -> bool:
+    """A price per kg in so'm (fields.yaml per_kg): shown per kg and per tonne."""
+    if m.agg in s.measures:
+        return s.measures[m.agg].per_kg
+    return bool(m.of) and m.of in s.fields and s.fields[m.of].per_kg and m.agg != "distinct"
+
+
+def per_tonne(v):
+    return v * 1000 if isinstance(v, Decimal) else float(v) * 1000
+
+
+def derived_numbers(plan: Plan, d: Dictionary, columns: list[str], rows: list) -> str:
+    """Numbers the templates derive from row cells (per-kg prices per tonne), as text for the answer check."""
+    try:
+        r = _R(plan, d, columns, "ru")
+    except (_Unusual, KeyError, IndexError, TypeError, ValueError):
+        return ""
+    out = []
+    for col, (m, _) in r.measures.items():
+        if is_per_kg(r.s, m):
+            i = r.idx[col]
+            out += [format_number(per_tonne(row[i])) for row in rows if _num(row[i])]
+    return "; ".join(out)
 
 
 class _Unusual(Exception):
@@ -176,6 +201,9 @@ class _R:
         if v is None:
             return self.t(self.w["no_value"])
         text = format_number(v) if _num(v) else self.value(col, v)
+        if _num(v) and is_per_kg(self.s, m):
+            # a price per kg: the same price per tonne too, so the unit the user asked for is in the answer
+            text = self.t(self.w["per_kg"].format(kg=text, t=format_number(per_tonne(v))))
         if self.is_pct(m) and _num(v):
             text += "%"
         unit = self.idx.get(self.s.fields[self.s.unit_field].col) if self.s.unit_field else None
@@ -402,4 +430,4 @@ def column_labels(plan: Plan, d: Dictionary, columns: list[str], lang: str) -> l
     return out
 
 
-__all__ = ["render", "column_labels", "MAX_LINES", "Subject"]
+__all__ = ["render", "column_labels", "derived_numbers", "MAX_LINES", "Subject"]

@@ -166,6 +166,8 @@ class Pipeline:
         assumptions = self._supported_assumptions(wr.assumptions, question, shown, explanation + " " + resolved)
         base["assumptions"] = assumptions
         context = " ".join(assumptions) + " " + explanation + " " + " ".join(result.columns) + " " + resolved
+        if isinstance(wr.spec, Plan):     # numbers the plan templates derive from cells (price per kg -> per tonne)
+            context += " " + plan_templates.derived_numbers(wr.spec, load_dictionary(), result.columns, shown)
         count = None if result.truncated or len(result.rows) > MAX_RETURNED_ROWS else len(result.rows)
         tail = templates.partial_note(lang) if result.truncated else ""
         feedback = None

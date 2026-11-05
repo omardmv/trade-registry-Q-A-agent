@@ -86,8 +86,8 @@ def results(db, resolver, ids):
     return out
 
 
-def check(text, rows):
-    v = verify_answer(text, "", rows, row_count=len(rows))
+def check(text, rows, derived=""):
+    v = verify_answer(text, "", rows, extra_text=derived, row_count=len(rows))
     assert v.ok, (v.unsupported, text)
 
 
@@ -96,7 +96,7 @@ def test_every_shape_has_a_template_that_verifies(results, lang):
     for name, (p, columns, rows) in results.items():
         text = plan_templates.render(p, D, columns, rows, lang)
         assert text, name
-        check(text, rows)
+        check(text, rows, plan_templates.derived_numbers(p, D, columns, rows))
 
 
 def test_shape_contents(results, ids):
@@ -173,7 +173,8 @@ def test_property_generated_rows_always_verify(results):
                 text = plan_templates.render(p, D, columns, gen, lang)
                 if text is None:
                     continue
-                v = verify_answer(text, "", gen, row_count=len(gen))
+                v = verify_answer(text, "", gen, row_count=len(gen),
+                                  extra_text=plan_templates.derived_numbers(p, D, columns, gen))
                 assert v.ok, (name, lang, v.unsupported, text, gen)
 
 
@@ -192,3 +193,20 @@ def test_grammar_pipeline_uses_templates_not_the_composer(db, resolver):
     assert res.answered and res.source == "plan_template" and res.verified
     assert composer.prompts == []
     assert res.answer.startswith("1. «") and "Расчёт: сделки; за 2024 год" in res.answer
+
+
+def test_price_per_kg_is_shown_per_tonne_too(results):
+    """«сколько стоила тонна» / «bir tonnasi necha so‘m»: a per-kg price is also printed per tonne (× 1000), so the
+    unit the question asked for is in the answer; the explanation says how (fresh f007)."""
+    from app.plan.explain import explain_plan
+    p, columns, rows = results["price"]
+    for lang, kg, t in (("ru", "сум/кг", "сум/т"), ("uz", "so‘m/kg", "so‘m/t"), ("uz-Cyrl", "сўм/кг", "сўм/т")):
+        text = plan_templates.render(p, D, columns, rows, lang)
+        assert kg in text and t in text, text
+        assert "1000" in explain_plan(p, D, [], lang)
+    derived = plan_templates.derived_numbers(p, D, columns, rows)
+    assert derived and all(x in plan_templates.render(p, D, columns, rows, "ru") for x in derived.split("; "))
+    # without the derived numbers the per-tonne figure is not in the rows: the check needs them
+    text = plan_templates.render(p, D, columns, rows, "ru")
+    assert not verify_answer(text, "", rows, row_count=len(rows)).ok
+    check(text, rows, derived)

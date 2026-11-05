@@ -45,6 +45,7 @@ class Field:
     range: tuple[int, int] | None = None
     with_year: bool = False
     side_of: str = ""                   # group-only: the side (seller / buyer) of this either-side field
+    per_kg: bool = False                # a price in so'm per kg: answers also show it per tonne (× 1000)
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,7 @@ class Named:
     where: str = ""
     scope_free: bool = False
     per_unit: bool = False
+    per_kg: bool = False
 
 
 @dataclass(frozen=True)
@@ -109,13 +111,13 @@ def _field(name: str, d: dict) -> Field:
                  columns=tuple(d.get("columns") or ()), joins=tuple(d.get("joins") or ()),
                  filter_sql=d.get("filter_sql", ""), filter_only=bool(d.get("filter_only")),
                  range=tuple(d["range"]) if d.get("range") else None, with_year=bool(d.get("with_year")),
-                 side_of=d.get("side_of", ""))
+                 side_of=d.get("side_of", ""), per_kg=bool(d.get("per_kg")))
 
 
 def _subject(name: str, d: dict) -> Subject:
     fields = {k: _field(k, v) for k, v in (d.get("fields") or {}).items()}
     measures = {k: Named(k, v["sql"], v.get("label") or {}, v.get("where", ""), bool(v.get("scope_free")),
-                         bool(v.get("per_unit"))) for k, v in (d.get("measures") or {}).items()}
+                         bool(v.get("per_unit")), bool(v.get("per_kg"))) for k, v in (d.get("measures") or {}).items()}
     joins = d.get("joins") or {}
     for f in fields.values():
         for j in ([f.display.join] if f.display else []) + list(f.joins):
