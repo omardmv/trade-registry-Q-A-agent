@@ -106,6 +106,17 @@ def test_openai_omits_empty_reasoning_effort(monkeypatch):
     assert "reasoning_effort" not in o_calls(llm)[0]
 
 
+def test_openai_temperature_is_sent_only_when_set(monkeypatch):
+    monkeypatch.setattr(config, "OPENAI_TEMPERATURE", "")
+    llm = openai_llm([o_text("a")])
+    llm.start_chat("s", [TOOL]).send_text("q")
+    assert "temperature" not in o_calls(llm)[0]
+    monkeypatch.setattr(config, "OPENAI_TEMPERATURE", "0")
+    llm = openai_llm([o_text("a")])
+    llm.start_chat("s", [TOOL]).send_text("q")
+    assert o_calls(llm)[0]["temperature"] == 0.0
+
+
 def test_openai_length_finish_raises_llm_error():
     llm = openai_llm([o_resp(content="cut off", finish="length"), o_resp(content="cut off", finish="length")])
     with pytest.raises(LLMError, match="length"):

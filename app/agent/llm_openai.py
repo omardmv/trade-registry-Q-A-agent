@@ -39,6 +39,8 @@ def _create(client, reasoning_effort: str = "", **kwargs):
     import openai
     if reasoning_effort:
         kwargs["reasoning_effort"] = reasoning_effort
+    if config.OPENAI_TEMPERATURE:
+        kwargs["temperature"] = float(config.OPENAI_TEMPERATURE)
     try:
         return client.chat.completions.create(**kwargs)
     except openai.APITimeoutError as e:

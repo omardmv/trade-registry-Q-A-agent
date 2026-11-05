@@ -36,8 +36,7 @@ TOOLS = [
              {"type": "OBJECT", "properties": {"kind": {"type": "STRING", "enum": RESOLVE_KINDS}, "text": S},
               "required": ["kind", "text"]}),
     ToolSpec("run_plan", "PREFERRED. Run a plan.",
-             {"type": "OBJECT", "properties": {"plan": PLAN_SCHEMA, "assumptions": _arr(S)},
-              "required": ["plan", "assumptions"]}),
+             {**PLAN_SCHEMA, "properties": {**PLAN_SCHEMA["properties"], "assumptions": _arr(S)}}),
     ToolSpec("submit_sql", "FALLBACK when no plan fits. One DuckDB SELECT.",
              {"type": "OBJECT", "properties": {"sql": S, "splits": _arr(S), "assumptions": _arr(S)},
               "required": ["sql", "splits", "assumptions"]}),
@@ -49,8 +48,8 @@ TOOLS = [
 
 SYSTEM = """You plan queries over a commodity-exchange registry (Russian/Uzbek questions). Never answer from memory.
 1) resolve() each company, broker, product, region, contract, grade/mark, status or catalog value named (catalog
-values are not listed here); use only returned values. 2) run_plan(plan, assumptions); on an error fix the
-plan as told. 3) declare_unanswerable if the data lacks it (profit, staff, forecasts, other exchanges) or a
+values are not listed here); use only returned values. 2) run_plan with the plan fields and assumptions; on an
+error fix the plan as told. 3) declare_unanswerable if the data lacks it (profit, staff, forecasts, other exchanges) or a
 condition cannot be expressed: never drop a condition. Assumptions: short, in the question's language.
 
 # Plan

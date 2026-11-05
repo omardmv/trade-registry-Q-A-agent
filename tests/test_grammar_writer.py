@@ -252,3 +252,12 @@ def test_resolve_catalog_values(parts):
     cats = tool_payload(llm, 1)
     assert cats["catalog"] == "category" and "Нефтепродукты" in cats["values"]
     assert "Аннулирован(Не оплачен)" in tool_payload(llm, 2)["values"]
+
+
+def test_run_plan_takes_flat_arguments(parts):
+    writer, _ = make(parts, [call("resolve", kind="company", text="Pudexiz Plast"),
+                             call("run_plan", **SELLER_PLAN, assumptions=["a"])])
+    res = writer.run("Сколько продала Pudexiz Plast в 2025?", "ru", deadline())
+    assert res.status == "ok" and res.assumptions == ["a"]
+    run_plan = next(t for t in TOOLS if t.name == "run_plan")
+    assert "subject" in run_plan.parameters["properties"] and "plan" not in run_plan.parameters["properties"]

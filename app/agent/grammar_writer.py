@@ -17,6 +17,17 @@ from app.plan.validate import grounding_pairs, validate_plan
 from app.text import normalize_text
 
 
+def plan_args(args: dict) -> dict:
+    """The plan of a run_plan call: its arguments (flat schema, one nesting level less for small models), or a
+    nested {plan: {...}} as older prompts had it; assumptions are not part of the plan."""
+    if isinstance(args.get("plan"), dict):
+        plan = dict(args["plan"])
+    else:
+        plan = {k: v for k, v in args.items() if k != "plan"}
+    plan.pop("assumptions", None)
+    return plan
+
+
 class GrammarWriter(Writer):
     tools = TOOLS
     compile_tool = "run_plan"
@@ -32,7 +43,7 @@ class GrammarWriter(Writer):
     def _compile(self, args, allowed, question, deadline, names=(), state=None) -> WriterResult | str:
         d = self.dictionary
         try:
-            plan = validate_plan(parse_plan(args.get("plan") or {}), d, self.catalog)
+            plan = validate_plan(parse_plan(plan_args(args)), d, self.catalog)
         except (PlanError, KeyError, TypeError) as e:
             return str(e)
         raw_filters = frozenset(f.field for f in plan.filters)
@@ -62,7 +73,9 @@ class GrammarWriter(Writer):
         except QueryError as e:
             return f"query failed: {e}"
         return WriterResult("ok", "compiled", built.sql, result, plan, built.splits, built.notes,
-                            [str(a) for a in args.get("assumptions") or []], measure_columns=built.measure_columns)
+                            [str(a) for a in args.get("assumptions") or (args.get("plan") if isinstance(args.get("plan"), dict)
+                                                                    else {}).get("assumptions") or []],
+                            measure_columns=built.measure_columns)
 
     def _tool(self, name, args, allowed, question, deadline, names=None, state=None) -> dict:
         if name == "resolve" and str(args.get("kind")) == "catalog":
