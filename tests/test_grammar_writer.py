@@ -261,3 +261,10 @@ def test_run_plan_takes_flat_arguments(parts):
     assert res.status == "ok" and res.assumptions == ["a"]
     run_plan = next(t for t in TOOLS if t.name == "run_plan")
     assert "subject" in run_plan.parameters["properties"] and "plan" not in run_plan.parameters["properties"]
+
+
+def test_resolve_accepts_object_as_kind(parts):
+    writer, llm = make(parts, [call("resolve", object="company", text="Pudexiz Plast"),
+                               call("declare_unanswerable", reason="x")])
+    writer.run("Pudexiz Plast?", "ru", deadline())
+    assert tool_payload(llm, 0)["candidates"][0]["id"] == INN

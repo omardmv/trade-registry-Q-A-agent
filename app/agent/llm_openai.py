@@ -1,5 +1,6 @@
 """OpenAI Chat Completions backend with the same Chat/LLM interface as GeminiChat/GeminiLLM."""
 import json
+import re
 
 from app import config
 from app.agent.llm import EmptyReplyError, LLMError, LLMReply, ProviderError, ToolCall, ToolSpec, note_provider
@@ -167,6 +168,96 @@ class OpenAIChat:
         self._messages = messages
 
 
+_TOOL_CALL_RE = re.compile(r"<tool_call>\s*(.*?)\s*(?:</tool_call>|$)", re.S)
+
+
+def _repair_json(text: str):
+    """json.loads, or the same text with the missing closing brackets appended (small local models often stop
+    one brace short)."""
+    try:
+        return json.loads(text)
+    except ValueError:
+        pass
+    stack, in_str, esc = [], False, False
+    for ch in text:
+        if in_str:
+            esc = (ch == "\\") and not esc
+            if ch == '"' and not esc:
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch in "{[":
+            stack.append("}" if ch == "{" else "]")
+        elif ch in "}]" and stack:
+            stack.pop()
+    try:
+        return json.loads(text + "".join(reversed(stack)))
+    except ValueError:
+        return None
+
+
+class TextToolChat(OpenAIChat):
+    """Tool calling through the prompt (Qwen/Hermes <tool_call> format) instead of the API's tools field, for local
+    OpenAI-compatible servers whose tool-call parser drops calls (Ollama returns an empty reply for a call it cannot
+    parse). The tools are listed in the system message; <tool_call>{name, arguments}</tool_call> blocks are parsed
+    from the reply text, with missing closing brackets repaired; tool results go back as <tool_response> blocks."""
+
+    def __init__(self, client, model: str, system: str, tools: list[ToolSpec], reasoning_effort: str = ""):
+        super().__init__(client, model, system, [], reasoning_effort)
+        listing = "\n".join(json.dumps(t, ensure_ascii=False) for t in _tool_payload(tools))
+        self._messages = [{"role": "system", "content": (
+            f"{system}\n\n# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are "
+            f"provided with function signatures within <tools></tools> XML tags:\n<tools>\n{listing}\n</tools>\n\n"
+            "For each function call, return a json object with function name and arguments within "
+            "<tool_call></tool_call> XML tags:\n<tool_call>\n{\"name\": <function-name>, \"arguments\": "
+            "<args-json-object>}\n</tool_call>")}]
+        self._pending: list[str] = []
+
+    def _call(self, new: list[dict]) -> LLMReply:
+        candidate = [*self._messages, *new]
+        msg = _choice(_create(self._client, self._effort, model=self._model, messages=candidate)).message
+        text = msg.content or ""
+        calls = []
+        for block in _TOOL_CALL_RE.findall(text):
+            obj = _repair_json(block)
+            if isinstance(obj, dict) and isinstance(obj.get("name"), str):
+                args = obj.get("arguments")
+                if isinstance(args, str):
+                    args = _repair_json(args)
+                calls.append(ToolCall(obj["name"], args if isinstance(args, dict) else {}))
+        visible = _TOOL_CALL_RE.sub("", text).strip() if calls else text
+        if not visible.strip() and not calls:
+            raise EmptyReplyError("OpenAI returned an empty reply")
+        self._messages = [*candidate, {"role": "assistant", "content": text}]
+        self._pending = [c.name for c in calls]
+        note_provider(self.name)
+        return LLMReply(visible, calls)
+
+    def _tool_messages(self, results: list[tuple[str, dict]]) -> list[dict]:
+        if not self._pending:
+            raise RuntimeError("tool results sent but the previous reply had no tool calls")  # a bug, not the model
+        body = "\n".join(f"<tool_response>\n{_dump({'name': n, 'result': p})}\n</tool_response>" for n, p in results)
+        return [{"role": "user", "content": body}]
+
+    def load_history(self, events: list[tuple[str, object]]) -> None:
+        messages = self._messages[:1]
+        for kind, payload in events:
+            if kind == "user_text":
+                messages.append({"role": "user", "content": payload})
+            elif kind == "assistant":
+                calls = "".join(f"<tool_call>\n{_dump({'name': c.name, 'arguments': c.args})}\n</tool_call>"
+                                for c in payload.tool_calls)
+                if payload.text or calls:
+                    messages.append({"role": "assistant", "content": (payload.text or "") + calls})
+                self._pending = [c.name for c in payload.tool_calls]
+            elif kind == "tool_results":
+                messages += self._tool_messages(payload)
+            else:
+                raise ValueError(f"unknown transcript event {kind!r}")
+        self._messages = messages
+
+
 class OpenAILLM:
     name = "openai"
 
@@ -178,7 +269,8 @@ class OpenAILLM:
         self._effort = (config.OPENAI_REASONING_EFFORT if reasoning_effort is None else reasoning_effort).strip()
 
     def start_chat(self, system: str, tools: list[ToolSpec]) -> OpenAIChat:
-        return OpenAIChat(self._client, self._model, system, tools, self._effort)
+        cls = TextToolChat if config.OPENAI_TEXT_TOOLS and tools else OpenAIChat
+        return cls(self._client, self._model, system, tools, self._effort)
 
     def complete(self, system: str, prompt: str) -> str:
         resp = _create(self._client, self._effort, model=self._model,

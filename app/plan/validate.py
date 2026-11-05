@@ -262,6 +262,8 @@ def _measure(s: Subject, m: Measure, catalog: dict | None) -> Measure:
     if agg not in ("count", "sum", "avg", "median", "min", "max", "distinct", "share"):
         raise PlanError(f"invalid agg {agg!r} for {s.name}; allowed: count, sum, avg, median, min, max, distinct, "
                         f"share{', ' if named else ''}{', '.join(named)}")
+    if agg == "share" and of in ("count", s.count_col, s.name, *(n for n, f in s.fields.items() if f.type == "record")):
+        of = None                                       # "share of the count", however it is spelled
     if agg == "share":
         if not m.where:
             raise PlanError("share needs the part whose share is computed: its filters with numerator:true")
@@ -280,7 +282,8 @@ def _measure(s: Subject, m: Measure, catalog: dict | None) -> Measure:
             f = _field(s, of, "measure")
             if f.type in ("dimension", "grain"):
                 raise PlanError(f"count counts {s.name} and takes no field; for the number of different {of} use "
-                                f"{{agg: distinct, of: {of}}}")
+                                f"{{agg: distinct, of: {of}}}; to show the {of} of one record, list the record "
+                                "(group_by [<record>] with a filter on it, no measures)")
         return Measure("count", None, ())
     if of is None:
         raise PlanError(f"agg {agg} needs of: a field of {s.name}")

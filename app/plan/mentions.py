@@ -156,8 +156,8 @@ def mention_error(plan: Plan, d: Dictionary, question: str, index, resolutions=(
         ms = used(f"filter:{flt.field}") + (used(f"measure:{i}") if i is not None else [])
         if not ms:
             return _fix(f"filter {flt.field} = {_show(flt)} is not linked to the question: add a mention "
-                        f"{{text: <the question phrase>, used_as: filter:{flt.field}}}, or drop the filter if the "
-                        "question does not ask for it")
+                        f"{{text: <the question phrase>, used_as: filter:{flt.field}}} (a phrase may be listed again with "
+                        "another used_as), or drop the filter if the question does not ask for it")
         for v in _values(flt):
             if not linked(flt, v, ms):
                 return _fix(f"filter {flt.field} = {v} is not linked to the mention "
@@ -166,7 +166,8 @@ def mention_error(plan: Plan, d: Dictionary, question: str, index, resolutions=(
     for g in plan.group_by:
         if not used(f"group_by:{g}"):
             return _fix(f"group_by {g} is not linked to the question: add a mention {{text: <the phrase that asks "
-                        f"for it>, used_as: group_by:{g}}}, or drop it from group_by")
+                        f"for it>, used_as: group_by:{g}}} (a phrase may be listed again with another used_as), or "
+                        "drop it from group_by")
 
     # c) numbers of a mention agree with the element it sets
     covered = years_covered(plan, s)

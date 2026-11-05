@@ -62,6 +62,12 @@ CASES = [
      {"subject": "contracts", "measures": [{"agg": "count"}]},
      {"subject": "contracts", "measures": [{"agg": "count"}], "filters": [F("contract_form", "Форвард")]},
      "Форвард"),
+    ("средняя цена сахара в 2023 году?",
+     {"subject": "deals", "measures": [{"agg": "avg", "of": "deal_price_per_kg"}],
+      "filters": [F("product", "Сахар"), F("year", 2023)]},
+     {"subject": "deals", "measures": [{"agg": "price_per_kg"}, {"agg": "avg", "of": "deal_price_per_kg"}],
+      "filters": [F("product", "Сахар"), F("year", 2023)]},
+     "price_per_kg"),
     ("Какой процент сделок экспортный?",
      {"subject": "deals", "measures": [{"agg": "count"}], "filters": [F("contract_type", "Экспортный")]},
      {"subject": "deals", "measures": [{"agg": "share"}],
@@ -114,3 +120,16 @@ def test_share_numerator_on_the_grouped_field_is_an_error():
             "filters": [{"field": "contract_type", "value": "Экспортный", "numerator": True}]}
     e = consistency_error(prepare(plan, "доля экспорта по типам"), D, "доля экспорта по типам")
     assert e is not None and "0% or 100%" in e
+
+
+def test_count_of_one_record_is_an_error():
+    plan = {"subject": "deals", "measures": [{"agg": "distinct", "of": "status"}], "filters": [F("deal", "387876")]}
+    e = consistency_error(prepare(plan, "статус сделки 387876"), D, "статус сделки 387876")
+    assert e is not None and "group_by" in e
+
+
+def test_share_of_count_spellings_mean_count():
+    for of in ("count", "deal", "deals"):
+        p = prepare({"subject": "deals", "measures": [{"agg": "share", "of": of}],
+                     "filters": [{"field": "cancelled", "value": True, "numerator": True}]})
+        assert p.measures[0].of is None

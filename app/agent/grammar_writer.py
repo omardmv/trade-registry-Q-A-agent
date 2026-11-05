@@ -78,6 +78,8 @@ class GrammarWriter(Writer):
                             measure_columns=built.measure_columns)
 
     def _tool(self, name, args, allowed, question, deadline, names=None, state=None) -> dict:
+        if name == "resolve" and "kind" not in args and "object" in args:
+            args = {**args, "kind": args["object"]}       # small models sometimes name the key "object"
         if name == "resolve" and str(args.get("kind")) == "catalog":
             return self._resolve_catalog(str(args.get("text", "")))
         out = super()._tool(name, args, allowed, question, deadline, names, state)

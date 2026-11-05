@@ -57,6 +57,9 @@ OPENAI_REASONING_EFFORT = os.environ.get("OPENAI_REASONING_EFFORT", "").strip() 
 # empty: do not send. Set 0 for a local Ollama model: its OpenAI-compatible endpoint defaults to temperature 1.0
 # (not the model's own setting), which garbles small models' tool-call JSON
 OPENAI_TEMPERATURE = os.environ.get("OPENAI_TEMPERATURE", "").strip()
+# 1: tool calls through the prompt (<tool_call> text) instead of the API tools field, for local servers whose tool
+# parser drops calls (app.agent.llm_openai.TextToolChat)
+OPENAI_TEXT_TOOLS = os.environ.get("OPENAI_TEXT_TOOLS", "").strip().lower() in ("1", "true", "yes")
 LLM_PROVIDERS = [p.strip().lower() for p in os.environ.get("LLM_PROVIDERS", "gemini,openai").split(",") if p.strip()]
 
 DEADLINE_S = float(os.environ.get("UZEX_DEADLINE_S", "75"))

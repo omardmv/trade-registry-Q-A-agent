@@ -95,6 +95,9 @@ def consistency_error(plan: Plan, d: Dictionary, question: str) -> str | None:
             return (f"group_by {records[0]} lists single records, so {m.agg} is computed per record: for one value "
                     f"over all {s.name} drop group_by; to find a record use sum/min/max of the field with order "
                     "and limit")
+        if m.agg in ("distinct", "count") and _record_key_filtered(s, plan) and not plan.group_by:
+            return (f"the plan filters one record, so {m.agg} is 0 or 1: to show its fields list it: group_by "
+                    "[<record>] with the same filter and no measures")
         if m.agg == "distinct" and m.of in plan.group_by:
             return (f"distinct of {m.of} while grouping by {m.of} is always 1: use count, or group by another field")
         if m.agg == "share":
@@ -191,6 +194,8 @@ def _show_value(f: Filter) -> str:
 
 # ---- missing-condition guard on plans (the legacy guard's detectors, mapped to fields.yaml names) ----
 _CANCELLED = "Аннулирован(Не оплачен)"
+_AVG_PRICE_RE = re.compile(r"средн\w*\s+цен|o.rtacha\s+narx|ўртача\s+нарх", re.IGNORECASE)
+_ONE_DEAL_RE = re.compile(r"отдельн|каждой сделк|по сделкам|медиан|взвешен|bitim\s+bo.yicha|har\s+bir", re.IGNORECASE)
 _UNIT_FIELDS = {"tonnes", "volume", "lots", "delivered_lots", "unit_price_uzs", "deal_price_per_kg", "base_price",
                 "lot"}
 
@@ -282,6 +287,11 @@ def plan_missing_condition_error(question: str, plan: Plan, d: Dictionary, index
     least_ok = G._EACH_RE.search(q) or any(m.agg == "min" for m in plan.measures)
     if ranked and plan.order != "asc" and not least_ok and G._LEAST_RE.search(q):
         return "the question asks for the least / cheapest / fewest: set order asc so the ranking starts from the smallest"
+    aggs = {(m.agg, m.of) for m in plan.measures}
+    if _AVG_PRICE_RE.search(q) and not _ONE_DEAL_RE.search(q) and ("avg", "deal_price_per_kg") in aggs \
+            and ("price_per_kg", None) not in aggs:
+        return ("the question asks for the average price without saying how: use both measures price_per_kg "
+                "(weighted by volume) and {agg: avg, of: deal_price_per_kg} (mean of single deals)")
     if G._DISTINCT_RE.search(q) and not any(m.agg == "distinct" for m in plan.measures):
         return ("the question asks how many different items: use {agg: distinct, of: <field>} without grouping by "
                 "that field")

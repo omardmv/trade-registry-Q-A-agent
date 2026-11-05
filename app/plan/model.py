@@ -205,7 +205,9 @@ def parse_plan(d) -> Plan:
         measures_raw = [measures_raw]
     measures = tuple(parse_measure(m) for m in measures_raw)
     if len(measures) > 2:
-        raise PlanError("at most 2 measures per plan")
+        raise PlanError("at most 2 measures per plan; to show the fields of one record (buyer, seller, product, "
+                        "amount, status ...) list it: group_by [deal | contract | company | broker] with a filter on "
+                        "it and no measures")
     filters_raw = d.get("filters") or []
     if isinstance(filters_raw, dict):
         filters_raw = [filters_raw]
