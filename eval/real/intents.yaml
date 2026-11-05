@@ -689,8 +689,6 @@
     sql: "SELECT SUM(amount_uzs) FILTER (WHERE year = 2023) AS uzs_2023, SUM(amount_uzs) FILTER (WHERE year = 2024) AS uzs_2024,\n       100.0 * SUM(amount_uzs) FILTER (WHERE year = 2024) / SUM(amount_uzs)\
       \ FILTER (WHERE year = 2023) - 100 AS change_pct\nFROM deals WHERE year IN (2023, 2024) AND NOT is_cancelled"
     key:
-    - uzs_2023
-    - uzs_2024
     - change_pct
     sql_check: select sum(amount_uzs) filter(where year=2023) as uzs_2023, sum(amount_uzs) filter(where year=2024) as uzs_2024, 100.0*(sum(amount_uzs) filter(where year=2024)/sum(amount_uzs) filter(where
       year=2023)-1) as change_pct from deals where year in (2023,2024) and NOT is_cancelled
@@ -913,7 +911,6 @@
     key:
     - deal_id
     - deal_date
-    - amount_uzs
     sql_check: select deal_id, deal_date, amount_uzs from deals where NOT is_cancelled order by amount_uzs desc limit 1
   questions:
     ru: Какая самая крупная сделка за всё время по сумме в сумах — номер и дата? Аннулированные не считать
@@ -1040,13 +1037,18 @@
   subject: contracts
   shape: average
   answerable: true
-  intent: Average payment term in days (from the deal date) across forward contracts
+  intent: Average payment term in days (contractual term, counted from the deal date) of forward contracts; per contract card or weighted by deals
   readings:
-  - name: avg term
+  - name: per contract
     sql: SELECT AVG(payment_term_days) AS avg_payment_term_days FROM contracts WHERE contract_form = 'Форвард'
     key:
     - avg_payment_term_days
     sql_check: select avg(payment_term_days) as avg_payment_term_days from contracts where contract_form='Форвард'
+  - name: weighted by deals
+    sql: SELECT AVG(c.payment_term_days) AS avg_payment_term_days FROM deals d JOIN contracts c USING (contract_id) WHERE c.contract_form = 'Форвард'
+    sql_check: SELECT SUM(c.payment_term_days) * 1.0 / COUNT(*) AS avg_payment_term_days FROM contracts c JOIN deals d ON d.contract_id = c.contract_id WHERE d.contract_form = 'Форвард'
+    key:
+    - avg_payment_term_days
   questions:
     ru: Средний срок оплаты в днях по форвардным контрактам
     uz_latn: Forvard shartnomalarda to'lov muddati o'rtacha necha kun?

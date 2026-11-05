@@ -41,10 +41,45 @@ def schema_word_problems(intents: list[dict]) -> list[str]:
     return out
 
 
-def gold_values(db: Database, reading: dict) -> list:
+def gold_values(db: Database, reading: dict) -> list[tuple[str, object]]:
+    """(key column, value) pairs from the first ≤ 5 rows of the reference query."""
     res = db.query(reading["sql"])
-    idx = [res.columns.index(k) for k in reading["key"]]
-    return [to_jsonable(row[j]) for row in res.rows[:5] for j in idx if row[j] is not None]
+    idx = [(k, res.columns.index(k)) for k in reading["key"]]
+    return [(k, to_jsonable(row[j])) for row in res.rows[:5] for k, j in idx if row[j] is not None]
+
+
+# Month stems in Russian, Uzbek Latin and Uzbek Cyrillic (any case/ending), index = month number.
+_MONTHS = [None, ("январ", "yanvar", "январ"), ("феврал", "fevral", "феврал"), ("март", "mart", "март"),
+           ("апрел", "aprel", "апрел"), ("ма[йяе]", "may", "май"), ("июн", "iyun", "июн"), ("июл", "iyul", "июл"),
+           ("август", "avgust", "август"), ("сентябр", "sent[yя]?abr", "сентябр"), ("октябр", "okt[yя]?abr", "октябр"),
+           ("ноябр", "noyabr", "ноябр"), ("декабр", "dekabr", "декабр")]
+_ROMAN = {1: "I", 2: "II", 3: "III", 4: "IV"}
+_QUARTER_WORD = r"(?:квартал\w*|chorak\w*|чорак\w*)"
+
+
+def _month_named(n: int, text: str) -> bool:
+    return any(re.search(rf"(?<!\w){stem}", text, re.I) for stem in _MONTHS[n])
+
+
+def matches(col: str, value, text: str) -> bool:
+    """Is this expected value stated in the answer? Same value in any common format counts."""
+    if isinstance(value, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        y, m, d = value.split("-")
+        if value in text or f"{d}.{m}.{y}" in text:
+            return True
+        day = str(int(d))
+        return bool(re.search(rf"(?<!\d)0?{day}(?!\d)", text)) and _month_named(int(m), text) and y in text
+    if col.lower() in ("month", "oy") and isinstance(value, int) and 1 <= value <= 12:
+        return _month_named(value, text) or value_in_text(value, text)
+    if col.lower() == "quarter" and isinstance(value, int) and 1 <= value <= 4:
+        roman = _ROMAN[value]
+        return bool(re.search(rf"(?<![\w]){roman}\s*-?\s*{_QUARTER_WORD}|Q{value}\b|(?<!\d){value}\s*-?\s*{_QUARTER_WORD}",
+                              text, re.I))
+    return value_in_text(value, text)
+
+
+def score_reading(gold: list[tuple[str, object]], answer: str) -> bool:
+    return all(matches(c, v, answer) for c, v in gold)
 
 
 def main() -> int:
@@ -53,7 +88,10 @@ def main() -> int:
     ap.add_argument("--langs", default=",".join(LANGS))
     ap.add_argument("--only", default="")
     ap.add_argument("--workers", type=int, default=3)
+    ap.add_argument("--rescore", default="", help="re-score a saved results file without calling the model")
     args = ap.parse_args()
+    if args.rescore:
+        return rescore(args.rescore)
 
     intents = yaml.safe_load(open(INTENTS, encoding="utf-8"))
     problems = schema_word_problems(intents)
@@ -93,7 +131,7 @@ def main() -> int:
         if not intent["answerable"]:
             row.update(any_ok=not res.answered, all_ok=not res.answered)
             return row
-        hits = [res.answered and all(value_in_text(v, res.answer) for v in g) for g in golds[intent["id"]]]
+        hits = [res.answered and score_reading(g, res.answer) for g in golds[intent["id"]]]
         row.update(reading_hits=hits, any_ok=any(hits), all_ok=all(hits))
         return row
 
@@ -137,6 +175,25 @@ def main() -> int:
     (out / f"real-{args.split}-{stamp}.json").write_text(json.dumps(
         {"summary": summary, "breakdown": breakdown, "rows": rows,
          "golds": {k: v for k, v in golds.items()}}, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+    return 0
+
+
+def rescore(path: str) -> int:
+    saved = json.load(open(path, encoding="utf-8"))
+    intents = {i["id"]: i for i in yaml.safe_load(open(INTENTS, encoding="utf-8"))}
+    db = Database(config.DB_PATH)
+    golds = {iid: [gold_values(db, r) for r in intents[iid].get("readings") or []] for iid in {r["id"] for r in saved["rows"]}}
+    changed = 0
+    for r in saved["rows"]:
+        if not r["answerable"] or r.get("error"):
+            continue
+        hits = [r["answered"] and score_reading(g, r["answer"]) for g in golds[r["id"]]]
+        changed += hits != r.get("reading_hits")
+        r.update(reading_hits=hits, any_ok=any(hits), all_ok=all(hits))
+    ans = [r for r in saved["rows"] if r["answerable"]]
+    print(f"rescored {path}: {changed} rows changed; answerable {sum(r['any_ok'] for r in ans)}/{len(ans)}, "
+          f"wrong {sum(1 for r in ans if r['answered'] and not r['any_ok'])}")
+    json.dump(saved, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1, default=str)
     return 0
 
 
