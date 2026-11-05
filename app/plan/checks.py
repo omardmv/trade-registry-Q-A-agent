@@ -2,7 +2,7 @@
 import re
 
 from app.agent import guard as G
-from app.agent.writer import _DATE_RE, _MONTH_RE, _STATUS_WORDS
+from app.agent.writer import _DATE_RE, _MONTH_RE, _STATUS_WORDS, strip_times_word
 from app.plan.dictionary import Dictionary, Subject
 from app.plan.model import Filter, Plan
 from app.text import normalize_text
@@ -30,11 +30,22 @@ def _valid_only(f) -> bool:
             or (f.field == "status" and f.op == "!=" and f.value == "Аннулирован(Не оплачен)"))
 
 
+# "all statuses / including annulled": every state counts, also in rankings, breakdowns and trends
+ALL_STATUSES_RE = re.compile(
+    r"вс[еих]+\s+(?:статус|состояни)|любо[мйг]\w*\s+(?:статус|состояни)|независимо\s+от\s+(?:статус|состояни)|"
+    r"включая\s+аннулир|с\s+учётом\s+аннулир|с\s+учетом\s+аннулир|вместе\s+с\s+аннулир|"
+    r"(?:hamma|barcha|har\s+qanday)\s+holat|(?:ҳамма|барча|ҳар\s+қандай)\s+ҳолат|"
+    r"bekor\s+qilingan\w*\s+(?:bilan|ham)\b|бекор\s+қилинган\w*\s+(?:билан|ҳам)(?!\w)", re.IGNORECASE)
+
+
 def apply_defaults(plan: Plan, d: Dictionary, question: str) -> Plan:
     """Status view for deals (as the structured form did) and the default limit of a large grouping."""
     s = d.subject(plan.subject)
     if s.cancelled:
         q = question.lower()
+        if plan.group_by and ALL_STATUSES_RE.search(question):
+            # the question asks for every state: a "without annulled" filter is not what it asked
+            plan = plan.with_(filters=tuple(f for f in plan.filters if not _valid_only(f)))
         ungrouped = not plan.group_by
         if ungrouped and plan.measures and not _scope_free(s, plan) and not any(w in q for w in _STATUS_WORDS):
             # ungrouped counts / totals show all deals and, separately, without annulled ones unless the
@@ -45,6 +56,8 @@ def apply_defaults(plan: Plan, d: Dictionary, question: str) -> Plan:
             scope = "all"            # a status filter, one record, or one row per status: every state counts
         elif plan.measures and _scope_free(s, plan):
             scope = "all"
+        elif plan.group_by and ALL_STATUSES_RE.search(question):
+            scope = "all"            # «все статусы», «barcha holatlar», «включая аннулированные»
         elif plan.group_by:
             scope = "valid"          # rankings, breakdowns and record listings: deals that took place
         else:
@@ -70,7 +83,7 @@ def period_error(plan: Plan, d: Dictionary, question: str) -> str | None:
             return f"the question names the date {m.group(1)} but {s.name} has no dates; use a dated subject"
         return (f"the question mentions the date {m.group(1)}; add a filter on {s.date_field} "
                 f"(op = or between)")
-    if _MONTH_RE.search(question) and not (_has(plan, s, ("month", "quarter") + date_fields)
+    if _MONTH_RE.search(strip_times_word(question)) and not (_has(plan, s, ("month", "quarter") + date_fields)
                                            or any(p.months() is not None for p in plan.compare)):
         return ("the question mentions a month/quarter; add it (filters month or quarter with year, or "
                 "compare periods with month_from/month_to or quarter)")
@@ -136,6 +149,7 @@ def named_days(question: str) -> set:
     """Calendar days named in the question with a year: dd.mm.yyyy, ISO, or a day + month word + a year next to it."""
     import datetime as dt
     out = set()
+    question = strip_times_word(question)
     for m in _DATE_RE.finditer(question):
         text = m.group(1)
         try:
@@ -367,6 +381,7 @@ def years_covered(plan: Plan, s: Subject):
 
 
 def named_months(question: str) -> set[int]:
+    question = strip_times_word(question)
     return {n for rx, n in _MONTHS if rx.search(question)}
 
 

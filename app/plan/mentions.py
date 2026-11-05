@@ -15,7 +15,7 @@ import re
 from dataclasses import dataclass
 
 from app.agent.guard import _tok_match, mentioned_spans
-from app.plan.checks import years_covered
+from app.plan.checks import ALL_STATUSES_RE, years_covered
 from app.plan.dictionary import Dictionary, Subject
 from app.plan.model import Filter, Mention, Plan
 from app.plan.validate import GROUND_KIND
@@ -169,6 +169,8 @@ def _problems(plan: Plan, d: Dictionary, question: str, index, resolutions, name
         spans += [(a, b, m) for a, b in found]
     # b) each mention points to an element of the plan
     for m in plan.mentions:
+        if m.used_as in ("filter:status", "filter:cancelled") and ALL_STATUSES_RE.search(m.text):
+            continue        # «все статусы»: the status view (every state), not a filter
         if m.used_as.partition(":")[0] not in TARGETS or not _target_ok(m.used_as, plan, raw_filters):
             yield (f"mention «{m.text}» used_as {m.used_as!r} points to nothing in the plan; this plan has: "
                         f"{', '.join(_targets(plan, raw_filters))}")

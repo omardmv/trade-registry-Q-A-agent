@@ -99,3 +99,33 @@ def test_record_grouping_with_overall_aggregate():
     assert "drop group_by" in msg
     assert check({"subject": "deals", "measures": [{"agg": "max", "of": "amount_uzs"}], "group_by": ["deal"],
                   "limit": 1}) is None
+
+
+# ---- fresh-set fixes ----
+def test_uzbek_marta_is_times_not_march():
+    """«бир марта» (once), «охирги марта» (the last time), «oxirgi marta» are not March (fresh f012, f034)."""
+    plan = {"subject": "deals", "measures": [{"agg": "distinct", "of": "buyer"}], "filters": [F("year", 2025)]}
+    for q in ("2025 йилда мис катодни сотиб олган харидорлар сони нечта (ҳар бир компания бир марта)?",
+              "2025 yilda nechta xaridor bir marta sotib olgan?",
+              "2025 йилда энг охирги марта қачон харид қилган?"):
+        assert check(plan, q) is None, q
+    # March itself is still a month in all three languages
+    for q in ("сделки 8 марта 2025", "2025 yil mart oyida nechta xaridor", "2025 йил мартда нечта харидор"):
+        assert "month" in (check(plan, q) or "") or "day" in (check(plan, q) or ""), q
+
+
+def test_all_statuses_word_makes_grouped_scope_all():
+    """«все статусы» / «barcha holatlar» / «барча ҳолатлар» / «включая аннулированные»: every state counts also in
+    breakdowns, rankings and trends (fresh f039); without such words the grouped default stays without annulled."""
+    plan = {"subject": "deals", "measures": [{"agg": "count"}], "filters": [F("year", 2022, "between")],
+            "group_by": ["year"]}
+    plan["filters"] = [{"field": "year", "op": "between", "values": [2022, 2026]}]
+    for q in ("сколько сделок по годам с 2022 по 2026, все статусы", "сделки по годам включая аннулированные",
+              "yillar bo‘yicha bitimlar, barcha holatlar", "hamma holatlar bilan yillar bo‘yicha bitimlar",
+              "ҳар йили нечтадан битим (2022–2026, барча ҳолатлар)?", "бекор қилинганлар билан ҳар йили нечта битим"):
+        assert prepare(plan, q).scope == "all", q
+    assert prepare(plan, "сколько сделок по годам с 2022 по 2026").scope == "valid"
+    assert prepare(plan, "сделки по годам без аннулированных").scope == "valid"
+    # a "without annulled" filter the planner added is dropped when the question asks for all statuses
+    p = prepare({**plan, "filters": plan["filters"] + [F("cancelled", False)]}, "по годам, все статусы")
+    assert p.scope == "all" and not p.filters_on("cancelled")

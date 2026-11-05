@@ -127,6 +127,24 @@ _MONTH_RE = re.compile(
     rf"|март(?:а|е|у|ом|ы)?{_UZ_SUFFIX}(?!\w)|ма[йяе]{_UZ_SUFFIX}(?!\w)"
     rf"|mart{_UZ_SUFFIX}(?!\w)|may{_UZ_SUFFIX}(?!\w)|май{_UZ_SUFFIX}(?!\w))", re.IGNORECASE)
 _DATE_RE = re.compile(r"(?<![\d.])(\d{1,2}\.\d{1,2}\.\d{4}|\d{4}-\d{2}-\d{2})(?![\d])")
+# Uzbek «марта» / «marta» is "times" («бир марта» once, «охирги марта» the last time), not March: after a
+# quantity / order word, and anywhere in an Uzbek question (March there is «март», «мартда», «mart»)
+_UZ_TIMES_RE = re.compile(
+    r"(?<!\w)(?P<q>(?:бир|икки|уч|тўрт|беш|олти|етти|саккиз|тўққиз|ўн|юз|минг|неча|бир\s+неча|кўп|охирги|сўнгги|"
+    r"биринчи|иккинчи|учинчи|илк|яна|ҳар|бу|шу|necha|bir|ikki|uch|ko.p|oxirgi|so.nggi|birinchi|ilk|yana|har)"
+    r"\s+)(?:марта|marta)(?!\w)", re.IGNORECASE)
+_MARTA_RE = re.compile(r"(?<!\w)марта(?!\w)", re.IGNORECASE)
+
+
+def strip_times_word(question: str) -> str:
+    """The question without Uzbek «марта» = "times", so month detectors do not read it as March."""
+    q = _UZ_TIMES_RE.sub(r"\g<q> ", question)
+    q = re.sub(r"(?<!\w)marta(?!\w)", " ", q, flags=re.IGNORECASE)     # Latin Uzbek: March is «mart»
+    if _MARTA_RE.search(q):
+        from app.text import detect_lang
+        if detect_lang(q) == "uz-Cyrl":
+            q = _MARTA_RE.sub(" ", q)
+    return q
 
 
 _STATUS_WORDS = ("аннулир", "отмен", "состоявш", "исполнен", "оплач", "подписан", "действительн", "валидн",
@@ -159,7 +177,7 @@ def period_error(question: str, spec: Spec) -> str | None:
     if m and not has_date:
         return (f"the question mentions the date {m.group(1)}; use filters.date_from/date_to "
                 "(or date for usd_rate)")
-    if _MONTH_RE.search(question) and not has_month:
+    if _MONTH_RE.search(strip_times_word(question)) and not has_month:
         return ("the question mentions a month/quarter; add it (filters.month_from/month_to with year, "
                 "or month for usd_rate)")
     return None
