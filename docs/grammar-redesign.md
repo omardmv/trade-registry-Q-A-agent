@@ -1,5 +1,12 @@
 # Redesign: a small, general query grammar
 
+> **Status (2026-11-05):** implemented and the default (`PLANNER=grammar`). Beyond this design it gained a
+> mention check (`app/plan/mentions.py`), answers rendered by code from templates (`app/answer/plan_templates.py`,
+> no model-written answer text), day-level compare periods, and the missing-condition checks ported from the
+> legacy guard. Measured on the realistic set with OpenAI: tuning half 139/153 right, 0 wrong; held-out half
+> (scored once) 130/150 right, 10 wrong, 23/30 no-answer questions refused. The README describes the current
+> architecture.
+
 ## Why
 
 The structured form grew one feature at a time: 7 query kinds, ~30 measures, ~30 groupings, ~25 separately

@@ -1,118 +1,164 @@
 # Exchange Q&A agent
 
-Answers Russian and Uzbek questions about the exchange deal registry in `data/`. Every fact in an answer is
-checked against the database result; if the data has no answer, the service says so. The data is fictional:
+Answers Russian and Uzbek (Latin and Cyrillic) questions about the exchange deal registry in `data/`. Every
+fact in an answer comes from the database result; if the data has no answer, the service says so. The data is fictional:
 companies, tax IDs, brokers, contracts, deals and prices are invented (see `data/README.md`).
 
-**Latest evaluation** (60 questions, live Gemini, two runs in a row): 48/48 answerable questions correct,
-12/12 unanswerable questions refused, 0 hallucinations, median response 4 s, slowest 12 s (limit 90 s).
+**Latest evaluation** (realistic set: 120 question intents × 3 languages, OpenAI `gpt-5.4-mini`, the held-out
+half scored once, never tuned on): 130/150 answerable questions right (87%), 10 answered wrongly, 10 refused;
+23/30 questions with no answer in the data refused. Answers are built by code from the result rows, so no
+number, name or date in an answer is ever invented; the remaining errors answer a slightly different question.
+Median response 2.6 s, slowest 8.8 s (limit 90 s), about $0.001 per question. The failure classes found there
+are fixed since; the next honest score needs new questions (see `docs/eval-design.md`).
 
 ## Architecture
 
-The core idea: **the language model never decides the facts.** Gemini only does two language jobs: it turns
-the question into a structured query request, and it turns the result rows into a sentence. Everything in
-between (finding IDs, building SQL, running it, checking the final answer) is deterministic code.
+The core idea: **the language model never decides the facts and never writes the answer.** It does one
+language job: it reads the question and fills in a small query plan. Everything else (finding IDs, checking
+the plan, building SQL, running it, writing the answer) is deterministic code driven by one file, the
+semantic layer.
 
 ```mermaid
 flowchart TD
-    Q[Question in Russian or Uzbek] --> W[Query planner<br/>Gemini]
-    W <-->|tools| T[Name lookup · Examples · Data peek]
-    W -->|structured form| C[Compiler<br/>fixed SQL templates]
-    W -.->|rare fallback: free SQL| V[SQL checker]
-    W -->|no answer in data| N[No-data reply]
-    C --> DB[(DuckDB<br/>read-only)]
-    V --> DB
-    DB --> R[Result rows]
-    R --> A[Answer writer<br/>Gemini]
-    A --> CH[Answer checker]
-    CH -->|every fact found in rows| OK[Answer + how it was computed]
-    CH -->|a fact not in rows| F[Table built from rows]
+    Q[Question<br/>ru · uz Latin · uz Cyrillic] --> P[Planner<br/>LLM: Gemini / OpenAI / local Qwen]
+    P <-->|tool| R[Name lookup<br/>companies · brokers · products · regions · catalog]
+    P -->|plan| CK[Plan checks<br/>validate · mentions · missing conditions · periods]
+    CK -->|fix message| P
+    P -->|no answer in data| N[No-data reply]
+    CK -->|plan passes| B[SQL builder]
+    B --> DB[(DuckDB<br/>read-only)]
+    DB --> T[Answer templates<br/>ru · uz · uz-Cyrl]
+    T --> OK[Answer + how it was computed]
+
+    S[[Semantic layer<br/>app/fields.yaml]]
+    S -.-> P
+    S -.-> CK
+    S -.-> B
+    S -.-> T
 ```
 
-The two boxes labeled Gemini are the only places a model runs. Everything else is plain Python and SQL.
+The planner box is the only place a model runs. The semantic layer (dotted lines) is read by every step: the
+planner sees it in its prompt, the checks validate against it, the builder turns it into SQL, and the
+templates take their labels and units from it.
+
+### The semantic layer
+
+`app/fields.yaml` describes the data once, as business concepts rather than columns:
+
+| It declares | Example |
+|---|---|
+| **Subjects** and their tables / joins | deals, contracts, companies, brokers, usd_rates |
+| **Fields** with type, SQL, labels in ru and uz, grounding | `product` → `d.product_canonical`, must come from name lookup |
+| **Measures** defined once | `price_per_kg` = total amount ÷ total volume (weighted), `share`, `cancelled_share`, `days_to_payment` |
+| **Time grains** | year, quarter, month, day, hour, per subject |
+| **Records** and the columns a lookup lists | one deal: date, product, seller, buyer, payment and delivery dates, brokers, … |
+| **Business rules** | money in so'm, USD at the deal-date rate; annulled deals excluded from rankings and shown separately in counts |
+| **Data range** | deals 03.01.2022–30.10.2026; rates to 31.10.2026 |
+
+Adding a capability is adding a line here, not new code: counts, totals, rankings, trends, shares, comparisons
+and lookups for every subject come from the same builder.
+
+### The plan
+
+The planner fills the same small shape for every question:
+
+```json
+{"subject": "deals",
+ "measures": [{"agg": "sum", "of": "tonnes"}],
+ "filters":  [{"field": "product", "op": "=", "value": "Хлопок-сырец"},
+              {"field": "year", "op": "between", "value": [2022, 2026]}],
+ "group_by": ["buyer"], "order": "desc", "limit": 3,
+ "mentions": [{"text": "хлопка-сырца", "used_as": "filter:product"}, {"text": "топ-3", "used_as": "limit"}]}
+```
+
+`compare` (two years, months, quarters or days, with the change) is the only other part. `mentions` copies
+each phrase of the question the plan relies on and says what it sets.
 
 ### The components
 
 | Step | What it does | Code |
 |---|---|---|
-| Data build | Loads the CSVs once into DuckDB with real types and ready-made columns: tonnes, sums in so'm and USD at the deal-date rate, a "cancelled" flag, and one standard name per product (230 spellings → 42 products). | `app/ingest/` |
-| Name lookup | Turns "Pudexiz Plast", "paxta", "Самаркандская область" or "BK001" into the exact IDs stored in the data. Handles Cyrillic ↔ Latin and Russian ↔ Uzbek names. A name that matches nothing returns nothing. | `app/resolve.py` |
-| Semantic layer | Column meanings, business rules and the list of known ambiguities, in Russian and Uzbek. Given to the planner in full. | `app/semantic.yaml` |
-| Examples | 30+ verified question → query pairs; the closest ones are shown to the planner. | `examples/examples.yaml` |
-| Query planner | Gemini with tools. It looks up names, reads examples and fills in a **structured form** (what to count, which filters, how to group). It can also say "the data can't answer this". | `app/agent/writer.py` |
-| Form checker | Rejects forms with unknown fields, periods outside the data, IDs that were not looked up or do not exist, or a month/date from the question that is missing in the form. The error goes back to the planner to fix. | `app/compiler/spec.py`, `writer.py` |
-| Compiler | Turns the form into SQL from a small set of templates, each tested against hand-written SQL. Also writes one plain sentence saying exactly what was computed. | `app/compiler/sql.py`, `explain.py` |
-| Free-SQL checker | Only for questions no form can express. Read-only SELECT, known tables, no name text filters, IDs must be looked up, money must respect currency, no made-up literal rows. | `app/agent/validators.py` |
-| Answer writer | Gemini rewrites the result rows as 1–4 sentences in the question's language. | `app/answer/composer.py` |
-| Answer checker | Every number, INN, broker code, date and known name in the reply must appear in the result rows or the question. If not, the reply is rewritten once, then replaced by a table built from the rows. | `app/answer/verifier.py` |
+| Data build | Loads the CSVs once into DuckDB with real types and ready-made columns: tonnes, sums in so'm and USD at the deal-date rate, a "cancelled" flag, one standard name per product (230 spellings → 42 products). | `app/ingest/` |
+| Semantic layer | Subjects, fields, measures, labels, business rules (above). | `app/fields.yaml`, `app/plan/dictionary.py` |
+| Name lookup | Turns "Pudexiz Plast", "paxta", "Самаркандская область", "BK001" or "экспортных" into the exact IDs and values in the data, across Cyrillic/Latin and Russian/Uzbek. A name that matches nothing returns nothing. | `app/resolve.py` |
+| Planner | An LLM with one lookup tool fills the plan, guided by ~20 short examples. It can also say "the data can't answer this". | `app/agent/grammar_writer.py`, `app/plan/prompt.py`, `app/plan/examples.yaml` |
+| Plan checks | Reject a plan that does not match the question, with a fix message back to the planner (bounded by the time budget). See the list below. | `app/plan/validate.py`, `checks.py`, `mentions.py` |
+| SQL builder | One generic builder: plan + semantic layer → SQL. Tested against hand-written SQL. | `app/plan/build.py` |
+| Explanation | One sentence saying exactly what was computed, from the plan and the labels. | `app/plan/explain.py` |
+| Answer templates | The answer text, built from the result rows and labels in Russian, Uzbek Latin and Uzbek Cyrillic. No model writes answer text. | `app/answer/plan_templates.py` |
 | Pipeline and API | Runs the steps under a time budget and serves `POST /ask` plus a chat page. | `app/pipeline.py`, `app/api.py` |
 
 ### One question, step by step
 
 *"Сколько сделок было заключено в октябре 2025 года?"*
 
-1. The planner fills the form: count deals, year 2025, month 10.
-2. The compiler builds SQL that returns both readings at once: all deals (17 808) and deals without annulled
-   ones (16 620).
-3. The answer writer says: "В октябре 2025 года заключено 17 808 сделок, без аннулированных — 16 620."
-4. The checker confirms both numbers are in the result rows.
-5. The code appends: "Расчёт: сделки за 10.2025; все сделки и отдельно без аннулированных."
+1. The planner fills the plan: subject deals, count, year 2025, month 10, with the mentions "октябре" and
+   "2025".
+2. The checks pass: the month and year in the question are in the plan, every value is grounded.
+3. The builder returns both readings at once: all deals (17 808) and deals without annulled ones (16 620).
+4. The template writes: "число сделок: 17 808 (без аннулированных: 16 620)".
+5. The code appends: "Расчёт: сделки; за 10.2025; число сделок; все сделки и отдельно без аннулированных."
 
 ### What the user can get back
 
 ```mermaid
 flowchart LR
     Q[Question] --> P{Pipeline}
-    P --> A1[Checked answer<br/>+ how it was computed]
-    P --> A2[Table from the rows<br/>if the answer failed the check]
-    P --> A3[No data<br/>the data cannot answer]
-    P --> A4[Could not answer<br/>error or time limit]
+    P --> A1[Answer from the rows<br/>+ how it was computed]
+    P --> A2[No data<br/>the data cannot answer]
+    P --> A3[Could not answer reliably<br/>checks not passed or time limit]
 ```
 
-There is no fifth outcome: model text that did not pass the checker never reaches the user.
+There is no other outcome: model-written text never reaches the user.
 
 ## Design decisions
 
-### Why a structured form instead of letting the model write SQL
+### Why a plan instead of letting the model write SQL
 
-A wrong SQL query gives a wrong number, and the answer checker cannot catch that, because the wrong number
-really is in the rows. So most questions go through the form: the model only picks *what* to compute, and
-tested templates decide *how*. The model can still make one kind of mistake (choosing the wrong measure or
-filter), but that is visible in the form and in the explanation sentence.
+A wrong SQL query gives a wrong number, and nothing downstream can catch it, because the wrong number really
+is in the rows. So the model only says *what* to compute, in a shape small enough for code to check against
+the question, and tested code decides *how*. The old free-SQL path remains only in the legacy planner
+(`PLANNER=legacy`).
 
 ### How ambiguous questions are handled
 
-Many questions hide a choice. Instead of guessing, the compiler computes every reasonable reading in one
-query and the answer shows them all:
+Some questions hide a choice. The semantic layer's rules compute the usual readings together and the
+explanation sentence states which one was used:
 
 | Ambiguity | Example | What the answer shows |
 |---|---|---|
 | Deal status | "Сколько сделок…" | All deals and, separately, without annulled ones |
-| Measure | "Кто купил больше всего хлопка?" | Top by tonnes and top by value |
-| Role | "Кто больше всех торговал?" | Top buyers and top sellers |
-| Currency | "Общая сумма…" | So'm by default; USD converted at the deal-date rate when asked |
-| Product scope | "хлопок" | Raw cotton by default; the whole cotton group when asked |
+| Role | "Кто больше всех торговал?" | Buyers and sellers ranked separately |
+| Currency | "Общая сумма…" | So'm by default; USD at the deal-date rate when asked |
+| Average price | "Средняя цена…" | Weighted (amount ÷ volume) and the mean of single deals |
+| Broker side | "Сколько сделок у брокера…" | A deal counted once, whichever side the broker was on |
 
-Rankings exclude annulled deals, because those deals did not take place.
+Rankings exclude annulled deals, because those deals did not take place; a breakdown by status keeps them.
 
-### How made-up answers are blocked
+### How wrong answers are blocked
 
 Each layer closes a different hole:
 
-1. **Names → IDs.** Filters may only use IDs returned by the name lookup or written in the question, and
-   the ID must exist in the data. "Брокер BK999" gets "no data", not "0 deals".
-2. **Fixed SQL templates.** Most queries are never written by the model.
-3. **SQL checker.** The fallback path cannot filter by raw text, invent literal rows, read files or write.
-4. **Answer checker.** Every fact in the reply must come from the rows; otherwise a table built from the rows
-   is shown instead.
-5. **Plain refusals.** Profit, directors, forecasts, other currencies or dates outside 2022–2026 get a
-   fixed "no data" reply.
+1. **Nothing is invented.** Answers are templates filled only with result-row values; the model writes no
+   answer text.
+2. **Names → IDs.** Filters may only use values returned by the name lookup or written in the question, and
+   the ID must exist. "Брокер BK999" gets "no data", not "0 deals".
+3. **The plan must match the question** (code, not the model, decides):
+   - every product, company, number, year, date and catalog value in the question must be covered by a
+     mention linked to the plan;
+   - a named day must be that day, a named month or year must be inside the plan's period;
+   - "по годам", "oylar bo'yicha" need one row per period; "least" needs ascending order; "how many
+     different" needs a distinct count; a share word needs a share measure; "weighted" needs the weighted price;
+   - conditions such as "export", a product grade or a category must be in the plan.
+4. **Plain refusals.** Dates outside the data, unknown IDs, other currencies, and facts the data does not have
+   (profit, employees, directors, forecasts, harvests, …) get a fixed "no data" reply. A closed vocabulary that
+   refuses *any* concept outside the semantic layer, whatever the wording, is being added.
 
 ### Time budget
 
-The hard deadline is 75 s, under the 90 s requirement. Each Gemini call is capped at 15 s, and a call only
+The hard deadline is 75 s, under the 90 s requirement. Each LLM call is capped at 15 s, and a call only
 starts if a full 15 s still fits before its deadline, so the worst case stays near 75 s. In practice most
-answers take 3–5 s. A fallback to the second LLM provider (below) counts against the same deadline: it only
+answers take 2–5 s. A fallback to the second LLM provider (below) counts against the same deadline: it only
 starts if a full 15 s still fits.
 
 ### LLM providers and fallback
@@ -144,18 +190,21 @@ provider wrote each reply; the evaluation takes `--providers` to measure one pro
 
 ```
 app/
-  ingest/     CSV → DuckDB build, product dictionary
-  compiler/   structured form, SQL templates, explanation sentence
-  agent/      Gemini and OpenAI wrappers with fallback, query planner, free-SQL checker
-  answer/     answer writer, answer checker, fixed replies
-  resolve.py  name lookup
-  pipeline.py the full question → answer flow
-  api.py      HTTP API; static/ holds the chat page
+  fields.yaml   semantic layer: subjects, fields, measures, labels, business rules
+  plan/         plan model, validation, checks, mention check, SQL builder, explanation, planner prompt
+  agent/        LLM providers with fallback, grammar planner (grammar_writer.py), legacy planner
+  answer/       answer templates (plan_templates.py), fixed replies, legacy answer writer and checker
+  ingest/       CSV → DuckDB build, product dictionary
+  compiler/     legacy structured form and SQL templates (PLANNER=legacy)
+  resolve.py    name lookup
+  pipeline.py   the full question → answer flow
+  api.py        HTTP API; static/ holds the chat page
 data/                 source CSVs (fictional)
 data_dictionary/      product and region dictionaries
-examples/             verified question → query examples
-eval/                 60 evaluation questions and the runner
+eval/real/            realistic evaluation: 120 intents × 3 languages, dev/test split, runner
+eval/                 older evaluation sets and runner
 tests/                unit tests (offline) and live tests
+docs/                 eval design, grammar redesign
 ```
 
 ## Run locally
@@ -186,12 +235,15 @@ docker run -p 8000:8000 -e GEMINI_API_KEY=... -e OPENAI_API_KEY=... uzex-qa
 
 ```bash
 uv run pytest
-GEMINI_API_KEY=... uv run python -m eval.run --workers 2
+uv run python -m eval.real.run --split dev --providers qwen_local             # free, local model
+uv run python -m eval.real.run --split dev --providers openai --max-cost 0.40  # paid, stops at the budget
 ```
 
-`eval.run` reports SQL correctness, answer correctness, correct refusals, hallucinations (target 0), `hallucinations_vs_gold` (answer numbers/IDs found neither in the gold rows nor in the
-returned rows; this catches verifier bypasses) and `answered_wrong` (answers that do not match the gold values) and
-latency (limit 90 s), and writes `eval/results/run-*.json`.
+`eval.real.run` scores each phrasing as right, wrong, refused, or (for questions with no answer) correctly
+refused, broken down by language, subject and question shape. It reports the tokens used and the estimated cost,
+and stops starting new questions at `--max-cost`. `--pick file` runs exact phrasings; `--rescore file`
+re-scores saved answers without calling a model. The test split is scored once, never tuned on. See
+`docs/eval-design.md`.
 
 ## First live run
 
@@ -212,7 +264,7 @@ The tests run offline. Before relying on the service, check it against the real 
 | Env | Default | Meaning |
 |---|---|---|
 | `GEMINI_API_KEY` | none | Gemini key (at least one of the two keys is required) |
-| `GEMINI_MODEL` | `gemini-3.5-flash` | model for planning and answer writing |
+| `GEMINI_MODEL` | `gemini-3.5-flash` | planner model |
 | `GEMINI_THINKING_BUDGET` | `1024` | thinking tokens per Gemini call |
 | `OPENAI_API_KEY` | none | OpenAI key for the fallback model |
 | `OPENAI_MODEL` | `gpt-5.4-mini` | fallback model; verify the name is available for your account |
@@ -220,12 +272,16 @@ The tests run offline. Before relying on the service, check it against the real 
 | `LLM_PROVIDERS` | `gemini,openai` | named providers in fallback order (`gemini`, `openai`, `qwen_local`, or your own via `<NAME>_TYPE`) |
 | `OPENAI_TEMPERATURE` | empty | temperature for the `openai` provider; empty = not sent |
 | `OPENAI_TEXT_TOOLS` | off | `1`: tool calls through the prompt instead of the API tools field (for local servers) |
+| `PLANNER` | `grammar` | `grammar` (plan + semantic layer) or `legacy` (old structured form) |
+| `UZEX_GRAMMAR_MAX_FIX_RETRIES` | `4` | fix rounds the planner gets after a failed check (within the deadline) |
 | `UZEX_DEADLINE_S` | `75` | hard deadline per question |
 | `UZEX_LLM_TIMEOUT_S` | `15` | per-call LLM timeout |
 | `UZEX_DATA_DIR` | `data` | directory with the source CSV files |
 | `UZEX_DB_PATH` | `build/uzex.duckdb` | path of the built DuckDB file |
 
-## Known limitation
+## Known limitations
 
-The verifier checks numbers, IDs, dates, quoted names and names that exist in the registry. An invented company
-or product name that is neither in the registry nor in quotes cannot be detected.
+- A question answered with a different reading of known words (e.g. "оборот" meant as volume, not money) can
+  still pass the checks; the explanation sentence under every answer shows what was computed.
+- Questions with two equally valid readings show one of them in 12 of 21 cases on the held-out set.
+- The evaluation questions were written by the developers; real users' wording will differ.

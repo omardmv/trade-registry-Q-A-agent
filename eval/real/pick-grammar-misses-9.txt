@@ -1,0 +1,9 @@
+r042/uz_latn
+r044/uz_latn
+r055/uz_cyrl
+r075/uz_cyrl
+r077/uz_latn
+r096/ru
+r096/uz_latn
+r096/uz_cyrl
+r109/uz_cyrl
