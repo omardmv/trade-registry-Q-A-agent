@@ -83,6 +83,25 @@ The planner sees: the grammar (short), the dictionary rendered compactly (field 
 aggs), the business rules, and ~20 short examples in the new grammar. Target: under 10 000 characters, about a
 third of today. Cheaper per question, and a fair chance for small local models.
 
+## Mentions (step 2)
+
+After "Mention Extraction and Linking for SQL Query Generation" (EMNLP 2020). The plan carries
+`mentions: [{text, used_as}]`: each phrase of the question the planner used, copied exactly, and the element it
+sets (`filter:<field>`, `group_by:<field>`, `measure:<i>`, `order`, `limit`, `subject`, `compare`).
+`app/plan/mentions.py` checks that each mention is in the question (normalize_text: case, whitespace, Cyrillic or
+Latin), points to an element of the plan, that every filter and group_by is linked to a mention (a resolved value
+through the resolve() call of its phrase), that the numbers of a mention agree with the plan (years of a period
+phrase, the limit of "топ-3", a threshold), and that every number, date, id and catalog value of the question is
+in some mention. Failures go back to the planner as fix instructions. The legacy missing-condition guard also runs
+on plans (`checks.plan_missing_condition_error`), and a year or month named in the question must be inside the
+plan's period.
+
+## Answers by code (step 2)
+
+In grammar mode no model writes answer text: `app/answer/plan_templates.py` renders the answer from the plan, the
+rows and the dictionary labels (ru, uz, uz-Cyrl) for every shape, and appends the explanation. Shapes without a
+template fall back to the row table. The answer checker still runs and passes by construction.
+
 ## How we switch safely
 
 1. Build the new planner path next to the old one (a setting chooses which).
