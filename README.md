@@ -265,7 +265,7 @@ The tests run offline. Before relying on the service, check it against the real 
 | `OPENAI_MODEL` | `gpt-5.4-mini` | planner model; verify the name is available for your account |
 | `OPENAI_REASONING_EFFORT` | empty | sent as `reasoning_effort` to OpenAI; empty = not sent. `gpt-5.4-mini` rejects it together with function tools on Chat Completions, so leave it empty unless your model supports it |
 | `LLM_PROVIDERS` | `openai` | named providers in fallback order (`openai`, `qwen_local`, or your own OpenAI-compatible server via `<NAME>_TYPE=openai`) |
-| `OPENAI_TEMPERATURE` | empty | temperature for the `openai` provider; empty = not sent |
+| `OPENAI_TEMPERATURE` | `0` | planner temperature; 0 keeps plans consistent for the same question; empty = not sent |
 | `OPENAI_TEXT_TOOLS` | off | `1`: tool calls through the prompt instead of the API tools field (for local servers) |
 | `PLANNER` | `grammar` | `grammar` (plan + semantic layer) or `legacy` (old structured form) |
 | `UZEX_GRAMMAR_MAX_FIX_RETRIES` | `4` | fix rounds the planner gets after a failed check (within the deadline) |

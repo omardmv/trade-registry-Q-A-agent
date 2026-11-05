@@ -51,9 +51,9 @@ SEMANTIC_PATH = ROOT / "app" / "semantic.yaml"
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5.4-mini")
 OPENAI_REASONING_EFFORT = os.environ.get("OPENAI_REASONING_EFFORT", "").strip()  # empty: do not send. gpt-5.4-mini rejects it together with function tools on Chat Completions
-# empty: do not send. Set 0 for a local Ollama model: its OpenAI-compatible endpoint defaults to temperature 1.0
-# (not the model's own setting), which garbles small models' tool-call JSON
-OPENAI_TEMPERATURE = os.environ.get("OPENAI_TEMPERATURE", "").strip()
+# 0 (default): the same question gets the same plan as far as the model allows (the API default samples at 1.0,
+# which made the planner alternate between readings). Empty: not sent.
+OPENAI_TEMPERATURE = os.environ.get("OPENAI_TEMPERATURE", "0").strip()
 # 1: tool calls through the prompt (<tool_call> text) instead of the API tools field, for local servers whose tool
 # parser drops calls (app.agent.llm_openai.TextToolChat)
 OPENAI_TEXT_TOOLS = os.environ.get("OPENAI_TEXT_TOOLS", "").strip().lower() in ("1", "true", "yes")
