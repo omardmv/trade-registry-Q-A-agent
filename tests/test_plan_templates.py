@@ -105,10 +105,10 @@ def test_shape_contents(results, ids):
     assert r["ranking"].startswith("1. «") and "(ИНН " in r["ranking"] and "\n3. «" in r["ranking"]
     assert "как покупатель" in r["ranking_two_by_role"] and "По показателю: объём в тоннах" in r["ranking_two_by_role"]
     assert "\n" not in r["least"] and r["least"].startswith("«")
-    assert r["trend_month"].startswith("01.2024 — ") and "12.2024 — " in r["trend_month"]
+    assert r["trend_month"].startswith("январь 2024 — ") and "декабрь 2024 — " in r["trend_month"]
     assert r["trend_quarter"].startswith("1 квартал 2025")
     assert r["compare"].startswith("2022: ") and "изменение: +" in r["compare"]
-    assert "01.2024–06.2024" in r["compare_months"]
+    assert "январь–июнь 2024" in r["compare_months"]
     assert r["share"].startswith("доля: ") and r["share"].endswith("%")
     assert "дата сделки: " in r["deal_lookup"] and str(ids["deal"]) in r["deal_lookup"]
     assert "первая сделка: " in r["company_lookup"] and "последняя сделка: " in r["company_lookup"]

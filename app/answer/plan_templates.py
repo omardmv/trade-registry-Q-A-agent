@@ -72,6 +72,14 @@ _ID_COLS = {"deal_id", "contract_id"}
 _COMPARE_COLS = {"year", "month_from", "month_to"}
 
 
+_MONTH_NAMES = {
+    "ru": ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь",
+           "декабрь"],
+    "uz": ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentyabr", "oktyabr", "noyabr",
+           "dekabr"],
+}
+
+
 class _Unusual(Exception):
     """A row shape the templates do not cover."""
 
@@ -227,6 +235,10 @@ class _R:
                                  else f"{self.t(label(f, self.l))} {v}")
         return ", ".join(parts)
 
+    def month(self, m, y=None) -> str:
+        name = self.t(_MONTH_NAMES[self.l][int(m) - 1])
+        return f"{name} {y}" if y is not None else name
+
     def time_text(self, row, f, used: set[str]) -> str:
         v = row[self.idx[f.col]]
         used.add(f.col)
@@ -238,7 +250,7 @@ class _R:
             return str(v)
         if f.name == "month":
             used.add(year_col)
-            return f"{int(v):02d}.{y}" if y is not None else f"{int(v):02d}"
+            return self.month(v, y)
         if f.name == "quarter":
             used.add(year_col)
             return self.t(self.w["quarter"].format(q=v, y=y if y is not None else ""))
@@ -296,7 +308,8 @@ class _R:
         changes = [c for c in self.columns if c.endswith("change_pct") or c.endswith("change_pp")]
         for row in rows:
             y, mf, mt = (row[self.idx[c]] for c in ("year", "month_from", "month_to"))
-            period = str(y) if mf is None else (f"{int(mf):02d}.{y}" if mf == mt else f"{int(mf):02d}.{y}–{int(mt):02d}.{y}")
+            period = str(y) if mf is None else (self.month(mf, y) if mf == mt
+                                                else f"{self.month(mf)}–{self.month(mt)} {y}")
             if unit in self.idx and row[self.idx[unit]] is not None:
                 period += f", {row[self.idx[unit]]}"
             out.append(f"{period}: {self.measures_text(row)}")
