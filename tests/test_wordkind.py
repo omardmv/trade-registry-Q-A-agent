@@ -90,3 +90,21 @@ def test_gate_splits_nouns_and_wording(vocab):
 def test_gate_capital_inside_the_sentence_blocks(vocab):
     g = vocab.gate("Сколько тонн меди продали на Лондонской бирже?")
     assert {u.word for u in g.blocking} >= {"Лондонской"}
+
+
+@pytest.mark.max_safety
+def test_product_named_by_an_adjective_is_known_by_its_noun(vocab):
+    """«катодной меди» (fresh2 g006): the product «Катод медный» is named by an adjective; the noun «медь» in any
+    case is known through the shared root. Only product names give such roots; a person (повар, строитель) and a
+    noun with no product adjective (мёд, евро, золото) still block."""
+    from app.plan.wordkind import russian_adjective_root, russian_noun_root
+    assert russian_adjective_root("медный") == "мед" and russian_adjective_root("стальной") == "стал"
+    assert russian_noun_root("меди") == russian_noun_root("медью") == "мед"
+    assert russian_noun_root("повара") is None and russian_noun_root("строители") is None
+    assert "мед" in vocab.product_roots
+    for q in ("На сколько долларов экспортировали катодной меди в 2024 году?", "Сколько тонн меди продали в 2025?",
+              "Объём сделок с медью в 2024 году"):
+        assert vocab.gate(q).blocking == [], q
+    for q, word in (("Сколько мёда продали в 2024?", "мёда"), ("Сколько золота продали в 2024?", "золота"),
+                    ("Сколько поваров купили соль в 2024?", "поваров")):
+        assert word in [u.word for u in vocab.gate(q).blocking], q

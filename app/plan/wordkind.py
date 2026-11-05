@@ -81,6 +81,47 @@ def russian_lemma(word: str) -> str | None:
     return parses[0].normal_form if parses else None
 
 
+# A product named by an adjective («Катод медный», «Прокат стальной») is asked about by its noun («меди», «стали»):
+# the root of the adjective lemma (without -ный / -ной / -ний / -нный / -ский) equals the root of the noun lemma
+# (without a final ь / а / о / я). Used only against the words of product names (app/plan/vocab.py).
+_ADJ_SUFFIXES = ("янный", "анный", "енный", "нный", "ный", "ной", "ний", "ский", "ской")
+
+
+def _root(text: str) -> str:
+    return text.replace("ь", "")
+
+
+def russian_adjective_root(word: str) -> str | None:
+    """Root of a Russian adjective (top parse ADJF): «медный» -> «мед», «стальной» -> «стал»; None otherwise."""
+    w = word.lower()
+    if not re.fullmatch(r"[а-яё]+", w) or not _morph().word_is_known(w):
+        return None
+    p = _morph().parse(w)[0]
+    if "ADJF" not in p.tag:
+        return None
+    lemma = p.normal_form
+    for suf in _ADJ_SUFFIXES:
+        if lemma.endswith(suf) and len(lemma) - len(suf) >= 3:
+            return _root(lemma[:-len(suf)])
+    return None
+
+
+def russian_noun_root(word: str) -> str | None:
+    """Root of an inanimate Russian noun (top parse NOUN, dictionary word): «меди» -> «медь» -> «мед»; None
+    otherwise."""
+    w = word.lower()
+    if not re.fullmatch(r"[а-яё]+", w) or not _morph().word_is_known(w):
+        return None
+    p = _morph().parse(w)[0]
+    if "NOUN" not in p.tag or "anim" in p.tag:
+        return None                  # a person (повар, строитель) is never a product
+    lemma = p.normal_form
+    if lemma[-1] in "аоя" and len(lemma) >= 5:
+        lemma = lemma[:-1]
+    root = _root(lemma)
+    return root if len(root) >= 3 else None
+
+
 # ---------------------------------------------------------------- Uzbek
 
 UZ_WORDING = frozenset("""

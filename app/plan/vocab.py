@@ -29,7 +29,8 @@ from typing import Iterable
 import yaml
 from rapidfuzz.distance import Levenshtein
 
-from app.plan.wordkind import is_noun, occurrences, russian_lemma, word_kind
+from app.plan.wordkind import (is_noun, occurrences, russian_adjective_root, russian_lemma, russian_noun_root,
+                               word_kind)
 from app.text import detect_lang, normalize_name, normalize_text
 
 log = logging.getLogger(__name__)
@@ -295,8 +296,10 @@ class Prefilter:
 class Vocab:
     """Lexicon + the entity names of the database (stage 1)."""
 
-    def __init__(self, lexicon: Lexicon, names: NameWords | None = None, subject: Lexicon | None = None):
+    def __init__(self, lexicon: Lexicon, names: NameWords | None = None, subject: Lexicon | None = None,
+                 product_roots: Iterable[str] = ()):
         self.lexicon = lexicon
+        self.product_roots = frozenset(product_roots)    # roots of the adjectives of product names (медный -> мед)
         self.names = names or NameWords(())
         function, _, _ = _static_sources()
         self.function = _lexicon((function, False))
@@ -381,10 +384,15 @@ class Vocab:
         return self.gate(question, NameWords(plan_names))
 
     def _lemma_known(self, piece: str) -> bool:
+        """A Russian word whose lemma is in the lexicon, or a noun whose root is the root of an adjective of a product
+        name («меди» -> медь, product «Катод медный»)."""
         lemma = russian_lemma(piece)
         if not lemma:
             return False
-        return all(self.lexicon.known(t, typos=False) for t in normalize_text(lemma).split())
+        if all(self.lexicon.known(t, typos=False) for t in normalize_text(lemma).split()):
+            return True
+        root = russian_noun_root(piece)
+        return root is not None and root in self.product_roots
 
 
 @dataclass(frozen=True)
@@ -402,12 +410,17 @@ def build_vocab(catalog: dict[str, set[str]] | None, resolver) -> Vocab:
     """Lexicon from the static sources, the catalog and the resolver's products / regions; stage-1 names from all
     companies, brokers, products, product variants and regions of the database."""
     terms = []
+    roots = set()
     for product_name, canonical, family, synonyms in resolver.product_rows():
         terms += [product_name, canonical, family, *_SPLIT_PRODUCT.split(synonyms or "")]
+        for word in re.findall(r"[А-Яа-яЁё]{4,}", f"{product_name} {canonical}"):
+            root = russian_adjective_root(word)
+            if root:
+                roots.add(root)
     for region, region_ru, synonyms in resolver.region_rows():
         terms += [region, region_ru, *_SPLIT_PRODUCT.split(synonyms or "")]
     lexicon = build_lexicon(catalog, terms)
-    return Vocab(lexicon, NameWords(resolver.all_entity_names()), build_subject_lexicon(catalog, terms))
+    return Vocab(lexicon, NameWords(resolver.all_entity_names()), build_subject_lexicon(catalog, terms), roots)
 
 
 def log_refusal(stage: str, question: str, unknown: list[Unknown]):
