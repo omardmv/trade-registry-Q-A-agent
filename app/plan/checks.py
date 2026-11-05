@@ -117,7 +117,8 @@ def consistency_error(plan: Plan, d: Dictionary, question: str) -> str | None:
     return (period_error(plan, d, question) or period_value_error(plan, d, question)
             or named_day_error(plan, d, question) or grain_word_error(plan, d, question)
             or not_in_data_error(question) or role_word_error(plan, d, question)
-            or currency_error(plan, question) or side_error(plan, question))
+            or currency_error(plan, question) or side_error(plan, question)
+            or counted_parties_error(plan, d, question) or elapsed_vs_term_error(plan, d, question))
 
 
 # ---- a calendar day named in the question must be a day in the plan, not its month or year ----
@@ -550,4 +551,59 @@ def plan_missing_condition_error(question: str, plan: Plan, d: Dictionary, index
     if not (percent or plan.compare):
         return ("the question asks for a share / percentage: use {agg: share} with the part's filters marked "
                 "numerator:true (or cancelled_share); if the share cannot be expressed, call declare_unanswerable")
+    return None
+
+
+# ---- "most buyers" / "eng ko'p xaridor": parties are counted once each, deals are not parties ----
+_PARTY_COUNT_RE = re.compile(
+    r"(?:сколько|больше\s+всего|меньше\s+всего|наибольшее\s+число|число|количество|eng\s+ko.p|eng\s+kam|nechta|"
+    r"qancha|энг\s+кўп|энг\s+кам|нечта|қанча)\s+"
+    r"(?P<party>покупател\w*|продав\w*|компани\w*|участник\w*|клиент\w*|xaridor\w*|sotuvchi\w*|kompaniya\w*|"
+    r"mijoz\w*|харидор\w*|сотувчи\w*|мижоз\w*)", re.IGNORECASE)
+
+
+def _party_of(word: str) -> str:
+    w = word.lower()
+    if w.startswith(("покупател", "xaridor", "харидор", "клиент", "mijoz", "мижоз")):
+        return "buyer"
+    if w.startswith(("продав", "sotuvchi", "сотувчи")):
+        return "seller"
+    return "participant"
+
+
+def counted_parties_error(plan: Plan, d: Dictionary, question: str) -> str | None:
+    """On deals every row is a deal: "how many / most buyers" needs {agg: distinct, of: buyer}, not a deal count."""
+    m = _PARTY_COUNT_RE.search(question)
+    if m is None or plan.subject != "deals":
+        return None
+    party = _party_of(m.group("party"))
+    if party in plan.group_by or any(x.agg == "distinct" for x in plan.measures):
+        return None   # grouping by the party ranks the parties (a count per party is right); distinct is right
+    if any(x.agg == "count" for x in plan.measures):
+        of = party if party != "participant" else "buyer or seller"
+        return (f"the question counts {party}s («{m.group(0)}»), not deals: use {{agg: distinct, of: {of}}} "
+                f"(each {party} once)")
+    return None
+
+
+# ---- elapsed days vs contract term ----
+_TERM_RE = re.compile(r"срок|muddat|муддат|по\s+контракту|shartnoma\s+bo.yicha|шартнома\s+бўйича|договорн",
+                      re.IGNORECASE)
+_ELAPSED_RE = re.compile(r"после\s+оплат|от\s+оплат|занима\w+|фактическ|на\s+деле|"
+                         r"to.lovdan\s+keyin|to.lovdan\s+so.ng|haqiqatda|amalda|oladi|тўловдан\s+кейин|"
+                         r"тўловдан\s+сўнг|ҳақиқатда|амалда|олади", re.IGNORECASE)
+_TERM_TO_ELAPSED = {"delivery_term_days": "days_to_delivery", "payment_term_days": "days_to_payment"}
+
+
+def elapsed_vs_term_error(plan: Plan, d: Dictionary, question: str) -> str | None:
+    """"How many days delivery takes after payment" is the actual time (days_to_delivery), not the contract term
+    (delivery_term_days); the term is used only when the question says term / contract."""
+    if _TERM_RE.search(question) or not _ELAPSED_RE.search(question):
+        return None
+    s = d.subject(plan.subject)
+    for x in plan.measures:
+        actual = _TERM_TO_ELAPSED.get(x.of or "")
+        if actual and actual in s.fields:
+            return (f"the question asks how many days it actually took, not the contract term: use "
+                    f"{{agg: {x.agg}, of: {actual}}} instead of {x.of}")
     return None

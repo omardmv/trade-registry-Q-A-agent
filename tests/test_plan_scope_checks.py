@@ -140,3 +140,32 @@ def test_deal_listing_has_payment_and_delivery_dates():
     assert {"payment_date", "delivery_date", "contract_id"} <= set(res.columns)
     text = render(p, D, res.columns, res.rows, "uz")
     assert text is not None and "to‘lov sanasi" in text.lower() or "to‘lov" in text
+
+
+@pytest.mark.parametrize("q", ["Какой брокер обслужил больше всего покупателей в 2025 году?",
+                               "2025 yilda qaysi broker eng ko'p xaridorga xizmat ko'rsatgan?",
+                               "2025 йилда қайси брокер энг кўп харидорга хизмат кўрсатган?"])
+def test_most_buyers_counts_distinct_buyers_not_deals(q):
+    base = {"subject": "deals", "filters": [F("year", 2025)], "group_by": ["broker"], "limit": 1}
+    assert "distinct" in err({**base, "measures": [{"agg": "count"}]}, q)
+    assert err({**base, "measures": [{"agg": "distinct", "of": "buyer"}]}, q) is None
+
+
+def test_ranking_the_parties_themselves_is_a_count_per_party():
+    q = "Сколько покупателей купили больше всего сделок?"
+    assert err({"subject": "deals", "measures": [{"agg": "count"}], "group_by": ["buyer"], "limit": 3}, q) is None
+
+
+@pytest.mark.parametrize("q", ["Shakar bo'yicha to'lovdan keyin yetkazib berish o'rtacha necha kun oladi?",
+                               "Шакар бўйича тўловдан кейин етказиб бериш ўртача неча кун олади?",
+                               "Сколько дней в среднем занимает поставка после оплаты по сахару?"])
+def test_actual_days_are_not_the_contract_term(q):
+    base = {"subject": "deals", "filters": [F("product", "Сахар")]}
+    assert "days_to_delivery" in err({**base, "measures": [{"agg": "avg", "of": "delivery_term_days"}]}, q)
+    assert err({**base, "measures": [{"agg": "avg", "of": "days_to_delivery"}]}, q) is None
+
+
+def test_contract_term_question_keeps_the_term():
+    q = "Средний срок поставки по контракту для сахара"
+    assert err({"subject": "deals", "measures": [{"agg": "avg", "of": "delivery_term_days"}],
+                "filters": [F("product", "Сахар")]}, q) is None
