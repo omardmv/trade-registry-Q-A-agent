@@ -4,12 +4,23 @@ Answers Russian and Uzbek (Latin and Cyrillic) questions about the exchange deal
 fact in an answer comes from the database result; if the data has no answer, the service says so. The data is fictional:
 companies, tax IDs, brokers, contracts, deals and prices are invented (see `data/README.md`).
 
-**Latest evaluation** (realistic set: 120 question intents × 3 languages, OpenAI `gpt-5.4-mini`, the held-out
-half scored once, never tuned on): 130/150 answerable questions right (87%), 10 answered wrongly, 10 refused;
-23/30 questions with no answer in the data refused. Answers are built by code from the result rows, so no
-number, name or date in an answer is ever invented; the remaining errors answer a slightly different question.
-Median response 2.6 s, slowest 8.8 s (limit 90 s), about $0.001 per question. The failure classes found there
-are fixed since; the next honest score needs new questions (see `docs/eval-design.md`).
+Live at **https://qa.contentcoach.org** (see `docs/deploy.md`).
+
+**Latest evaluation** — fresh question set 4, written independently by a separate writer that never saw the
+system, 60 intents × 3 languages, OpenAI `gpt-5.4-mini`, run once, never tuned on:
+
+| | Result |
+|---|---|
+| Questions with no answer in the data, refused | **45 / 45** (and 0 of 324 answered across every set we have) |
+| Answerable questions answered right | 93 / 135 (69%) |
+| Answered wrongly (a real number, a slightly different question) | 6 (4%) |
+| Refused although answerable | 36 (27%) |
+| Russian / Uzbek Latin / Uzbek Cyrillic answered right | 32 / 31 / 30 of 45 |
+| Invented numbers, names or dates | 0 by construction (answers are built from result rows) |
+| Median / slowest response | 4.1 s / 10.3 s (limit 90 s); about $0.001 per question |
+
+The system is tuned to refuse rather than guess: refusals name the unknown word and are logged, so the
+vocabulary can grow from real use.
 
 ## Architecture
 
@@ -20,15 +31,20 @@ semantic layer.
 
 ```mermaid
 flowchart TD
-    Q[Question<br/>ru · uz Latin · uz Cyrillic] --> P[Planner<br/>LLM: OpenAI / local Qwen]
+    Q[Question<br/>ru · uz Latin · uz Cyrillic] --> V{Vocabulary gate<br/>+ word classifier<br/>LLM, closed choices}
+    V -->|word names something<br/>the data lacks| N0[No-data reply<br/>naming the word]
+    V -->|known / wording /<br/>known concept| P[Planner<br/>LLM: OpenAI]
     P <-->|tool| R[Name lookup<br/>companies · brokers · products · regions · catalog]
     P -->|plan| CK[Plan checks<br/>validate · mentions · missing conditions · periods]
     CK -->|fix message| P
     P -->|no answer in data| N[No-data reply]
     CK -->|plan passes| B[SQL builder]
-    B --> DB[(DuckDB<br/>read-only)]
+    DB[(DuckDB<br/>read-only)]
+    B --> J{Judge<br/>LLM: does the calculation<br/>answer the question?}
+    J -->|no / unsure| N1[No-data reply]
+    J -->|yes| DB
     DB --> T[Answer templates<br/>ru · uz · uz-Cyrl]
-    T --> OK[Answer + how it was computed]
+    T --> OK[Answer + how it was computed<br/>+ data rows + SQL]
 
     S[[Semantic layer<br/>app/fields.yaml]]
     S -.-> P
@@ -37,7 +53,9 @@ flowchart TD
     S -.-> T
 ```
 
-The planner box is the only place a model runs. The semantic layer (dotted lines) is read by every step: the
+Models run in three places, each with a narrow job: the word classifier (labels unknown words from a closed
+list), the planner (fills the plan) and the judge (yes/no on the finished calculation). None of them writes
+answer text, and every refusal path is code. The semantic layer (dotted lines) is read by every step: the
 planner sees it in its prompt, the checks validate against it, the builder turns it into SQL, and the
 templates take their labels and units from it.
 
@@ -150,9 +168,20 @@ Each layer closes a different hole:
    - "по годам", "oylar bo'yicha" need one row per period; "least" needs ascending order; "how many
      different" needs a distinct count; a share word needs a share measure; "weighted" needs the weighted price;
    - conditions such as "export", a product grade or a category must be in the plan.
-4. **Plain refusals.** Dates outside the data, unknown IDs, other currencies, and facts the data does not have
-   (profit, employees, directors, forecasts, harvests, …) get a fixed "no data" reply. A closed vocabulary that
-   refuses *any* concept outside the semantic layer, whatever the wording, is being added.
+4. **Plain refusals.** Dates outside the data, unknown IDs (and an ID of the wrong kind: a deal number is never
+   read as a contract), facts outside the exchange.
+5. **Maximum safety (default, `UZEX_SAFETY=max`): refuse unless every layer agrees.**
+   - **Closed vocabulary.** Every word of the question must be known: a semantic-layer term, a function word, a
+     number or date, or a word of a name in the database (Russian words via their lemma, pymorphy3).
+   - **Word classifier** for the words that are not: one LLM call labels each word with exactly one choice —
+     "wording" (a verb, command, adverb: «ayting», «реально»), one concept the data has (from a fixed list
+     built from the semantic layer: «yetakchi» → top, «qism» → share), or "other". Mapping by kind is
+     forbidden (euro is a currency like the dollar → "other"). "other", no verdict or an error → refuse before
+     planning; a mapped concept must actually be used by the plan.
+   - **Judge on every answer:** a second LLM call reads the question and the deterministic calculation
+     sentence and must confirm the calculation covers everything asked; no verdict → refuse.
+   - Free SQL is off; the model can only fill the checked plan.
+   `UZEX_SAFETY=balanced` keeps the earlier behaviour (judge only for unknown words, free SQL allowed).
 
 ### Time budget
 
@@ -192,7 +221,9 @@ provider wrote each reply; the evaluation takes `--providers` to measure one pro
 ```
 app/
   fields.yaml   semantic layer: subjects, fields, measures, labels, business rules
-  plan/         plan model, validation, checks, mention check, SQL builder, explanation, planner prompt
+  plan/         plan model, validation, checks, mention check, SQL builder, explanation, planner prompt;
+                vocab.py (closed vocabulary), wordkind.py (word types), wordclass.py (word classifier), judge.py
+  vocab.yaml    function and domain words of the closed vocabulary
   agent/        LLM providers with fallback, grammar planner (grammar_writer.py), legacy planner
   answer/       answer templates (plan_templates.py), fixed replies, legacy answer writer and checker
   ingest/       CSV → DuckDB build, product dictionary
@@ -202,7 +233,8 @@ app/
   api.py        HTTP API; static/ holds the chat page
 data/                 source CSVs (fictional)
 data_dictionary/      product and region dictionaries
-eval/real/            realistic evaluation: 120 intents × 3 languages, dev/test split, runner
+eval/real/            evaluation: intents.yaml (dev/test), fresh*_intents.yaml (independently written sets,
+                      each scored once), paraphrase sets, runner (--intents, --pick, --max-cost)
 eval/                 older evaluation sets and runner
 tests/                unit tests (offline) and live tests
 docs/                 eval design, grammar redesign
@@ -269,6 +301,10 @@ The tests run offline. Before relying on the service, check it against the real 
 | `OPENAI_TEXT_TOOLS` | off | `1`: tool calls through the prompt instead of the API tools field (for local servers) |
 | `PLANNER` | `grammar` | `grammar` (plan + semantic layer) or `legacy` (old structured form) |
 | `UZEX_GRAMMAR_MAX_FIX_RETRIES` | `4` | fix rounds the planner gets after a failed check (within the deadline) |
+| `UZEX_SAFETY` | `max` | `max`: refuse unless vocabulary, classifier, plan checks and judge all agree; `balanced`: the earlier, looser mode |
+| `UZEX_WORD_CLASSIFIER` | on | `0`: unknown nouns refuse outright instead of being classified |
+| `UZEX_JUDGE` | on | judge of the finished calculation (balanced mode can turn it off) |
+| `UZEX_CLOSED_VOCAB` | on | `0`: no vocabulary gate at all (not recommended) |
 | `UZEX_DEADLINE_S` | `75` | hard deadline per question |
 | `UZEX_LLM_TIMEOUT_S` | `15` | per-call LLM timeout |
 | `UZEX_DATA_DIR` | `data` | directory with the source CSV files |
@@ -276,7 +312,11 @@ The tests run offline. Before relying on the service, check it against the real 
 
 ## Known limitations
 
-- A question answered with a different reading of known words (e.g. "оборот" meant as volume, not money) can
-  still pass the checks; the explanation sentence under every answer shows what was computed.
-- Questions with two equally valid readings show one of them in 12 of 21 cases on the held-out set.
-- The evaluation questions were written by the developers; real users' wording will differ.
+- About a quarter of answerable questions are refused, mostly for everyday words the classifier labels "other"
+  (e.g. «mol», «don», «ugit») or for questions the plan cannot express. This is the chosen trade-off: an honest
+  refusal instead of a guess. Refusals are logged with the word.
+- "0 of 324 no-answer questions answered" is a measurement, not a proof; classifier labels can vary between
+  runs, which is why the plan check and the judge stand behind it.
+- A question answered with a different reading of known words can still pass; the explanation sentence, the data
+  rows and the SQL under every answer show what was computed.
+- All evaluation questions were written by AI writers; real users' wording will differ.
