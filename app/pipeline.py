@@ -109,6 +109,18 @@ class Pipeline:
         unknown words go on: the writer judges the ones its plan does not use (stage 2)."""
         if self.vocab is None:
             return None
+        if config.SAFETY == "max":
+            # fail-closed: any word outside the lexicon and outside every name in the database refuses
+            try:
+                unknown = self.vocab.unknown(question)
+            except Exception:
+                log.exception("vocabulary check crashed")
+                return AskResult(templates.failed(lang), lang, False, "failed", reason="vocabulary check crashed")
+            if not unknown:
+                return None
+            log_refusal("stage 1, max safety", question, unknown)
+            return AskResult(templates.no_data(lang, unknown[0].word), lang, False, "no_data",
+                             reason="not in the data (max safety): " + ", ".join(u.word for u in unknown))
         try:
             pre = self.vocab.prefilter(question)
         except Exception:

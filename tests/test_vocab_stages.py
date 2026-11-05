@@ -176,3 +176,45 @@ def test_pipeline_shows_the_judge_term(parts):
     writer, _ = writer_for(parts, seller_replies(), [verdict(False, "в кредит")])
     res = Pipeline(writer, FakeLLM()).ask("Сколько сделок в кредит провела Pudexiz Plast в 2025?")
     assert res.source == "no_data" and "«в кредит»" in res.answer
+
+
+# ---- max safety (the production default): fail-closed ----
+
+@pytest.mark.max_safety
+def test_max_any_unknown_word_refuses_before_any_llm_call(parts):
+    writer, llm = writer_for(parts, seller_replies())
+    res = Pipeline(writer, FakeLLM()).ask("Сколько сделок оформила Pudexiz Plast в 2025?")
+    assert res.source == "no_data" and "«оформила»" in res.answer and llm.chat.sent == []
+
+
+@pytest.mark.max_safety
+def test_max_judge_must_confirm_every_answer(parts):
+    writer, llm = writer_for(parts, seller_replies(), [verdict(True)])
+    res = Pipeline(writer, FakeLLM()).ask("Сколько продала Pudexiz Plast в 2025?")
+    assert res.answered, res.reason
+    [j] = judge_calls(res)
+    assert j["covered"] is True and "Words not in the vocabulary: (none)" in llm.prompts[0]
+
+
+@pytest.mark.max_safety
+def test_max_judge_not_covered_refuses(parts):
+    writer, _ = writer_for(parts, seller_replies(), [verdict(False, "Pudexiz Plast")])
+    res = writer.run("Сколько продала Pudexiz Plast в 2025?", "ru", deadline())
+    assert res.status == "unanswerable"
+
+
+@pytest.mark.max_safety
+def test_max_no_verdict_refuses_never_answers(parts):
+    writer, _ = writer_for(parts, seller_replies(), ["no json here"])
+    res = writer.run("Сколько продала Pudexiz Plast в 2025?", "ru", deadline())
+    assert res.status == "failed" and "judge" in res.reason
+
+
+@pytest.mark.max_safety
+def test_max_free_sql_is_off(parts):
+    writer, llm = writer_for(parts, [call("submit_sql", sql="SELECT COUNT(*) FROM deals", assumptions=[]),
+                                     call("declare_unanswerable", reason="cannot express")])
+    res = writer.run("Сколько продала Pudexiz Plast в 2025?", "ru", deadline())
+    assert res.status == "unanswerable"
+    sent = [p for kind, p in llm.chat.sent if kind == "tools"][0][0][1]
+    assert "free SQL is turned off" in sent["error"]

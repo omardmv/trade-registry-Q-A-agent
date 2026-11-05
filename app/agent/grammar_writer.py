@@ -2,6 +2,7 @@
 
 Same loop, grounding, deadline and free-SQL fallback as the legacy Writer; the compile tool is run_plan(plan).
 """
+import logging
 import re
 
 from app import config
@@ -25,6 +26,8 @@ _NAMED_GROUNDS = ("company", "broker", "product", "product_family", "product_var
 _SQL_STRING = re.compile(r"'((?:[^']|'')*)'")
 _CROSS_KINDS = ("company", "broker", "product")
 _CROSS_MIN_SCORE = 90.0
+
+log = logging.getLogger(__name__)
 
 
 def plan_args(args: dict) -> dict:
@@ -54,6 +57,8 @@ class GrammarWriter(Writer):
         self.vocab = vocab if vocab is not None else build_vocab(self.catalog, resolver)
         # stage 2 judge (app/plan/judge.py); off: a word the plan does not use refuses (strict stage 2)
         self.use_judge = config.JUDGE if use_judge is None else use_judge
+        # max safety (app.config.SAFETY): unknown plan words refuse, the judge confirms every answer, no free SQL
+        self.safety = config.SAFETY
 
     def _plan_names(self, plan) -> list[str]:
         """Names of the entities the plan uses: its filter values (incl. share numerators) by their ground."""
@@ -80,9 +85,25 @@ class GrammarWriter(Writer):
         if self.vocab is None:
             return None
         unknown = self.vocab.unknown_in_plan(question, names)
+        words = [u.word for u in unknown]
+        if self.safety == "max":
+            if unknown:
+                log_refusal("stage 2, max safety", question, unknown)
+                return WriterResult("unanswerable", reason="not in the data: " + ", ".join(words),
+                                    term=unknown[0].word)
+            verdict = judge(self.llm, question, calculation, [], deadline, self.llm_timeout_s)
+            if trace is not None:
+                trace.append({"tool": "judge", "args": {"words": [], "calculation": calculation},
+                              "covered": verdict.covered, "missing": verdict.missing, "error": verdict.error})
+            if verdict.covered is True:
+                return None
+            if verdict.covered is None:
+                return WriterResult("failed", reason=f"judge: {verdict.error}")
+            log.info("judge (max safety): not covered: %s | %s", verdict.missing, question)
+            return WriterResult("unanswerable", reason=f"judge: not covered: {verdict.missing}",
+                                term=term_for(verdict, question, []))
         if not unknown:
             return None
-        words = [u.word for u in unknown]
         if not self.use_judge:
             log_refusal("stage 2", question, unknown)
             return WriterResult("unanswerable", reason="not in the data: " + ", ".join(words), term=unknown[0].word)
@@ -143,6 +164,9 @@ class GrammarWriter(Writer):
                             measure_columns=built.measure_columns)
 
     def _sql(self, args, allowed, question, deadline, names=(), state=None) -> WriterResult | str:
+        if self.safety == "max":
+            return ("free SQL is turned off: express the question with run_plan, or call declare_unanswerable if "
+                    "the plan cannot express it")
         sql = str(args.get("sql", ""))
         used = [n for kind, value in allowed if value and str(value) in sql
                 for n in self.resolver.entity_names({"inn": "company"}.get(kind, kind), str(value))]
