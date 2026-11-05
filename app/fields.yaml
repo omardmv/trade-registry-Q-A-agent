@@ -1,0 +1,305 @@
+# Field dictionary of the grammar planner (docs/grammar-redesign.md).
+#
+# One entry per subject. Every field is declared once:
+#   type      dimension | number | date | bool | grain (time grain: year, quarter, month, day, hour) | record
+#   sql       column expression over the subject's table alias
+#   col       output column alias (default: the field name)
+#   display   name shown next to an ID: {sql, col, join}; `join` names an entry of the subject's `joins`
+#   ground    how a filter value is grounded: company | broker | product | product_family | product_variant |
+#             region | deal | contract | catalog (value must be in the DB catalog `catalog:` key) | enum (`values`)
+#             | none (numbers, dates, booleans: checked by type and range)
+#   aggs      allowed aggregations (defaults: number -> sum avg median min max; dimension/record -> distinct;
+#             date -> min max; grain/bool -> none). `count` needs no field.
+#   many      categorical with many values: a grouping without a limit gets the default limit
+#   per_unit  value in the deal's unit of measure: grouped / ranked within unit unless unit is filtered to one
+#   either    the field is "either side": {side: column}; filters OR the sides; group_by unions the sides
+#             (mode once: a deal is counted once per entity; per_side: ranked separately per side)
+#   columns   (record) the columns listed for one record; the record key is `sql`
+#   filter_sql  filter template for `=` ({v} is the literal), for fields that are not a single column
+#   range     [min, max] for grains / ints
+#   label     {ru, uz}
+# Named measures: SQL defined once. {f} is the scope FILTER clause (status view), {w} the same plus the
+# measure's own `where`. scope_free measures are computed over every row of the filtered scope (they need the
+# cancelled deals). Business defaults per subject live under `defaults`.
+
+deals:
+  label: {ru: сделки, uz: bitimlar}
+  table: deals
+  alias: d
+  count_col: deals
+  count_label: {ru: число сделок, uz: bitimlar soni}
+  date_field: deal_date
+  data_range: [2022-01-03, 2026-10-30]
+  unit_field: unit
+  defaults:
+    cancelled: d.is_cancelled          # status rules apply (see app/plan/build.py)
+    status_fields: [status, cancelled]
+  joins:
+    pb: LEFT JOIN participants pb ON pb.inn = d.buyer_inn
+    ps: LEFT JOIN participants ps ON ps.inn = d.seller_inn
+    pp: LEFT JOIN participants pp ON pp.inn = d._either
+    bb: LEFT JOIN brokers bb ON bb.broker_code = d.buyer_broker
+    bs: LEFT JOIN brokers bs ON bs.broker_code = d.seller_broker
+    bk: LEFT JOIN brokers bk ON bk.broker_code = d._either
+  fields:
+    deal:
+      type: record
+      sql: d.deal_id
+      col: deal_id
+      ground: deal
+      joins: [ps, pb]
+      columns: ["d.deal_id AS deal_id", "d.deal_date AS deal_date", "d.product_canonical AS product",
+                "d.product_name_full AS product_variant", "d.seller_inn AS seller_inn", "ps.name AS seller_name",
+                "d.buyer_inn AS buyer_inn", "pb.name AS buyer_name", "d.volume AS volume", "d.unit AS unit",
+                "d.unit_price AS unit_price", "d.currency AS currency", "d.amount_uzs AS amount_uzs",
+                "d.status AS status"]
+      label: {ru: сделка, uz: bitim}
+    contract: {type: dimension, sql: d.contract_id, col: contract_id, ground: contract, many: true,
+               label: {ru: контракт, uz: shartnoma}}
+    product: {type: dimension, sql: d.product_canonical, col: product, ground: product, many: true,
+              label: {ru: товар, uz: tovar}}
+    product_family: {type: dimension, sql: d.product_family, ground: product_family,
+                     label: {ru: группа товаров, uz: tovar guruhi}}
+    product_variant: {type: dimension, sql: d.product_name_full, ground: product_variant, many: true,
+                      label: {ru: вариант названия товара, uz: tovar nomi varianti}}
+    buyer: {type: dimension, sql: d.buyer_inn, col: buyer_inn, display: {sql: pb.name, col: buyer_name, join: pb},
+            ground: company, many: true, label: {ru: покупатель, uz: xaridor}}
+    seller: {type: dimension, sql: d.seller_inn, col: seller_inn, display: {sql: ps.name, col: seller_name, join: ps},
+             ground: company, many: true, label: {ru: продавец, uz: sotuvchi}}
+    participant: {type: dimension, either: {buyer: d.buyer_inn, seller: d.seller_inn}, mode: per_side, col: inn,
+                  display: {sql: pp.name, col: name, join: pp}, ground: company, many: true,
+                  label: {ru: участник (покупатель или продавец), uz: ishtirokchi (xaridor yoki sotuvchi)}}
+    buyer_broker: {type: dimension, sql: d.buyer_broker, display: {sql: bb.name, col: buyer_broker_name, join: bb},
+                   ground: broker, many: true, label: {ru: брокер покупателя, uz: xaridor brokeri}}
+    seller_broker: {type: dimension, sql: d.seller_broker, display: {sql: bs.name, col: seller_broker_name, join: bs},
+                    ground: broker, many: true, label: {ru: брокер продавца, uz: sotuvchi brokeri}}
+    broker: {type: dimension, either: {seller: d.seller_broker, buyer: d.buyer_broker}, mode: once, col: broker_code,
+             display: {sql: bk.name, col: broker_name, join: bk}, ground: broker, many: true,
+             label: {ru: брокер (любая сторона), uz: broker (istalgan tomon)}}
+    region: {type: dimension, sql: d.region, ground: region, label: {ru: регион склада, uz: ombor hududi}}
+    buyer_region: {type: dimension, sql: d.buyer_region, ground: region,
+                   label: {ru: регион покупателя, uz: xaridor hududi}}
+    seller_region: {type: dimension, sql: d.seller_region, ground: region,
+                    label: {ru: регион продавца, uz: sotuvchi hududi}}
+    buyer_activity: {type: dimension, sql: d.buyer_activity, ground: catalog, catalog: activity,
+                     label: {ru: вид деятельности покупателя, uz: xaridor faoliyati}}
+    seller_activity: {type: dimension, sql: d.seller_activity, ground: catalog, catalog: activity,
+                      label: {ru: вид деятельности продавца, uz: sotuvchi faoliyati}}
+    category: {type: dimension, sql: d.category, ground: catalog, catalog: category,
+               label: {ru: категория, uz: toifa}}
+    industry: {type: dimension, sql: d.industry, ground: catalog, catalog: industry,
+               label: {ru: отрасль, uz: soha}}
+    product_group: {type: dimension, sql: d.product_group, ground: catalog, catalog: product_group,
+                    label: {ru: группа ликвидности, uz: likvidlik guruhi}}
+    delivery_basis: {type: dimension, sql: d.delivery_basis, ground: catalog, catalog: delivery_basis,
+                     label: {ru: базис поставки, uz: yetkazish bazisi}}
+    packaging: {type: dimension, sql: d.packaging, ground: catalog, catalog: packaging,
+                label: {ru: упаковка, uz: qadoq}}
+    hs_code: {type: dimension, sql: d.hs_code, ground: catalog, catalog: hs_code, many: true,
+              label: {ru: код ТН ВЭД, uz: TIF TN kodi}}
+    unit: {type: dimension, sql: d.unit, ground: catalog, catalog: unit, label: {ru: единица измерения, uz: o‘lchov birligi}}
+    contract_type: {type: dimension, sql: d.contract_type, ground: enum, values: [Внутренний, Экспортный],
+                    label: {ru: тип контракта, uz: shartnoma turi}}
+    contract_form: {type: dimension, sql: d.contract_form, ground: enum, values: [Спот, Форвард, Фьючерс],
+                    label: {ru: форма контракта, uz: shartnoma shakli}}
+    trade_type: {type: dimension, sql: d.trade_type, ground: enum,
+                 values: [Английский аукцион, Обратный аукцион, Двусторонний аукцион],
+                 label: {ru: тип торгов, uz: savdo turi}}
+    status: {type: dimension, sql: d.status, ground: enum,
+             values: [Новый, Не подписан, Заключен, Ждёт оплату, Оплачен, Исполнен, Исполнен(Частично),
+                      Аннулирован(Не оплачен)],
+             label: {ru: состояние, uz: holat}}
+    currency: {type: dimension, sql: d.currency, ground: enum, values: [UZS, USD],
+               label: {ru: валюта контракта, uz: shartnoma valyutasi}}
+    cancelled: {type: bool, sql: d.is_cancelled, label: {ru: аннулирована, uz: bekor qilingan}}
+    payment_late: {type: bool, sql: d.payment_late, label: {ru: просрочка оплаты, uz: to‘lov kechikkan}}
+    tonnes: {type: number, sql: d.volume_tonnes, label: {ru: объём в тоннах, uz: hajm (tonna)}}
+    volume: {type: number, sql: d.volume, per_unit: true, label: {ru: объём в единицах измерения, uz: hajm (birlikda)}}
+    lots: {type: number, sql: d.quantity, label: {ru: куплено лотов, uz: sotib olingan lotlar}}
+    delivered_lots: {type: number, sql: d.delivered_lots, label: {ru: поставлено лотов, uz: yetkazilgan lotlar}}
+    amount_uzs: {type: number, sql: d.amount_uzs, label: {ru: сумма в сумах, uz: summa (so‘m)}}
+    amount_usd: {type: number, sql: d.amount_usd, label: {ru: сумма в долларах, uz: summa (dollar)}}
+    deal_price_per_kg: {type: number, sql: "d.amount_uzs / (d.volume_tonnes * 1000)", aggs: [avg, median, min, max],
+                        label: {ru: цена сделки за кг в сумах, uz: bitim narxi (so‘m/kg)}}
+    unit_price_uzs: {type: number, sql: d.amount_uzs / d.volume, per_unit: true, aggs: [avg, median, min, max],
+                     label: {ru: цена за единицу в сумах, uz: birlik narxi (so‘m)}}
+    price_change_pct: {type: number, sql: d.price_vs_start_pct, aggs: [avg, median, min, max],
+                       label: {ru: отклонение цены от стартовой %, uz: boshlang‘ich narxdan farq %}}
+    days_to_payment: {type: number, sql: d.days_to_payment, aggs: [avg, median, min, max],
+                      label: {ru: дней до оплаты, uz: to‘lovgacha kunlar}}
+    days_to_delivery: {type: number, sql: d.days_to_delivery, aggs: [avg, median, min, max],
+                       label: {ru: дней от оплаты до поставки, uz: yetkazishgacha kunlar}}
+    delivery_late_days: {type: number, sql: d.delivery_late_days, aggs: [avg, median, min, max],
+                         label: {ru: дней просрочки поставки, uz: yetkazish kechikishi (kun)}}
+    payment_term_days: {type: number, sql: d.payment_term_days, aggs: [avg, median, min, max],
+                        label: {ru: срок оплаты дней, uz: to‘lov muddati (kun)}}
+    delivery_term_days: {type: number, sql: d.delivery_term_days, aggs: [avg, median, min, max],
+                         label: {ru: срок поставки дней, uz: yetkazish muddati (kun)}}
+    deal_date: {type: date, sql: d.deal_date, label: {ru: дата сделки, uz: bitim sanasi}}
+    payment_date: {type: date, sql: d.payment_date, label: {ru: дата оплаты, uz: to‘lov sanasi}}
+    delivery_date: {type: date, sql: d.delivery_date, label: {ru: дата поставки, uz: yetkazish sanasi}}
+    year: {type: grain, sql: d.year, range: [2022, 2026], label: {ru: год, uz: yil}}
+    quarter: {type: grain, sql: d.quarter, range: [1, 4], with_year: true, label: {ru: квартал, uz: chorak}}
+    month: {type: grain, sql: d.month, range: [1, 12], with_year: true, label: {ru: месяц, uz: oy}}
+    day: {type: grain, sql: d.deal_date, col: deal_date, label: {ru: день, uz: kun}}
+    hour: {type: grain, sql: d.deal_hour, range: [0, 23], label: {ru: час, uz: soat}}
+  measures:
+    price_per_kg:
+      sql: "SUM(d.amount_uzs){w} / NULLIF(SUM(d.volume_tonnes){f} * 1000, 0)"
+      where: d.volume_tonnes IS NOT NULL
+      label: {ru: средняя цена взвешенная по объёму (сумма ÷ объём) сум за кг, uz: o‘rtacha tortilgan narx (summa ÷ hajm) so‘m/kg}
+    cancelled_share:
+      sql: "ROUND(100.0 * COUNT(*) FILTER (WHERE d.is_cancelled) / NULLIF(COUNT(*), 0), 2)"
+      scope_free: true
+      label: {ru: доля аннулированных сделок % от всех сделок, uz: bekor qilingan bitimlar ulushi % barcha bitimlardan}
+    late_payments:
+      sql: "COUNT(*) FILTER (WHERE d.payment_late)"
+      scope_free: true
+      label: {ru: сделок с просрочкой оплаты (по всем состояниям), uz: to‘lovi kechikkan bitimlar (barcha holatlar)}
+    late_deliveries:
+      sql: "COUNT(*){w}"
+      where: d.delivery_late_days > 0
+      label: {ru: поставок позже срока (дата оплаты + срок поставки), uz: muddatidan kech yetkazishlar}
+    delivery_delay_days:
+      sql: "AVG(d.delivery_late_days){w}"
+      where: d.delivery_late_days > 0
+      label: {ru: средняя просрочка поставки в днях (только поставки позже срока), uz: o‘rtacha yetkazish kechikishi (kun)}
+    undelivered_lots:
+      sql: "SUM(d.quantity - COALESCE(d.delivered_lots, 0)){f}"
+      label: {ru: не поставлено лотов, uz: yetkazilmagan lotlar}
+    delivered_volume:
+      sql: "SUM(d.delivered_lots * d.lot){f}"
+      per_unit: true
+      label: {ru: поставленный объём в единицах измерения, uz: yetkazilgan hajm}
+    undelivered_volume:
+      sql: "SUM((d.quantity - COALESCE(d.delivered_lots, 0)) * d.lot){f}"
+      per_unit: true
+      label: {ru: не поставленный объём в единицах измерения, uz: yetkazilmagan hajm}
+
+contracts:
+  label: {ru: контракты, uz: shartnomalar}
+  table: contracts
+  alias: c
+  count_col: contracts
+  count_label: {ru: число контрактов, uz: shartnomalar soni}
+  date_field: registered_date
+  data_range: [2022-01-03, 2026-10-30]
+  unit_field: unit
+  joins:
+    pc: LEFT JOIN participants pc ON pc.inn = c.seller_inn
+  fields:
+    contract:
+      type: record
+      sql: c.contract_id
+      col: contract_id
+      ground: contract
+      joins: [pc]
+      columns: ["c.contract_id AS contract_id", "c.product_name AS product_name", "c.product_canonical AS product",
+                "c.seller_inn AS seller_inn", "pc.name AS seller_name", "c.registered_date AS registered_date",
+                "c.valid_until AS valid_until", "c.contract_form AS contract_form", "c.contract_type AS contract_type",
+                "c.base_price AS base_price", "c.currency AS currency", "c.unit AS unit",
+                "c.payment_term_days AS payment_term_days", "c.delivery_term_days AS delivery_term_days"]
+      label: {ru: контракт, uz: shartnoma}
+    product: {type: dimension, sql: c.product_canonical, col: product, ground: product, many: true,
+              label: {ru: товар, uz: tovar}}
+    product_family: {type: dimension, sql: c.product_family, ground: product_family,
+                     label: {ru: группа товаров, uz: tovar guruhi}}
+    seller: {type: dimension, sql: c.seller_inn, col: seller_inn, display: {sql: pc.name, col: seller_name, join: pc},
+             ground: company, many: true, label: {ru: продавец, uz: sotuvchi}}
+    region: {type: dimension, sql: c.region, ground: region, label: {ru: регион склада, uz: ombor hududi}}
+    category: {type: dimension, sql: c.category, ground: catalog, catalog: category, label: {ru: категория, uz: toifa}}
+    industry: {type: dimension, sql: c.industry, ground: catalog, catalog: industry, label: {ru: отрасль, uz: soha}}
+    product_group: {type: dimension, sql: c.product_group, ground: catalog, catalog: product_group,
+                    label: {ru: группа ликвидности, uz: likvidlik guruhi}}
+    delivery_basis: {type: dimension, sql: c.delivery_basis, ground: catalog, catalog: delivery_basis,
+                     label: {ru: базис поставки, uz: yetkazish bazisi}}
+    packaging: {type: dimension, sql: c.packaging, ground: catalog, catalog: packaging, label: {ru: упаковка, uz: qadoq}}
+    hs_code: {type: dimension, sql: c.hs_code, ground: catalog, catalog: hs_code, many: true,
+              label: {ru: код ТН ВЭД, uz: TIF TN kodi}}
+    unit: {type: dimension, sql: c.unit, ground: catalog, catalog: unit, label: {ru: единица измерения, uz: o‘lchov birligi}}
+    currency: {type: dimension, sql: c.currency, ground: enum, values: [UZS, USD], label: {ru: валюта, uz: valyuta}}
+    contract_type: {type: dimension, sql: c.contract_type, ground: enum, values: [Внутренний, Экспортный],
+                    label: {ru: тип контракта, uz: shartnoma turi}}
+    contract_form: {type: dimension, sql: c.contract_form, ground: enum, values: [Спот, Форвард, Фьючерс],
+                    label: {ru: форма контракта, uz: shartnoma shakli}}
+    trade_type: {type: dimension, sql: c.trade_type, ground: enum,
+                 values: [Английский аукцион, Обратный аукцион, Двусторонний аукцион],
+                 label: {ru: тип торгов, uz: savdo turi}}
+    base_price: {type: number, sql: c.base_price, per_unit: true, aggs: [avg, median, min, max],
+                 label: {ru: базовая цена за единицу в валюте контракта, uz: bazaviy narx}}
+    deposit_pct: {type: number, sql: c.deposit_pct, aggs: [avg, median, min, max], label: {ru: залог %, uz: garov %}}
+    lot: {type: number, sql: c.lot, per_unit: true, aggs: [avg, median, min, max], label: {ru: размер лота, uz: lot hajmi}}
+    payment_term_days: {type: number, sql: c.payment_term_days, aggs: [avg, median, min, max],
+                        label: {ru: срок оплаты дней, uz: to‘lov muddati (kun)}}
+    delivery_term_days: {type: number, sql: c.delivery_term_days, aggs: [avg, median, min, max],
+                         label: {ru: срок поставки дней, uz: yetkazish muddati (kun)}}
+    validity_days: {type: number, sql: "(c.valid_until - c.registered_date)", aggs: [avg, median, min, max],
+                    label: {ru: срок действия дней, uz: amal qilish muddati (kun)}}
+    registered_date: {type: date, sql: c.registered_date, label: {ru: дата регистрации, uz: ro‘yxatga olingan sana}}
+    valid_until: {type: date, sql: c.valid_until, label: {ru: действует до, uz: amal qilish sanasi}}
+    active_on: {type: date, filter_only: true, filter_sql: "c.registered_date <= {v} AND c.valid_until >= {v}",
+                label: {ru: действует на дату, uz: sanada amalda}}
+    year: {type: grain, sql: year(c.registered_date), range: [2022, 2026], label: {ru: год регистрации, uz: ro‘yxatga olingan yil}}
+    quarter: {type: grain, sql: quarter(c.registered_date), range: [1, 4], with_year: true, label: {ru: квартал, uz: chorak}}
+    month: {type: grain, sql: month(c.registered_date), range: [1, 12], with_year: true, label: {ru: месяц, uz: oy}}
+    day: {type: grain, sql: c.registered_date, col: registered_date, label: {ru: день, uz: kun}}
+
+companies:
+  label: {ru: компании (участники), uz: kompaniyalar (ishtirokchilar)}
+  table: participants
+  alias: p
+  count_col: companies
+  count_label: {ru: число компаний, uz: kompaniyalar soni}
+  fields:
+    company:
+      type: record
+      sql: p.inn
+      col: inn
+      ground: company
+      columns: ["p.inn AS inn", "p.name AS name", "p.region AS region", "p.activity AS activity", "p.role AS role",
+                "p.vat_payer AS vat_payer", "p.deals_as_buyer AS deals_as_buyer", "p.deals_as_seller AS deals_as_seller"]
+      label: {ru: компания, uz: kompaniya}
+    region: {type: dimension, sql: p.region, ground: region, label: {ru: регион регистрации, uz: ro‘yxatdan o‘tgan hudud}}
+    activity: {type: dimension, sql: p.activity, ground: catalog, catalog: activity,
+               label: {ru: вид деятельности, uz: faoliyat turi}}
+    role: {type: dimension, sql: p.role, ground: enum, values: [Покупатель, Продавец], label: {ru: роль, uz: rol}}
+    vat_payer: {type: bool, sql: p.vat_payer, label: {ru: плательщик НДС, uz: QQS to‘lovchi}}
+    deals_as_buyer: {type: number, sql: p.deals_as_buyer, label: {ru: сделок как покупатель, uz: xaridor sifatida bitimlar}}
+    deals_as_seller: {type: number, sql: p.deals_as_seller, label: {ru: сделок как продавец, uz: sotuvchi sifatida bitimlar}}
+
+brokers:
+  label: {ru: брокеры, uz: brokerlar}
+  table: brokers
+  alias: b
+  count_col: brokers
+  count_label: {ru: число брокеров, uz: brokerlar soni}
+  fields:
+    broker:
+      type: record
+      sql: b.broker_code
+      col: broker_code
+      ground: broker
+      columns: ["b.broker_code AS broker_code", "b.name AS broker_name", "b.inn AS inn", "b.region AS region",
+                "b.deals_as_seller_broker AS deals_as_seller_broker", "b.deals_as_buyer_broker AS deals_as_buyer_broker"]
+      label: {ru: брокер, uz: broker}
+    region: {type: dimension, sql: b.region, ground: region, label: {ru: регион, uz: hudud}}
+    deals_as_seller_broker: {type: number, sql: b.deals_as_seller_broker,
+                             label: {ru: сделок как брокер продавца, uz: sotuvchi brokeri sifatida bitimlar}}
+    deals_as_buyer_broker: {type: number, sql: b.deals_as_buyer_broker,
+                            label: {ru: сделок как брокер покупателя, uz: xaridor brokeri sifatida bitimlar}}
+
+usd_rates:
+  label: {ru: курс доллара, uz: dollar kursi}
+  table: usd_rates
+  alias: r
+  count_col: days
+  count_label: {ru: число дней, uz: kunlar soni}
+  date_field: rate_date
+  data_range: [2022-01-01, 2026-10-31]
+  fields:
+    rate: {type: number, sql: r.rate, aggs: [avg, median, min, max], label: {ru: курс сум за доллар, uz: kurs (so‘m/dollar)}}
+    rate_date: {type: date, sql: r.rate_date, label: {ru: дата курса, uz: kurs sanasi}}
+    year: {type: grain, sql: year(r.rate_date), range: [2022, 2026], label: {ru: год, uz: yil}}
+    quarter: {type: grain, sql: quarter(r.rate_date), range: [1, 4], with_year: true, label: {ru: квартал, uz: chorak}}
+    month: {type: grain, sql: month(r.rate_date), range: [1, 12], with_year: true, label: {ru: месяц, uz: oy}}
+    day: {type: grain, sql: r.rate_date, col: rate_date, label: {ru: день, uz: kun}}
