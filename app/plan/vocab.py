@@ -9,6 +9,12 @@ A normalize_text token (Latin, lower case; Russian / Uzbek Cyrillic transliterat
   4. a word of an entity name (company, broker, product, variant, region): stage 1 (before the planner) checks
      the names of the whole database, stage 2 (after the plan) only the names of the entities the plan uses.
 
+Stage 1 is a narrow pre-filter (Vocab.prefilter): it refuses before the planner only when the question names no
+subject the data has (no word other than function / time words matches the lexicon or an entity name), or when an
+unknown word stands where the subject of a rate is (next to "курс" / "kurs": «курс юаня», «yevro kursi»). Other
+unknown words go on to stage 2: the words the plan does not use are judged against the plan's explanation
+(app/plan/judge.py) instead of refusing outright.
+
 Matching: a token is known when it equals an entry, starts with a stem of >= 4 letters, or (tokens of >= 6
 letters) is one edit away from a stem of >= 6 letters at the start ("prodovtsov" -> "prodav"). Spelling folds:
 ts -> s (Cyrillic ц: цемент / sement) and an initial ye -> e (Cyrillic е: евро / yevro).
@@ -23,7 +29,7 @@ from typing import Iterable
 import yaml
 from rapidfuzz.distance import Levenshtein
 
-from app.text import normalize_name, normalize_text
+from app.text import detect_lang, normalize_name, normalize_text
 
 log = logging.getLogger(__name__)
 
@@ -244,24 +250,93 @@ def _static_sources() -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]
     return function, domain + tuple(fields) + tuple(glossary) + tuple(MONTHS.split()), tuple(fields)
 
 
+@lru_cache(maxsize=1)
+def _time_words() -> tuple[str, ...]:
+    vocab = yaml.safe_load(VOCAB_PATH.read_text(encoding="utf-8"))
+    return tuple(w for lang in (vocab.get("time") or {}).values() for w in lang) + tuple(MONTHS.split())
+
+
+def _lexicon(*sources: tuple[Iterable[str], bool]) -> Lexicon:
+    exact: set[str] = set()
+    stems: set[str] = set()
+    for entries, stemmed in sources:
+        _add(entries, exact, stems, stemmed=stemmed)
+    return Lexicon(exact, stems)
+
+
 def build_lexicon(catalog: dict[str, set[str]] | None = None, extra_terms: Iterable[str] = ()) -> Lexicon:
     """Lexicon of the static sources plus the catalog values and extra domain terms (product / region names)."""
     function, domain, _ = _static_sources()
-    exact: set[str] = set()
-    stems: set[str] = set()
-    _add(function, exact, stems, stemmed=False)
-    _add(domain, exact, stems, stemmed=True)
-    _add((v for values in (catalog or {}).values() for v in values), exact, stems, stemmed=True)
-    _add(extra_terms, exact, stems, stemmed=True)
-    return Lexicon(exact, stems)
+    return _lexicon((function, False), (domain, True),
+                    ((v for values in (catalog or {}).values() for v in values), True), (extra_terms, True))
+
+
+def build_subject_lexicon(catalog: dict[str, set[str]] | None = None, extra_terms: Iterable[str] = ()) -> Lexicon:
+    """Words that name something the data has: the lexicon without the function words."""
+    _, domain, _ = _static_sources()
+    return _lexicon((domain, True), ((v for values in (catalog or {}).values() for v in values), True),
+                    (extra_terms, True))
+
+
+def _rate_word(token: str) -> bool:
+    """курс / kurs and their forms (kursi, kursa, kurslar): the next word names a currency."""
+    return token.startswith("kurs")
+
+
+@dataclass(frozen=True)
+class Prefilter:
+    """Stage 1 outcome: the unknown words, and the word to name when the question is refused before the planner."""
+    unknown: list[Unknown]
+    refuse: Unknown | None = None
+    why: str = ""            # "no subject" | "rate subject"
 
 
 class Vocab:
     """Lexicon + the entity names of the database (stage 1)."""
 
-    def __init__(self, lexicon: Lexicon, names: NameWords | None = None):
+    def __init__(self, lexicon: Lexicon, names: NameWords | None = None, subject: Lexicon | None = None):
         self.lexicon = lexicon
         self.names = names or NameWords(())
+        function, _, _ = _static_sources()
+        self.function = _lexicon((function, False))
+        self.time = _lexicon((_time_words(), True))
+        self.subject = subject           # None: every known non-function, non-time word names a subject
+
+    def is_subject(self, token: str) -> bool:
+        """The token names something the data has (a domain word or an entity-name word), not a function or a
+        time word."""
+        if self.function.known(token, typos=False) or self.time.known(token, typos=False):
+            return False
+        if self.names.has(token):
+            return True
+        return (self.subject or self.lexicon).known(token)
+
+    def prefilter(self, question: str) -> Prefilter:
+        """Stage 1: refuse only when no word names a subject of the data, or when an unknown word is the subject of
+        a rate: in Russian the word after "курс" (and the one after an unknown adjective: «курс китайского юаня»),
+        in Uzbek the word before "kurs" or a genitive (-ning) up to 3 words before it («yuanining o'rtacha kursi»).
+        The word before a Russian "курс" is an attribute («значение курса», «средний курс»), not its subject."""
+        unknown = self.unknown(question)
+        if not unknown:
+            return Prefilter([])
+        missing = {u.token for u in unknown}
+        words = question_words(question)
+        toks = [t for t, _ in words]
+        russian = detect_lang(question) == "ru"
+        for i, (t, word) in enumerate(words):
+            if t not in missing:
+                continue
+            if russian:
+                rate = (i >= 1 and _rate_word(toks[i - 1])) or (
+                    i >= 2 and _rate_word(toks[i - 2]) and toks[i - 1] in missing)
+            else:
+                rate = (i + 1 < len(toks) and _rate_word(toks[i + 1])) or (
+                    t.endswith("ning") and any(_rate_word(x) for x in toks[i + 1:i + 4]))
+            if rate:
+                return Prefilter(unknown, Unknown(t, word), "rate subject")
+        if not any(self.is_subject(t) for t in toks):
+            return Prefilter(unknown, unknown[0], "no subject")
+        return Prefilter(unknown)
 
     def unknown(self, question: str, names: NameWords | None = None) -> list[Unknown]:
         """Tokens of the question outside the lexicon and outside the given names (default: all DB names)."""
@@ -291,7 +366,7 @@ def build_vocab(catalog: dict[str, set[str]] | None, resolver) -> Vocab:
     for region, region_ru, synonyms in resolver.region_rows():
         terms += [region, region_ru, *_SPLIT_PRODUCT.split(synonyms or "")]
     lexicon = build_lexicon(catalog, terms)
-    return Vocab(lexicon, NameWords(resolver.all_entity_names()))
+    return Vocab(lexicon, NameWords(resolver.all_entity_names()), build_subject_lexicon(catalog, terms))
 
 
 def log_refusal(stage: str, question: str, unknown: list[Unknown]):

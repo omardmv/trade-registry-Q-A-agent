@@ -12,12 +12,14 @@ from app.db import QueryError
 from app.plan.build import build_sql
 from app.plan.checks import apply_defaults, consistency_error, plan_missing_condition_error
 from app.plan.dictionary import Dictionary, load_dictionary
+from app.plan.explain import explain_plan
+from app.plan.judge import judge, term_for
 from app.plan.mentions import Resolution, mention_error
 from app.plan.model import PlanError, parse_plan
 from app.plan.prompt import TOOLS, build_system, load_examples
 from app.plan.validate import grounding_pairs, validate_plan
 from app.plan.vocab import Vocab, build_vocab, log_refusal
-from app.text import normalize_text
+from app.text import detect_lang, normalize_text
 
 _NAMED_GROUNDS = ("company", "broker", "product", "product_family", "product_variant", "region")
 _SQL_STRING = re.compile(r"'((?:[^']|'')*)'")
@@ -42,12 +44,14 @@ class GrammarWriter(Writer):
     def __init__(self, llm, db, resolver, max_tool_calls: int = 8, max_fixes: int = 2,
                  llm_timeout_s: float = config.LLM_TIMEOUT_S, catalog: dict[str, set[str]] | None = None,
                  dictionary: Dictionary | None = None, examples: list[dict] | None = None,
-                 vocab: Vocab | None = None):
+                 vocab: Vocab | None = None, use_judge: bool | None = None):
         super().__init__(llm, db, resolver, None, "", max_tool_calls, max_fixes, llm_timeout_s, catalog)
         self.dictionary = dictionary or load_dictionary()
         self.system = build_system(self.dictionary, load_examples() if examples is None else examples)
         # closed vocabulary (stage 2 here; stage 1 runs in the pipeline before any LLM call)
         self.vocab = vocab if vocab is not None else build_vocab(self.catalog, resolver)
+        # stage 2 judge (app/plan/judge.py); off: a word the plan does not use refuses (strict stage 2)
+        self.use_judge = config.JUDGE if use_judge is None else use_judge
 
     def _plan_names(self, plan) -> list[str]:
         """Names of the entities the plan uses: its filter values (incl. share numerators) by their ground."""
@@ -65,18 +69,32 @@ class GrammarWriter(Writer):
                     out.append(v)
         return out
 
-    def _vocab_refusal(self, question: str, names) -> WriterResult | None:
-        """Stage 2 of the closed vocabulary: a question word outside the lexicon must be a word of an entity the
-        query uses; otherwise the data has nothing about it (unanswerable, not a fix: the model must not relink
-        the word to a nearby fact)."""
+    def _vocab_gate(self, question: str, names, calculation: str, deadline: float, trace=None) -> WriterResult | None:
+        """Stage 2 of the closed vocabulary, after the plan passed every check: question words outside the lexicon
+        that are not words of an entity the query uses go to the judge with the calculation in words; the judge
+        says whether the calculation still answers the question. Not covered -> unanswerable (not a fix: the
+        model must not relink the word to a nearby fact); no verdict -> failed (refuse, never answer). With the
+        judge off any such word refuses."""
         if self.vocab is None:
             return None
         unknown = self.vocab.unknown_in_plan(question, names)
         if not unknown:
             return None
-        log_refusal("stage 2", question, unknown)
-        return WriterResult("unanswerable", reason="not in the data: " + ", ".join(u.word for u in unknown),
-                            term=unknown[0].word)
+        words = [u.word for u in unknown]
+        if not self.use_judge:
+            log_refusal("stage 2", question, unknown)
+            return WriterResult("unanswerable", reason="not in the data: " + ", ".join(words), term=unknown[0].word)
+        verdict = judge(self.llm, question, calculation, words, deadline, self.llm_timeout_s)
+        if trace is not None:
+            trace.append({"tool": "judge", "args": {"words": words, "calculation": calculation},
+                          "covered": verdict.covered, "missing": verdict.missing, "error": verdict.error})
+        if verdict.covered is True:
+            return None
+        if verdict.covered is None:
+            return WriterResult("failed", reason=f"judge: {verdict.error}")
+        log_refusal("stage 2 judge", question, unknown)
+        return WriterResult("unanswerable", reason=f"judge: not covered: {verdict.missing or ', '.join(words)}",
+                            term=term_for(verdict, question, words))
 
     def _compile(self, args, allowed, question, deadline, names=(), state=None) -> WriterResult | str:
         d = self.dictionary
@@ -84,8 +102,6 @@ class GrammarWriter(Writer):
             plan = validate_plan(parse_plan(plan_args(args)), d, self.catalog)
         except (PlanError, KeyError, TypeError) as e:
             return str(e)
-        if (refusal := self._vocab_refusal(question, self._plan_names(plan))) is not None:
-            return refusal
         raw_filters = frozenset(f.field for f in plan.filters)
         plan = apply_defaults(plan, d, question)
         if (err := consistency_error(plan, d, question)) is not None:
@@ -107,6 +123,13 @@ class GrammarWriter(Writer):
             return err
         try:
             built = build_sql(plan, d, variants=self.resolver.variant_names)
+        except (PlanError, KeyError, ValueError, TypeError) as e:
+            return f"could not build the plan: {e}"
+        calculation = explain_plan(plan, d, built.notes, detect_lang(question))
+        if (gate := self._vocab_gate(question, self._plan_names(plan), calculation, deadline,
+                                     (state or {}).get("trace"))) is not None:
+            return gate
+        try:
             result = self.db.query(built.sql, timeout_s=self._timeout(deadline, 10.0))
         except (PlanError, KeyError, ValueError, TypeError) as e:
             return f"could not build the plan: {e}"
@@ -122,9 +145,13 @@ class GrammarWriter(Writer):
         used = [n for kind, value in allowed if value and str(value) in sql
                 for n in self.resolver.entity_names({"inn": "company"}.get(kind, kind), str(value))]
         used += [m.replace("''", "'") for m in _SQL_STRING.findall(sql)]
-        if (refusal := self._vocab_refusal(question, used)) is not None:
-            return refusal
-        return super()._sql(args, allowed, question, deadline, names, state)
+        out = super()._sql(args, allowed, question, deadline, names, state)
+        if isinstance(out, WriterResult) and out.status == "ok":
+            # free SQL has no plan explanation: the judge reads the query itself
+            if (gate := self._vocab_gate(question, used, f"SQL: {out.sql}", deadline,
+                                         (state or {}).get("trace"))) is not None:
+                return gate
+        return out
 
     def _tool(self, name, args, allowed, question, deadline, names=None, state=None) -> dict:
         if name == "resolve" and "kind" not in args and "object" in args:

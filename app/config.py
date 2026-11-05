@@ -104,3 +104,6 @@ ROW_LIMIT = 1000
 PLANNER = os.environ.get("PLANNER", "grammar").strip().lower() or "grammar"
 # closed vocabulary (app/plan/vocab.py, grammar planner): refuse questions with words outside the data's lexicon
 CLOSED_VOCAB = os.environ.get("UZEX_CLOSED_VOCAB", "1").strip().lower() not in ("0", "false", "no", "off")
+# judge (app/plan/judge.py): a word outside the lexicon that the plan does not use is judged against the plan's
+# explanation by one LLM call; off -> such a word refuses the question (strict stage 2)
+JUDGE = os.environ.get("UZEX_JUDGE", "1").strip().lower() not in ("0", "false", "no", "off")

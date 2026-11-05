@@ -104,20 +104,24 @@ class Pipeline:
         return res
 
     def _vocab_refusal(self, question: str, lang: str) -> AskResult | None:
-        """Stage 1 of the closed vocabulary, before any LLM call: a word outside the lexicon that is not a word of
-        any entity name in the database -> no data about it."""
+        """Stage 1 of the closed vocabulary, before any LLM call, a narrow pre-filter: refuse only when the
+        question names no subject the data has, or an unknown word is the subject of a rate («курс юаня»). Other
+        unknown words go on: the writer judges the ones its plan does not use (stage 2)."""
         if self.vocab is None:
             return None
         try:
-            unknown = self.vocab.unknown(question)
+            pre = self.vocab.prefilter(question)
         except Exception:
             log.exception("vocabulary check crashed")
             return None
-        if not unknown:
+        if pre.refuse is None:
+            if pre.unknown:
+                log.info("closed vocabulary (stage 1): passing unknown words %s to the planner",
+                         [u.word for u in pre.unknown])
             return None
-        log_refusal("stage 1", question, unknown)
-        return AskResult(templates.no_data(lang, unknown[0].word), lang, False, "no_data",
-                         reason="not in the data: " + ", ".join(u.word for u in unknown))
+        log_refusal(f"stage 1, {pre.why}", question, [pre.refuse])
+        return AskResult(templates.no_data(lang, pre.refuse.word), lang, False, "no_data",
+                         reason=f"not in the data ({pre.why}): " + ", ".join(u.word for u in pre.unknown))
 
     def _supported_assumptions(self, assumptions, question, shown, extra) -> list[str]:
         """Assumptions are model text: keep only those whose numbers/ids/dates/names the data supports."""

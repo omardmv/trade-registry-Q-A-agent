@@ -239,8 +239,8 @@ class Writer:
         allowed: set[tuple[str, str]] = set()
         names: list[str] = []
         # per-question state: the first guard error, if any
-        state: dict = {"guard": None}
         trace: list[dict] = []
+        state: dict = {"guard": None, "trace": trace}
         calls = fixes = 0
         nudged = False
 

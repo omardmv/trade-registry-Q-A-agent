@@ -8,6 +8,9 @@
 #             word never makes a longer unknown word known ("olti" six does not cover "oltin" gold).
 #   domain:   curated domain words and synonyms beyond the field labels, glossary and catalog. Stemmed like the
 #             automatic sources: a word known from its stem covers its inflections (bitim -> bitimlar).
+#   time:     time-anchor words (year, month, day, date, period). Not added to the lexicon (known only through
+#             function / domain); used as "not a subject": stage 1 refuses a
+#             question when no word other than function and time words matches the data (app/plan/vocab.py).
 #   An entry ending in * is a stem as written (prefix match, at least 4 letters).
 #
 # Deliberately absent: future-tense words (будет, завтра) - the data is a historical registry; and anything the
@@ -99,6 +102,16 @@ function:
     ko‘p, ko‘proq, kam, kamroq, oz, ozroq, eng, juda, ancha, taxminan, aynan, aniq, ortiq, ortiqcha, ko‘pi, kami,
     sifatida, tomonida, tomondan, ichida, ichidagi, orasida, orasidan, davomida, mobaynida, mobaynidagi, kesimida,
     bo‘linib, bo‘lingan, nechadan,
+  ]
+
+time:
+  ru: [
+    год, года, году, годов, годам, годы, годах, годом, лет, г, гг, день, дня, дни, днях, дней, дню, сутки, суток,
+    недел*, месяц*, квартал*, полугоди*, полгода, дата, дату, даты, датам, дате, датой, период*, время,
+  ]
+  uz: [
+    yil, yilda, yili, yilgi, yillar, kun, kuni, kunlar, sutka, hafta, oy, oyi, oyida, oylar,
+    chorak, davr, sana, sanasi, sanada, sanalari, vaqt,
   ]
 
 domain:
