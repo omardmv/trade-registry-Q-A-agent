@@ -1,8 +1,8 @@
-"""Primary/secondary LLM with automatic fallback, including mid-conversation, and a circuit breaker.
+"""A chain of LLM providers with automatic fallback, including mid-conversation, and a circuit breaker.
 
 A FallbackChat keeps a provider-neutral transcript. When the active provider fails for a provider reason
-(classify_error == "fallback"), the other provider's chat is rebuilt from the transcript and the same step is
-sent there; the conversation then stays on it. A timeout switches too (the other provider
+(classify_error == "fallback"), the next provider's chat is rebuilt from the transcript and the same step is
+sent there; the conversation then stays on it (it never returns to a provider it left). A timeout switches too (the other provider
 may be healthy), but not when the timeout leaves no room for another full timeout_s. A fallback attempt is only started if a full timeout_s still fits before the current
 deadline (deadline_scope), so the per-answer time bound holds.
 """
@@ -21,14 +21,16 @@ def _name(llm) -> str:
 
 
 class FallbackLLM:
-    def __init__(self, primary: LLM, secondary: LLM, cooldown_s: float = 300.0,
+    def __init__(self, *providers: LLM, cooldown_s: float = 300.0,
                  timeout_s: float | None = None, clock: Callable[[], float] = time.monotonic):
         from app import config
-        self.providers = [primary, secondary]
+        if len(providers) < 2:
+            raise ValueError("FallbackLLM needs at least two providers")
+        self.providers = list(providers)
         self.cooldown_s = cooldown_s
         self.timeout_s = config.LLM_TIMEOUT_S if timeout_s is None else timeout_s
         self.clock = clock
-        self._down_until = [0.0, 0.0]
+        self._down_until = [0.0] * len(self.providers)
         self._lock = threading.Lock()
 
     # ---- circuit breaker (process-wide: one FallbackLLM per process) ----
@@ -57,36 +59,41 @@ class FallbackLLM:
             deadline = current_deadline()
         return deadline is None or deadline - self.clock() >= self.timeout_s
 
-    def _run(self, start: int, attempt: Callable[[int], object], deadline: float | None, switched: bool = False,
-             on_switch: Callable[[int], None] | None = None):
-        """attempt(i) on provider start; on a provider failure, once, on the other provider if time allows
-        (on_switch(other) is called first). -> (index that answered, result)."""
-        try:
-            return start, attempt(start)
-        except Exception as e:
-            kind = classify_error(e)
-            if kind == "bug":
-                raise
-            if kind == "fallback":
-                self._failed(start, e)
-            other = 1 - start
-            if switched or not self._may_fall_back(deadline):
-                raise
-            # a provider that is marked down is only a last resort, when the one that just failed is down too
-            if self.is_down(other) and not self.is_down(start):
-                raise
-            # a failure with HTTP 400/404 may be our own malformed request: make it visible
-            level = logging.ERROR if error_status(e) in (400, 404) else logging.WARNING
-            log.log(level, "LLM provider %s %s (%s); falling back to %s", _name(self.providers[start]),
-                    "timed out" if kind == "timeout" else "failed", safe_text(e), _name(self.providers[other]))
-            if on_switch is not None:
-                on_switch(other)
+    def _next(self, failed: int, tried: set[int]) -> int | None:
+        """The provider to try after `failed`: the next one in chain order not tried yet and not marked down; a
+        provider marked down is only a last resort, when the one that just failed is down too."""
+        n = len(self.providers)
+        rest = [(failed + k) % n for k in range(1, n) if (failed + k) % n not in tried]
+        up = [j for j in rest if not self.is_down(j)]
+        if up:
+            return up[0]
+        return rest[0] if rest and self.is_down(failed) else None
+
+    def _run(self, start: int, attempt: Callable[[int], object], deadline: float | None,
+             exclude: set[int] = frozenset(), on_switch: Callable[[int], None] | None = None):
+        """attempt(i) on provider start; on a provider failure, on the next providers of the chain (never one in
+        `exclude`) while a full timeout still fits (on_switch(next) is called first). -> (index, result)."""
+        tried, i = set(exclude), start
+        while True:
+            tried.add(i)
             try:
-                return other, attempt(other)
-            except Exception as e2:
-                if classify_error(e2) == "fallback":
-                    self._failed(other, e2)
-                raise
+                return i, attempt(i)
+            except Exception as e:
+                kind = classify_error(e)
+                if kind == "bug":
+                    raise
+                if kind == "fallback":
+                    self._failed(i, e)
+                nxt = self._next(i, tried)
+                if nxt is None or not self._may_fall_back(deadline):
+                    raise
+                # a failure with HTTP 400/404 may be our own malformed request: make it visible
+                level = logging.ERROR if error_status(e) in (400, 404) else logging.WARNING
+                log.log(level, "LLM provider %s %s (%s); falling back to %s", _name(self.providers[i]),
+                        "timed out" if kind == "timeout" else "failed", safe_text(e), _name(self.providers[nxt]))
+                if on_switch is not None:
+                    on_switch(nxt)
+                i = nxt
 
     # ---- LLM interface ----
     def start_chat(self, system: str, tools: list[ToolSpec]) -> "FallbackChat":
@@ -102,7 +109,7 @@ class FallbackChat:
         self.events: list[tuple[str, object]] = []  # committed transcript: user_text / assistant / tool_results
         self._active = owner._first()
         self._chats: dict[int, object] = {self._active: owner.providers[self._active].start_chat(system, tools)}
-        self._switched = False
+        self._left: set[int] = set()  # providers this conversation moved away from
         self.providers_used: list[str] = []
 
     @property
@@ -118,12 +125,13 @@ class FallbackChat:
 
     def _switch(self, other: int) -> None:
         """The conversation stays on the other provider from now on, even if this attempt fails too."""
-        self._active, self._switched = other, True
+        self._left.add(self._active)
+        self._active = other
 
     def _send(self, kind: str, payload, deadline: float | None) -> LLMReply:
         method = "send_text" if kind == "user_text" else "send_tool_results"
         _, reply = self._owner._run(self._active, lambda k: getattr(self._chat(k), method)(payload),
-                                    deadline, switched=self._switched, on_switch=self._switch)
+                                    deadline, exclude=self._left, on_switch=self._switch)
         self.events += [(kind, payload), ("assistant", reply)]
         self.providers_used.append(self.provider)
         return reply
@@ -135,27 +143,31 @@ class FallbackChat:
         return self._send("tool_results", list(results), deadline)
 
 
-def build_llm(order: list[str], keys: dict[str, str], models: dict[str, str], timeout_s: float,
-              cooldown_s: float = 300.0) -> LLM:
-    """Providers in `order` that have a key: two -> FallbackLLM(first, second), one -> that provider alone."""
-    makers = {"gemini": lambda: _gemini(keys["gemini"], models["gemini"], timeout_s),
-              "openai": lambda: _openai(keys["openai"], models["openai"], timeout_s)}
-    unknown = [p for p in order if p not in makers]
+def build_llm(order: list[str], timeout_s: float, cooldown_s: float = 300.0,
+              settings: Callable[[str], dict | None] | None = None) -> LLM:
+    """The named providers of `order` (see config.provider_settings) that are usable (an API key, or a base_url for
+    a local server), as a fallback chain in that order; one usable provider -> that provider alone."""
+    from app import config
+    settings = settings or config.provider_settings
+    specs = {name: settings(name) for name in dict.fromkeys(order)}
+    unknown = [n for n, s in specs.items() if s is None]
     if unknown:
-        raise ValueError(f"LLM_PROVIDERS: unknown provider(s) {unknown}; use gemini and/or openai")
-    available = [p for p in dict.fromkeys(order) if keys.get(p)]
-    if not available:
-        raise RuntimeError("No LLM provider configured: set GEMINI_API_KEY and/or OPENAI_API_KEY "
-                           f"(LLM_PROVIDERS={','.join(order)})")
-    llms = [makers[p]() for p in available[:2]]
-    return llms[0] if len(llms) == 1 else FallbackLLM(llms[0], llms[1], cooldown_s, timeout_s)
+        raise ValueError(f"LLM_PROVIDERS: unknown provider(s) {unknown}; built in: gemini, openai, qwen_local "
+                         "(or set <NAME>_TYPE=gemini|openai for another one)")
+    usable = [(n, s) for n, s in specs.items() if s.get("api_key") or (s["type"] == "openai" and s.get("base_url"))]
+    if not usable:
+        raise RuntimeError("No LLM provider configured: set an API key (GEMINI_API_KEY, OPENAI_API_KEY) or a local "
+                           f"base_url (LLM_PROVIDERS={','.join(order)})")
+    llms = [make_provider(n, s, timeout_s) for n, s in usable]
+    return llms[0] if len(llms) == 1 else FallbackLLM(*llms, cooldown_s=cooldown_s, timeout_s=timeout_s)
 
 
-def _gemini(key, model, timeout_s):
-    from app.agent.llm import GeminiLLM
-    return GeminiLLM(key, model, timeout_s)
-
-
-def _openai(key, model, timeout_s):
+def make_provider(name: str, spec: dict, timeout_s: float) -> LLM:
+    if spec["type"] == "gemini":
+        from app.agent.llm import GeminiLLM
+        llm = GeminiLLM(spec["api_key"], spec["model"], timeout_s)
+        llm.name = name
+        return llm
     from app.agent.llm_openai import OpenAILLM
-    return OpenAILLM(key, model, timeout_s)
+    return OpenAILLM(spec.get("api_key", ""), spec["model"], timeout_s, base_url=spec.get("base_url", ""),
+                     temperature=spec.get("temperature", ""), text_tools=bool(spec.get("text_tools")), name=name)

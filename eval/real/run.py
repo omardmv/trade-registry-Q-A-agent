@@ -3,6 +3,7 @@
     uv run python -m eval.real.run --split test            # held-out half (score only)
     uv run python -m eval.real.run --split dev --langs ru  # tuning half, Russian only
     uv run python -m eval.real.run --only r001,r014
+    uv run python -m eval.real.run --split dev --providers qwen_local      # one provider (or a chain: a,b)
 
 For every phrasing: a reading is correct when all of its key values (first ≤ 5 rows) appear in the answer.
 Reported: any reading right, all readings shown (ambiguous intents), refused correctly, wrong answers, latency,
@@ -88,6 +89,8 @@ def main() -> int:
     ap.add_argument("--langs", default=",".join(LANGS))
     ap.add_argument("--only", default="")
     ap.add_argument("--workers", type=int, default=3)
+    ap.add_argument("--providers", default="", help="LLM providers in order, e.g. qwen_local or gemini,openai "
+                                                    "(default: LLM_PROVIDERS)")
     ap.add_argument("--rescore", default="", help="re-score a saved results file without calling the model")
     args = ap.parse_args()
     if args.rescore:
@@ -105,6 +108,8 @@ def main() -> int:
         intents = [i for i in intents if i["id"] in wanted]
     langs = args.langs.split(",")
 
+    if args.providers:
+        config.LLM_PROVIDERS = [p.strip().lower() for p in args.providers.split(",") if p.strip()]
     db = Database(config.DB_PATH)
     golds = {i["id"]: [gold_values(db, r) for r in i.get("readings") or []] for i in intents}
     pipeline = build_pipeline()
@@ -145,6 +150,8 @@ def main() -> int:
     unans = [r for r in rows if not r["answerable"]]
     amb = [r for r in ans if r["ambiguous"]]
     summary = {
+        "providers": ",".join(config.LLM_PROVIDERS),
+        "planner": config.PLANNER,
         "phrasings": len(rows),
         "answerable_any": rate(ans),
         "ambiguous_all_readings": rate(amb, "all_ok"),

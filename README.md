@@ -117,17 +117,28 @@ starts if a full 15 s still fits.
 
 ### LLM providers and fallback
 
-Gemini is the primary model; an OpenAI model (`OPENAI_MODEL`) is the fallback. If a Gemini call fails because
-of the provider (no credits, bad key, rate limit, server error, connection error, or a blocked/empty reply),
-the same step is sent to OpenAI, also in the middle of a planning conversation: the conversation so far
-(tool calls and their results) is replayed to OpenAI, which continues from there. A timeout does not switch
-providers; the normal retry and the deadline decide. After a "no credits" / bad-key / forbidden error
-(HTTP 402, 401, 403) the failing provider is skipped for 5 minutes, so new questions go straight to the other
-one. Errors in our own code are never treated as a provider failure.
+Every model runs the same pipeline (same planner, tools, checks and code-rendered answers); only the
+connection differs. Providers are named and tried in the order of `LLM_PROVIDERS`:
 
-`LLM_PROVIDERS` sets the order (`gemini,openai` = Gemini first). With only one key set, that provider is used
-alone; with no key, the first request fails with a clear error. Each answer's `providers_used` shows which
-provider wrote each reply (it also appears in the evaluation output).
+```
+LLM_PROVIDERS=qwen_local,gemini,openai   # free local model first, paid ones only when it fails
+LLM_PROVIDERS=gemini,openai              # default
+LLM_PROVIDERS=qwen_local                 # local only
+```
+
+Built-in names: `gemini`, `openai`, and `qwen_local` (Ollama at `http://localhost:11434/v1`, model
+`qwen2.5-7b-uzex`, temperature 0, tool calls through the prompt). Any other OpenAI-compatible server (vLLM,
+llama.cpp, another cloud) gets a name of its own through `<NAME>_TYPE=openai`, `<NAME>_BASE_URL`,
+`<NAME>_MODEL`, `<NAME>_API_KEY`, `<NAME>_TEMPERATURE`, `<NAME>_TEXT_TOOLS`; the same variables override the
+built-in ones (e.g. `QWEN_LOCAL_MODEL`). A provider is used when it has an API key or a base URL.
+
+If a call fails because of the provider (no credits, bad key, rate limit, server error, connection error, a
+blocked/empty reply, or a timeout that still leaves time for another call), the same step is sent to the next
+provider in the chain, also in the middle of a planning conversation: the conversation so far (tool calls and
+their results) is replayed there, and it continues from there; it never returns to a provider it left. After a
+"no credits" / bad-key / forbidden error (HTTP 402, 401, 403) the failing provider is skipped for 5 minutes.
+Errors in our own code are never treated as a provider failure. Each answer's `providers_used` shows which
+provider wrote each reply; the evaluation takes `--providers` to measure one provider or a chain.
 
 ## Project layout
 
@@ -206,7 +217,9 @@ The tests run offline. Before relying on the service, check it against the real 
 | `OPENAI_API_KEY` | none | OpenAI key for the fallback model |
 | `OPENAI_MODEL` | `gpt-5.4-mini` | fallback model; verify the name is available for your account |
 | `OPENAI_REASONING_EFFORT` | empty | sent as `reasoning_effort` to OpenAI; empty = not sent. `gpt-5.4-mini` rejects it together with function tools on Chat Completions, so leave it empty unless your model supports it |
-| `LLM_PROVIDERS` | `gemini,openai` | provider order: primary first, then fallback |
+| `LLM_PROVIDERS` | `gemini,openai` | named providers in fallback order (`gemini`, `openai`, `qwen_local`, or your own via `<NAME>_TYPE`) |
+| `OPENAI_TEMPERATURE` | empty | temperature for the `openai` provider; empty = not sent |
+| `OPENAI_TEXT_TOOLS` | off | `1`: tool calls through the prompt instead of the API tools field (for local servers) |
 | `UZEX_DEADLINE_S` | `75` | hard deadline per question |
 | `UZEX_LLM_TIMEOUT_S` | `15` | per-call LLM timeout |
 | `UZEX_DATA_DIR` | `data` | directory with the source CSV files |

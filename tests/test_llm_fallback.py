@@ -264,20 +264,75 @@ def test_writer_bug_in_chat_is_not_fallback(parts):
 
 
 # ---- wiring ----
+def _settings(keys, extra=None):
+    """provider_settings stand-in: gemini/openai with the given keys, plus extra named specs."""
+    specs = {"gemini": {"type": "gemini", "model": "g", "api_key": keys.get("gemini", "")},
+             "openai": {"type": "openai", "model": "o", "api_key": keys.get("openai", "")}, **(extra or {})}
+    return specs.get
+
+
 def test_build_llm_selects_providers():
-    models = {"gemini": "g", "openai": "o"}
-    both = build_llm(["gemini", "openai"], {"gemini": "k1", "openai": "k2"}, models, 5)
+    both = build_llm(["gemini", "openai"], 5, settings=_settings({"gemini": "k1", "openai": "k2"}))
     assert isinstance(both, FallbackLLM)
     assert [p.name for p in both.providers] == ["gemini", "openai"]
-    rev = build_llm(["openai", "gemini"], {"gemini": "k1", "openai": "k2"}, models, 5)
+    rev = build_llm(["openai", "gemini"], 5, settings=_settings({"gemini": "k1", "openai": "k2"}))
     assert [p.name for p in rev.providers] == ["openai", "gemini"]
-    assert isinstance(build_llm(["gemini", "openai"], {"gemini": "", "openai": "k2"}, models, 5), OpenAILLM)
-    assert isinstance(build_llm(["gemini", "openai"], {"gemini": "k1", "openai": ""}, models, 5), GeminiLLM)
-    assert isinstance(build_llm(["gemini"], {"gemini": "k1", "openai": "k2"}, models, 5), GeminiLLM)
+    assert isinstance(build_llm(["gemini", "openai"], 5, settings=_settings({"openai": "k2"})), OpenAILLM)
+    assert isinstance(build_llm(["gemini", "openai"], 5, settings=_settings({"gemini": "k1"})), GeminiLLM)
+    assert isinstance(build_llm(["gemini"], 5, settings=_settings({"gemini": "k1", "openai": "k2"})), GeminiLLM)
     with pytest.raises(RuntimeError, match="GEMINI_API_KEY"):
-        build_llm(["gemini", "openai"], {"gemini": "", "openai": ""}, models, 5)
+        build_llm(["gemini", "openai"], 5, settings=_settings({}))
     with pytest.raises(ValueError, match="unknown"):
-        build_llm(["claude"], {"gemini": "k"}, models, 5)
+        build_llm(["claude"], 5, settings=_settings({"gemini": "k"}))
+
+
+def test_build_llm_three_named_providers_in_order_local_needs_no_key():
+    local = {"qwen_local": {"type": "openai", "model": "qwen", "api_key": "", "base_url": "http://localhost:11434/v1",
+                            "temperature": "0", "text_tools": True}}
+    llm = build_llm(["qwen_local", "gemini", "openai"], 5,
+                    settings=_settings({"gemini": "k1", "openai": "k2"}, local))
+    assert [p.name for p in llm.providers] == ["qwen_local", "gemini", "openai"]
+    q = llm.providers[0]
+    assert q._temperature == "0" and q._text_tools and str(q._client.base_url).startswith("http://localhost:11434")
+    alone = build_llm(["qwen_local"], 5, settings=_settings({}, local))
+    assert isinstance(alone, OpenAILLM) and alone.name == "qwen_local"
+
+
+def test_three_provider_chain_falls_through_to_the_third():
+    clock = FakeClock()
+    first, second, third = openai_llm([o_status(503)]), gemini([g_error(503)]), openai_llm([o_text("third")])
+    first.name, third.name = "local", "openai"
+    llm = FallbackLLM(first, second, third, timeout_s=15, clock=clock)
+    assert llm.complete("s", "p") == "third"
+    chat = FallbackLLM(openai_llm([o_status(503)]), gemini([g_error(503)]), openai_llm([o_text("ok")]),
+                       timeout_s=15, clock=FakeClock()).start_chat("s", [TOOL])
+    assert chat.send_text("q").text == "ok" and chat.providers_used == ["openai"]
+
+
+def test_chain_never_returns_to_a_provider_it_left():
+    clock = FakeClock()
+    a, b, c = openai_llm([o_status(503), o_text("back on a")]), openai_llm([o_text("b1"), o_status(503)]), \
+        openai_llm([o_text("c")])
+    a.name, b.name, c.name = "a", "b", "c"
+    chat = FallbackLLM(a, b, c, timeout_s=15, clock=clock).start_chat("s", [])
+    assert chat.send_text("q1").text == "b1"
+    assert chat.send_text("q2").text == "c"  # b failed: on to c, not back to a
+    assert chat.providers_used == ["b", "c"]
+
+
+def test_provider_settings_builtins_and_env(monkeypatch):
+    monkeypatch.delenv("QWEN_LOCAL_MODEL", raising=False)
+    q = config.provider_settings("qwen_local")
+    assert q["type"] == "openai" and q["base_url"].startswith("http://localhost:11434") and q["text_tools"]
+    assert q["temperature"] == "0" and q["model"] == "qwen2.5-7b-uzex" and q["api_key"] == ""
+    assert config.provider_settings("gemini")["model"] == config.GEMINI_MODEL
+    assert config.provider_settings("nope") is None
+    monkeypatch.setenv("MYVLLM_TYPE", "openai")
+    monkeypatch.setenv("MYVLLM_BASE_URL", "http://gpu:8000/v1")
+    monkeypatch.setenv("MYVLLM_MODEL", "qwen2.5-32b")
+    v = config.provider_settings("myvllm")
+    assert v["model"] == "qwen2.5-32b" and v["base_url"] == "http://gpu:8000/v1" and not v["text_tools"]
+    assert v["api_key"] == ""  # never borrows OPENAI_API_KEY
 
 
 def test_fallback_chat_is_a_chat():

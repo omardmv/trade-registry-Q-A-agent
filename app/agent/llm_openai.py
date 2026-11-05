@@ -35,13 +35,13 @@ def _transient_status(status: int) -> bool:
     return status in (408, 409, 429) or status >= 500
 
 
-def _create(client, reasoning_effort: str = "", **kwargs):
+def _create(client, reasoning_effort: str = "", temperature: str = "", **kwargs):
     """chat.completions.create with openai exceptions mapped to TimeoutError / ProviderError."""
     import openai
     if reasoning_effort:
         kwargs["reasoning_effort"] = reasoning_effort
-    if config.OPENAI_TEMPERATURE:
-        kwargs["temperature"] = float(config.OPENAI_TEMPERATURE)
+    if temperature:
+        kwargs["temperature"] = float(temperature)
     try:
         return client.chat.completions.create(**kwargs)
     except openai.APITimeoutError as e:
@@ -86,8 +86,10 @@ def _dump(payload) -> str:
 class OpenAIChat:
     name = "openai"
 
-    def __init__(self, client, model: str, system: str, tools: list[ToolSpec], reasoning_effort: str = ""):
+    def __init__(self, client, model: str, system: str, tools: list[ToolSpec], reasoning_effort: str = "",
+                 temperature: str = "", name: str = "openai"):
         self._client, self._model, self._effort = client, model, reasoning_effort
+        self._temperature, self.name = temperature, name
         self._tools = _tool_payload(tools)
         self._messages: list[dict] = [{"role": "system", "content": system}]
 
@@ -96,7 +98,7 @@ class OpenAIChat:
         kwargs = dict(model=self._model, messages=candidate)
         if self._tools:
             kwargs.update(tools=self._tools, tool_choice="auto")
-        msg = _choice(_create(self._client, self._effort, **kwargs)).message
+        msg = _choice(_create(self._client, self._effort, self._temperature, **kwargs)).message
         calls, native = [], []
         for tc in msg.tool_calls or []:
             fn = getattr(tc, "function", None)
@@ -203,8 +205,9 @@ class TextToolChat(OpenAIChat):
     parse). The tools are listed in the system message; <tool_call>{name, arguments}</tool_call> blocks are parsed
     from the reply text, with missing closing brackets repaired; tool results go back as <tool_response> blocks."""
 
-    def __init__(self, client, model: str, system: str, tools: list[ToolSpec], reasoning_effort: str = ""):
-        super().__init__(client, model, system, [], reasoning_effort)
+    def __init__(self, client, model: str, system: str, tools: list[ToolSpec], reasoning_effort: str = "",
+                 temperature: str = "", name: str = "openai"):
+        super().__init__(client, model, system, [], reasoning_effort, temperature, name)
         listing = "\n".join(json.dumps(t, ensure_ascii=False) for t in _tool_payload(tools))
         self._messages = [{"role": "system", "content": (
             f"{system}\n\n# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are "
@@ -216,7 +219,8 @@ class TextToolChat(OpenAIChat):
 
     def _call(self, new: list[dict]) -> LLMReply:
         candidate = [*self._messages, *new]
-        msg = _choice(_create(self._client, self._effort, model=self._model, messages=candidate)).message
+        msg = _choice(_create(self._client, self._effort, self._temperature, model=self._model,
+                              messages=candidate)).message
         text = msg.content or ""
         calls = []
         for block in _TOOL_CALL_RE.findall(text):
@@ -268,21 +272,28 @@ class TextToolChat(OpenAIChat):
 
 
 class OpenAILLM:
-    name = "openai"
+    """Any OpenAI-compatible Chat Completions server: OpenAI itself, or a local one (Ollama, vLLM, llama.cpp) via
+    base_url. temperature / text_tools default to the global OPENAI_* settings."""
 
-    def __init__(self, api_key: str, model: str, timeout_s: float, client=None, reasoning_effort: str | None = None):
+    def __init__(self, api_key: str, model: str, timeout_s: float, client=None, reasoning_effort: str | None = None,
+                 base_url: str = "", temperature: str | None = None, text_tools: bool | None = None,
+                 name: str = "openai"):
         if client is None:
             import openai
-            client = openai.OpenAI(api_key=api_key, timeout=timeout_s, max_retries=0)  # retries: call_with_retry
-        self._client, self._model = client, model
+            # a local server needs no key, but the client requires a non-empty one
+            client = openai.OpenAI(api_key=api_key or "local", base_url=base_url or None, timeout=timeout_s,
+                                   max_retries=0)  # retries: call_with_retry
+        self._client, self._model, self.name = client, model, name
         self._effort = (config.OPENAI_REASONING_EFFORT if reasoning_effort is None else reasoning_effort).strip()
+        self._temperature = (config.OPENAI_TEMPERATURE if temperature is None else temperature).strip()
+        self._text_tools = config.OPENAI_TEXT_TOOLS if text_tools is None else text_tools
 
     def start_chat(self, system: str, tools: list[ToolSpec]) -> OpenAIChat:
-        cls = TextToolChat if config.OPENAI_TEXT_TOOLS and tools else OpenAIChat
-        return cls(self._client, self._model, system, tools, self._effort)
+        cls = TextToolChat if self._text_tools and tools else OpenAIChat
+        return cls(self._client, self._model, system, tools, self._effort, self._temperature, self.name)
 
     def complete(self, system: str, prompt: str) -> str:
-        resp = _create(self._client, self._effort, model=self._model,
+        resp = _create(self._client, self._effort, self._temperature, model=self._model,
                        messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}])
         text = (_choice(resp).message.content or "").strip()
         if not text:

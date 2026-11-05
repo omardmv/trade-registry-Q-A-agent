@@ -189,8 +189,7 @@ def build_pipeline() -> Pipeline:
     from app.semantic import load_semantic, render_schema_prompt
 
     db = Database(config.DB_PATH)
-    llm = build_llm(config.LLM_PROVIDERS, {"gemini": config.GEMINI_API_KEY, "openai": config.OPENAI_API_KEY},
-                    {"gemini": config.GEMINI_MODEL, "openai": config.OPENAI_MODEL}, config.LLM_TIMEOUT_S)
+    llm = build_llm(config.LLM_PROVIDERS, config.LLM_TIMEOUT_S)
     resolver = Resolver(db)
     if config.PLANNER == "grammar":
         from app.agent.grammar_writer import GrammarWriter
