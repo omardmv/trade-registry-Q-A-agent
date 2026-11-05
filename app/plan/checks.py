@@ -132,6 +132,7 @@ def consistency_error(plan: Plan, d: Dictionary, question: str) -> str | None:
     return (period_error(plan, d, question) or period_value_error(plan, d, question)
             or named_day_error(plan, d, question) or grain_word_error(plan, d, question)
             or unasked_grain_error(plan, d, question) or extreme_period_error(plan, d, question)
+            or id_kind_error(plan, d, question)
             or not_in_data_error(question) or role_word_error(plan, d, question)
             or currency_error(plan, question) or side_error(plan, question)
             or counted_parties_error(plan, d, question) or elapsed_vs_term_error(plan, d, question))
@@ -320,10 +321,49 @@ def extreme_period_error(plan: Plan, d: Dictionary, question: str) -> str | None
     return None
 
 
+# ---- an id is used as the kind of record the question attaches it to (deal vs contract) ----
+_ID_KIND_WORDS = {"deal": re.compile(r"^(?:сделк\w*|bitim\w*|битим\w*|deal\w*)$", re.IGNORECASE),
+                  "contract": re.compile(r"^(?:контракт\w*|договор\w*|shartnoma\w*|шартнома\w*|contract\w*)$",
+                                         re.IGNORECASE)}
+_ID_FIELDS = {"deal": "deal", "contract": "contract"}
+
+
+def id_kind_of(question: str, ident: str) -> str | None:
+    """deal | contract: the record word nearest to the id in the question (up to 3 words before, 2 after)."""
+    toks = re.findall(r"[^\W_]+(?:[‘’'ʻ`][^\W_]+)*", question)
+    out = None
+    for i, t in enumerate(toks):
+        if t != ident:
+            continue
+        near = [(abs(j - i), k) for j in range(max(0, i - 3), min(len(toks), i + 3)) if j != i
+                for k, rx in _ID_KIND_WORDS.items() if rx.match(toks[j])]
+        if near:
+            out = min(near)[1]
+    return out
+
+
+def id_kind_error(plan: Plan, d: Dictionary, question: str) -> str | None:
+    """«100091-сонли битимнинг харидори»: 100091 is a deal; filtering the contract 100091 answers about another
+    record. A missing deal is no data, never the contract with the same number."""
+    s = d.subject(plan.subject)
+    for f in _plan_filters(plan):
+        fd = s.fields.get(f.field)
+        if fd is None or fd.ground not in _ID_FIELDS:
+            continue
+        for v in (f.value if isinstance(f.value, tuple) else (f.value,)):
+            said = id_kind_of(question, str(v))
+            if said and said != fd.ground:
+                where = "subject deals, filter deal" if said == "deal" else "filter contract (subject contracts or deals)"
+                return (f"the question calls {v} a {said}, but the plan uses it as a {fd.ground}: use it as a {said} "
+                        f"({where} = {v}); if no such {said} exists, call declare_unanswerable — never answer about "
+                        f"the {fd.ground} with the same number")
+    return None
+
+
 # ---- the data has no such facts: answering with a nearby number would answer another question ----
 _NOT_IN_DATA = {
     "employees": r"сотрудник|работник|численност\w*\s+персонал|персонал[аеу]?\b|xodim|ходим|ishchilar|ишчилар",
-    "profit": r"прибыл|рентабельн|маржинальн|foyda|фойда",
+    "profit": r"прибыл|рентабельн|маржинальн|foyda(?!lan)|фойда(?!лан)",
     "salary": r"зарплат|заработн|maosh|маош|ish\s+haqi|иш\s+ҳақи",
     "contacts": r"телефон|e-?mail|электронн\w*\s+почт|контакт|telefon|aloqa\s+ma.lumot",
     "management": r"директор|руководител|владел|учредител|собственник|rahbar|раҳбар|direktor|egasi|эгаси|ta.sischi",
@@ -336,7 +376,15 @@ _NOT_IN_DATA = {
     # the exchange's own trades only: no country-wide harvest, production, consumption or other exchanges
     "outside_exchange": r"урожа|hosil|ҳосил|yetishtiril|етиштирил|производств\w*\s+в\s+стран|"
                             r"в\s+(?:целом\s+по\s+)?стран[еы]|мамлакатда|mamlakatda|другой\s+бирж|других\s+бирж|"
-                            r"boshqa\s+birja|бошқа\s+биржа|экспорт\w*\s+страны|импорт",
+                            r"boshqa\s+birja|бошқа\s+биржа|экспорт\w*\s+страны|импорт|"
+                            # trades off the exchange: «вне биржи», «помимо биржи», «birjadan tashqari», ...
+                            r"(?:вне|помимо|кроме|мимо)\s+бирж|за\s+пределами\s+бирж|без\s+участия\s+бирж|внебирж|"
+                            r"биржев\w*\s+и\s+внебирж|напрямую|прямы\w*\s+(?:договор|контракт|продаж|поставк)|"
+                            r"birja(?:dan)?\s+tashqari|birjadan\s+boshqa\b|birjasiz|birjadan\s+o.tmagan|"
+                            r"биржа(?:дан)?\s+ташқари|биржадан\s+бошқа(?!\w)|биржасиз|биржадан\s+ўтмаган|"
+                            r"boshqa\s+savdo\s+(?:maydon|platforma|kanal|yo.l)|бошқа\s+савдо\s+(?:майдон|платформа|канал|йўл)|"
+                            r"друг\w+\s+(?:торгов\w+\s+)?(?:площадк|канал\w*\s+продаж)|"
+                            r"off-?exchange|\botc\b",
 }
 _NOT_IN_DATA_RE = re.compile("|".join(f"(?P<{k}>{v})" for k, v in _NOT_IN_DATA.items()), re.IGNORECASE)
 

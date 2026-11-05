@@ -194,3 +194,36 @@ def test_extreme_period_is_ranked_by_a_total():
     for q in ("В какой день 2026 года была самая крупная сделка?", "2026 yilda eng katta bitim qaysi kuni bo‘lgan?",
               "2026 йилда энг катта битим қайси куни тузилган?"):
         assert check(plan, q) is None, q
+
+
+def test_id_is_used_as_the_record_kind_the_question_names():
+    """«100091-сонли битимнинг харидори»: 100091 is a deal, not the contract with the same number (fresh f059)."""
+    as_contract = {"subject": "contracts", "filters": [F("contract", "100091")], "group_by": ["contract"]}
+    as_deal = {"subject": "deals", "filters": [F("deal", "100091")], "group_by": ["deal"]}
+    for q in ("Кто был покупателем по сделке № 100091?", "100091 raqamli bitimda xaridor kim bo‘lgan?",
+              "100091-сонли битимнинг харидори ким?"):
+        assert "as a deal" in (check(as_contract, q) or ""), q
+        assert check(as_deal, q) is None, q
+    for q in ("Кто продавец по контракту № 100091?", "100091-sonli shartnoma bo‘yicha sotuvchi kim?",
+              "100091 рақамли шартноманинг сотувчиси ким?"):
+        assert "as a contract" in (check(as_deal, q) or ""), q
+        assert check(as_contract, q) is None, q
+    # deals of a contract: the contract filter on deals is right
+    assert check({"subject": "deals", "measures": [{"agg": "sum", "of": "amount_uzs"}],
+                  "filters": [F("contract", "102267")]}, "На какую сумму в сумах заключено сделок по контракту 102267?") is None
+
+
+def test_trades_outside_the_exchange_are_not_in_the_data():
+    """«биржадан ташқари савдолари ҳам» (fresh f054) and the general forms in three languages."""
+    from app.plan.checks import not_in_data_error
+    for q in ("Выручка TUMIZO NEFT за 2025 год вместе с продажами вне биржи", "продажи помимо биржи за 2024",
+              "сколько продано за пределами биржи", "внебиржевые продажи хлопка",
+              "Tumizo Neftning birjadan tashqari sotuvlari bilan birga tushumi", "birjasiz savdolar qancha",
+              "boshqa savdo maydonchalarida sotilgan paxta",
+              "ТУМИЗО НЕФТ 2025 йилда жами қанча тушум олган, биржадан ташқари савдолари ҳам қўшиб?",
+              "биржадан бошқа каналлар орқали сотувлар"):
+        assert "outside exchange" in (not_in_data_error(q) or ""), q
+    for q in ("Birja boshqaruvi raisi kim?", "оборот биржи за 2025 год", "2025 yilda birjada nechta bitim",
+              "2025 yilgi bitimlarning necha foizida sotuvchi ham, xaridor ham bitta brokerdan foydalangan?"):
+        err = not_in_data_error(q)
+        assert err is None or "outside exchange" not in err and "profit" not in err, q
