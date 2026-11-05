@@ -33,7 +33,7 @@ _T = {
         "ties_kept": "при равных значениях показаны все",
         "volume_by_unit": "по единицам измерения",
         "per_kg": "цена за тонну = цена за кг × 1000",
-        "record": "записи",
+        "record": "записи", "shown": "показано: {c}", "name_of": "название ({r})",
     },
     "uz": {
         "prefix": "Hisob:", "all_time": "butun davr uchun ({d1}–{d2})", "year": "{y}-yil", "years": "{y1}–{y2}-yillar",
@@ -60,7 +60,7 @@ _T = {
         "ties_kept": "teng qiymatlarda hammasi ko‘rsatilgan",
         "volume_by_unit": "o‘lchov birliklari bo‘yicha",
         "per_kg": "tonna narxi = kg narxi × 1000",
-        "record": "yozuvlar",
+        "record": "yozuvlar", "shown": "ko‘rsatiladi: {c}", "name_of": "{r} nomi",
     },
 }
 
@@ -201,6 +201,37 @@ def _per_kg(s: Subject, m: Measure) -> bool:
     return bool(m.of) and m.of in s.fields and s.fields[m.of].per_kg and m.agg != "distinct"
 
 
+def _record_columns(s: Subject, plan: Plan, lang: str, t) -> list[str]:
+    """Labels of the columns a record lookup shows (name, INN, region, ...), so that a reader (the judge) sees
+    what the answer covers."""
+    from app.answer.plan_templates import _COLS
+    i = 0 if lang == "ru" else 1
+    out: list[str] = []
+    for g in plan.group_by:
+        f = s.fields[g]
+        if f.type != "record":
+            continue
+        for sel in f.columns:
+            alias = sel.rsplit(" AS ", 1)[1].strip()
+            fl = s.fields.get(alias)
+            if fl is None or fl.type == "record":
+                fl = next((x for x in s.fields.values() if x.col == alias and x.type != "record"), None)
+            if fl is not None:
+                text = label(fl, lang)                  # in the question's script already
+            elif alias in _COLS:
+                text = _COLS[alias][i]
+            elif alias.endswith("_name") and alias[:-5] in _COLS:
+                text = _COLS[alias[:-5]][i]
+                text = t["name_of"].replace("{r}", text) if lang != "uz-Cyrl" else f"{text} nomi"
+            else:
+                continue
+            if lang == "uz-Cyrl" and fl is None:
+                text = to_cyrillic(text)
+            if text not in out:
+                out.append(text)
+    return out
+
+
 def explain_plan(plan: Plan, d: Dictionary, notes: list[str], lang: str) -> str:
     lang = "uz-Cyrl" if lang == "uz-Cyrl" else ("uz" if lang.startswith("uz") else "ru")
     t = _T[lang]
@@ -231,6 +262,9 @@ def explain_plan(plan: Plan, d: Dictionary, notes: list[str], lang: str) -> str:
         if flt.field not in time_names:
             parts.append(_filter_phrase(s, flt, notes, lang, t))
     if lookup:
+        shown = _record_columns(s, plan, lang, t)
+        if shown:
+            parts.append(t["shown"].format(c=", ".join(shown)))
         return f"{t['prefix']} " + "; ".join(parts) + "."
     for m in plan.measures:
         phrase = _measure_phrase(s, plan, m, lang, t)

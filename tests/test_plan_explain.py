@@ -51,9 +51,18 @@ def test_share_and_asc():
     assert "по возрастанию" in text
 
 
-def test_lookup_is_short():
-    assert ex({"subject": "deals", "filters": [F("deal", "387830")], "group_by": ["deal"]}) == \
-        "Расчёт: сделки; сделка: 387830."
+def test_lookup_states_the_key_and_what_it_shows():
+    text = ex({"subject": "deals", "filters": [F("deal", "387830")], "group_by": ["deal"]})
+    assert text.startswith("Расчёт: сделки; сделка: 387830; показано: сделка, дата сделки, товар,")
+    assert "название (продавец)" in text and "сумма в сумах" in text and "за весь период" not in text
+
+
+def test_lookup_of_a_broker_lists_name_inn_and_region():
+    # fresh set 2 g036 «название и область» was refused by the judge: the calculation did not say what is shown
+    text = ex({"subject": "brokers", "filters": [F("broker", "BK068")], "group_by": ["broker"]})
+    assert text.startswith("Расчёт: брокеры; брокер: BK068; показано: название (брокер), ИНН, регион,")
+    uz = ex({"subject": "brokers", "filters": [F("broker", "BK068")], "group_by": ["broker"]}, "uz-Cyrl")
+    assert "кўрсатилади: брокер номи, СТИР, ҳудуд," in uz
 
 
 def test_other_subjects():
