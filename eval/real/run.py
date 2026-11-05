@@ -93,7 +93,7 @@ def score_reading(gold: list[tuple[str, object]], answer: str) -> bool:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--split", choices=["dev", "test", "fresh", "fresh2", "all"], default="test")
+    ap.add_argument("--split", choices=["dev", "test", "fresh", "fresh2", "fresh3", "all"], default="test")
     ap.add_argument("--intents", default=str(INTENTS), help="intents file (default eval/real/intents.yaml)")
     ap.add_argument("--langs", default=",".join(LANGS))
     ap.add_argument("--only", default="")
