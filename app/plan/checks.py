@@ -40,8 +40,9 @@ def apply_defaults(plan: Plan, d: Dictionary, question: str) -> Plan:
             # ungrouped counts / totals show all deals and, separately, without annulled ones unless the
             # question names a status: a status filter the question does not ask for is dropped
             plan = plan.with_(filters=tuple(f for f in plan.filters if not _valid_only(f)))
-        if _status_filtered(s, plan) or _record_key_filtered(s, plan):
-            scope = "all"
+        if _status_filtered(s, plan) or _record_key_filtered(s, plan) or any(g in s.status_fields
+                                                                              for g in plan.group_by):
+            scope = "all"            # a status filter, one record, or one row per status: every state counts
         elif plan.measures and _scope_free(s, plan):
             scope = "all"
         elif plan.group_by:
@@ -101,6 +102,10 @@ def consistency_error(plan: Plan, d: Dictionary, question: str) -> str | None:
         if m.agg == "distinct" and m.of in plan.group_by:
             return (f"distinct of {m.of} while grouping by {m.of} is always 1: use count, or group by another field")
         if m.agg == "share":
+            if m.where and all(_valid_only(w) for w in m.where) and _WITHOUT_CANCELLED_RE.search(question):
+                return ("«without annulled» is the scope of the question, not the part: make cancelled = false a "
+                        "plain filter, and mark the part the question asks about (e.g. contract_type, product) "
+                        "numerator:true")
             if all(w in plan.filters for w in m.where):
                 return ("the share numerator equals the filtered scope, so the share is 100%: mark the part's "
                         "condition numerator:true and do not repeat it as a plain filter")
@@ -171,12 +176,15 @@ def named_day_error(plan: Plan, d: Dictionary, question: str) -> str | None:
 
 
 # ---- "по годам" / "yillar bo'yicha": the question asks for one row per period ----
+_EACH = r"(?:har\s+(?:bir\s+)?|ҳар\s+(?:бир\s+)?|кажд\w+\s+)"
+_SLICE = r"\s+(?:bo.yicha|kesimida|бўйича|кесимида)"
 _GRAIN_WORDS = {
-    "year": re.compile(r"по\s+годам|в\s+разрезе\s+лет|погодов|ежегодн|yillar\s+bo.yicha|yillar\s+kesimida|har\s+yili|"
-                       r"йиллар\s+бўйича|йиллар\s+кесимида|ҳар\s+йили", re.IGNORECASE),
-    "quarter": re.compile(r"по\s+кварталам|поквартальн|choraklar\s+bo.yicha|har\s+chorak|чораклар\s+бўйича|ҳар\s+чорак",
-                          re.IGNORECASE),
-    "month": re.compile(r"по\s+месяцам|помесячн|oylar\s+bo.yicha|oyma.oy|ойлар\s+бўйича|ойма.ой", re.IGNORECASE),
+    "year": re.compile(r"по\s+годам|в\s+разрезе\s+(?:лет|годов)|погодов|ежегодн|за\s+каждый\s+год|"
+                       rf"(?:yil|йил)(?:lar|лар)?(?:i|и)?{_SLICE}|{_EACH}(?:yil|йил|год)", re.IGNORECASE),
+    "quarter": re.compile(r"по\s+кварталам|поквартальн|в\s+разрезе\s+кварталов|"
+                          rf"(?:chora[kg]|чора[кг])(?:lar|лар)?(?:i|и)?{_SLICE}|{_EACH}(?:chora[kg]|чора[кг]|квартал)", re.IGNORECASE),
+    "month": re.compile(r"по\s+месяцам|помесячн|в\s+разрезе\s+месяцев|oyma.oy|ойма.ой|"
+                        rf"(?:oy|ой)(?:lar|лар)?(?:i|и)?{_SLICE}|{_EACH}(?:oy|ой|месяц)", re.IGNORECASE),
 }
 
 
@@ -206,6 +214,13 @@ _NOT_IN_DATA = {
     "rating": r"рейтинг|reyting|кредитоспособн",
     "taxes": r"налог|soliq|солиқ",
     "forecast": r"прогноз|спрогноз|будет\s+стоить|bashorat|башорат",
+    # only the US dollar rate is in the data
+    "other_currencies": r"евро|euro|yevro|рубл|rubl|юан|yuan|тенге|tenge|фунт\w*\s+стерлинг|йен[аы]?\b|"
+                        r"иен[аы]?\b|франк|frank|вон[аы]?\s+курс|сом\w*\s+кыргыз",
+    # the exchange's own trades only: no country-wide harvest, production, consumption or other exchanges
+    "outside_exchange": r"урожа|hosil|ҳосил|yetishtiril|етиштирил|производств\w*\s+в\s+стран|"
+                            r"в\s+(?:целом\s+по\s+)?стран[еы]|мамлакатда|mamlakatda|другой\s+бирж|других\s+бирж|"
+                            r"boshqa\s+birja|бошқа\s+биржа|экспорт\w*\s+страны|импорт",
 }
 _NOT_IN_DATA_RE = re.compile("|".join(f"(?P<{k}>{v})" for k, v in _NOT_IN_DATA.items()), re.IGNORECASE)
 
@@ -214,7 +229,7 @@ def not_in_data_error(question: str) -> str | None:
     m = _NOT_IN_DATA_RE.search(question)
     if m is None:
         return None
-    return (f"the question asks about {m.lastgroup} («{m.group(0)}»), which the data does not contain (only deals, "
+    return (f"the question asks about {m.lastgroup.replace('_', ' ')} («{m.group(0)}»), which the data does not contain (only deals, "
             "contracts, participants, brokers and USD rates): call declare_unanswerable instead of answering a "
             "nearby number")
 
@@ -323,6 +338,12 @@ def _show_value(f: Filter) -> str:
 _CANCELLED = "Аннулирован(Не оплачен)"
 _AVG_PRICE_RE = re.compile(r"средн\w*\s+цен|o.rtacha\s+narx|ўртача\s+нарх", re.IGNORECASE)
 _ONE_DEAL_RE = re.compile(r"отдельн|каждой сделк|по сделкам|медиан|взвешен|bitim\s+bo.yicha|har\s+bir", re.IGNORECASE)
+_WEIGHTED_RE = re.compile(r"взвешен|средневзвеш|tortilgan|тортилган|weighted", re.IGNORECASE)
+# "without annulled deals": the scope of the question, never the part a share measures
+_WITHOUT_CANCELLED_RE = re.compile(
+    r"без\s+аннулир|аннулированн\w*\s+не\s+(?:учит|счит)|не\s+считая\s+аннулир|кроме\s+аннулир|"
+    r"bekor\s+qilingan\w*siz|bekor\s+qilinganlar\s+hisobga\s+olinma|бекор\s+қилинган\w*сиз|"
+    r"бекор\s+қилинганлар\s+ҳисобга\s+олинма", re.IGNORECASE)
 _UNIT_FIELDS = {"tonnes", "volume", "lots", "delivered_lots", "unit_price_uzs", "deal_price_per_kg", "base_price",
                 "lot"}
 
@@ -415,6 +436,10 @@ def plan_missing_condition_error(question: str, plan: Plan, d: Dictionary, index
     if ranked and plan.order != "asc" and not least_ok and G._LEAST_RE.search(q):
         return "the question asks for the least / cheapest / fewest: set order asc so the ranking starts from the smallest"
     aggs = {(m.agg, m.of) for m in plan.measures}
+    if _WEIGHTED_RE.search(q) and ("price_per_kg", None) not in aggs and any(
+            of == "deal_price_per_kg" for _, of in aggs):
+        return ("the question asks for the weighted average price (total amount ÷ total volume): use {agg: "
+                "price_per_kg}, not the mean of single deal prices")
     if _AVG_PRICE_RE.search(q) and not _ONE_DEAL_RE.search(q) and ("avg", "deal_price_per_kg") in aggs \
             and ("price_per_kg", None) not in aggs:
         return ("the question asks for the average price without saying how: use both measures price_per_kg "

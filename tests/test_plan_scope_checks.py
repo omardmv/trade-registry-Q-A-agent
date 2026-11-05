@@ -94,3 +94,49 @@ def test_registry_buyers_need_the_role_filter():
     base = {"subject": "companies", "measures": [{"agg": "count"}], "group_by": ["activity"], "limit": 5}
     assert "role" in err(base, q)
     assert err({**base, "filters": [F("role", "Покупатель")]}, q) is None
+
+
+@pytest.mark.parametrize("q", ["Курс евро на 1 марта 2025?", "Средний курс рубля в 2024 году",
+                               "2025 yil 1 mart kuni yevro kursi", "Какая доля урожая хлопка 2025 года в стране продана через биржу?",
+                               "2025 йилда мамлакатда етиштирилган пахта ҳосилининг неча фоизи"])
+def test_other_currencies_and_outside_facts(q):
+    assert "declare_unanswerable" in not_in_data_error(q)
+
+
+def test_status_breakdown_keeps_annulled():
+    p = prepare({"subject": "deals", "measures": [{"agg": "count"}], "filters": [F("year", 2026)],
+                 "group_by": ["status"], "limit": 5}, "Сделки 2026 года по статусам: топ-5")
+    assert p.scope == "all"
+
+
+def test_weighted_price_needs_price_per_kg():
+    q = "2025-yilning qaysi oyida dizel yoqilg‘isining 1 kg uchun o‘rtacha tortilgan narxi eng past bo‘lgan?"
+    base = {"subject": "deals", "filters": [F("product", "Дизельное топливо"), F("year", 2025)],
+            "group_by": ["month"], "order": "asc", "limit": 1}
+    from app.plan.checks import plan_missing_condition_error as pm
+    assert "price_per_kg" in pm(q, prepare({**base, "measures": [{"agg": "avg", "of": "deal_price_per_kg"}]}, q), D, [])
+    assert pm(q, prepare({**base, "measures": [{"agg": "price_per_kg"}]}, q), D, []) is None
+
+
+def test_without_annulled_is_scope_not_the_share_part():
+    q = "2025-yilda birja aylanmasining (so‘mda) necha foizi eksportga to‘g‘ri keladi? Bekor qilinganlar hisobga olinmasin"
+    bad = {"subject": "deals", "measures": [{"agg": "share", "of": "amount_uzs"}],
+           "filters": [F("year", 2025), F("contract_type", "Экспортный"), {**F("cancelled", False), "numerator": True}]}
+    assert "scope" in err(bad, q)
+
+
+@pytest.mark.parametrize("q", ["2026 йил январь-май ойлари кесимида бензин савдоси", "har bir choragida qancha",
+                               "в разрезе месяцев 2025"])
+def test_wider_per_period_words(q):
+    from app.plan.checks import _GRAIN_WORDS
+    assert any(rx.search(q) for rx in _GRAIN_WORDS.values())
+
+
+def test_deal_listing_has_payment_and_delivery_dates():
+    from app.db import Database
+    from app import config
+    p = prepare({"subject": "deals", "filters": [F("deal", 412345)], "group_by": ["deal"]})
+    res = Database(config.DB_PATH).query(build_sql(p, D, None).sql)
+    assert {"payment_date", "delivery_date", "contract_id"} <= set(res.columns)
+    text = render(p, D, res.columns, res.rows, "uz")
+    assert text is not None and "to‘lov sanasi" in text.lower() or "to‘lov" in text

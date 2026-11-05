@@ -52,7 +52,14 @@ deals:
                 "d.product_name_full AS product_variant", "d.seller_inn AS seller_inn", "ps.name AS seller_name",
                 "d.buyer_inn AS buyer_inn", "pb.name AS buyer_name", "d.volume AS volume", "d.unit AS unit",
                 "d.unit_price AS unit_price", "d.currency AS currency", "d.amount_uzs AS amount_uzs",
-                "d.status AS status"]
+                "d.amount_usd AS amount_usd", "d.status AS status", "d.contract_id AS contract_id",
+                "d.contract_type AS contract_type", "d.contract_form AS contract_form", "d.trade_type AS trade_type",
+                "d.region AS region", "d.delivery_basis AS delivery_basis", "d.seller_broker AS seller_broker",
+                "d.buyer_broker AS buyer_broker", "d.quantity AS lots", "d.delivered_lots AS delivered_lots",
+                "d.price_vs_start_pct AS price_change_pct", "d.payment_term_days AS payment_term_days",
+                "d.delivery_term_days AS delivery_term_days", "d.payment_date AS payment_date",
+                "d.days_to_payment AS days_to_payment", "d.payment_late AS payment_late",
+                "d.delivery_date AS delivery_date", "d.delivery_late_days AS delivery_late_days"]
       label: {ru: сделка, uz: bitim}
     contract: {type: dimension, sql: d.contract_id, col: contract_id, ground: contract, many: true,
                label: {ru: контракт, uz: shartnoma}}
@@ -206,7 +213,9 @@ contracts:
                 "c.seller_inn AS seller_inn", "pc.name AS seller_name", "c.registered_date AS registered_date",
                 "c.valid_until AS valid_until", "c.contract_form AS contract_form", "c.contract_type AS contract_type",
                 "c.base_price AS base_price", "c.currency AS currency", "c.unit AS unit",
-                "c.deposit_pct AS deposit_pct", "c.payment_term_days AS payment_term_days", "c.delivery_term_days AS delivery_term_days",
+                "c.deposit_pct AS deposit_pct", "c.lot AS lot", "c.payment_term_days AS payment_term_days",
+                "c.brand AS brand", "c.grade AS grade", "c.size AS size", "c.trade_type AS trade_type",
+                "c.delivery_basis AS delivery_basis", "c.region AS region", "c.warehouse_address AS warehouse_address", "c.delivery_term_days AS delivery_term_days",
                 "COALESCE(cd.deals_all, 0) AS deals_all", "COALESCE(cd.deals_valid, 0) AS deals_valid",
                 "cd.seller_brokers AS seller_brokers", "cd.buyer_brokers AS buyer_brokers"]
       label: {ru: контракт, uz: shartnoma}

@@ -59,6 +59,8 @@ _COLS = {
                                     "xaridor brokeri sifatida bitimlar (bekor qilinganlarsiz)"),
     "deals_either_side": ("сделок на любой стороне", "istalgan tomonda bitimlar"),
     "deals_all": ("сделок всего", "jami bitimlar"), "deals_valid": ("сделок без аннулированных", "bitimlar (bekor qilinganlarsiz)"),
+    "brand": ("марка", "marka"), "grade": ("сорт", "nav"), "size": ("размер", "o‘lcham"),
+    "warehouse_address": ("адрес склада", "ombor manzili"),
     "seller_brokers": ("брокеры продавца", "sotuvchi brokerlari"), "buyer_brokers": ("брокеры покупателя", "xaridor brokerlari"),
 }
 # (id column, name column, kind of id) shown together as «name» (ИНН id) / «name» (код id)
