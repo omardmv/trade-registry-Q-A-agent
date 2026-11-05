@@ -1,0 +1,129 @@
+# Answerable questions in new wordings, for the false-refusal rate of the closed vocabulary (app/plan/vocab.py).
+# Written after the first lexicon round and before the second; the lexicon was not edited to make them pass.
+# Concepts are all in the data (deals, contracts, participants, brokers, USD rates); company names / INNs are
+# real registry entries. Only the vocabulary check is scored on this set (no gold SQL).
+- id: a01
+  questions:
+    ru: Сколько всего сделок прошло на бирже за 2023 год?
+    uz_latn: 2023 yil davomida birjada jami qancha bitim bo'lib o'tdi?
+    uz_cyrl: 2023 йил давомида биржада жами қанча битим бўлиб ўтди?
+- id: a02
+  questions:
+    ru: Назовите пять самых крупных покупателей пшеницы в 2024 году по сумме
+    uz_latn: 2024 yilda summa bo'yicha bug'doyning eng yirik beshta xaridorini ayting
+    uz_cyrl: 2024 йилда сумма бўйича буғдойнинг энг йирик бешта харидорини айтинг
+- id: a03
+  questions:
+    ru: На сколько вырос оборот биржи в 2025 году по сравнению с 2024-м?
+    uz_latn: 2025 yilda birja aylanmasi 2024 yilga nisbatan qanchaga oshdi?
+    uz_cyrl: 2025 йилда биржа айланмаси 2024 йилга нисбатан қанчага ошди?
+- id: a04
+  questions:
+    ru: Какой была самая высокая цена бензина АИ-92 за тонну в 2025 году?
+    uz_latn: 2025 yilda AI-92 benzinining bir tonnasi uchun eng yuqori narx qancha bo'lgan?
+    uz_cyrl: 2025 йилда АИ-92 бензинининг бир тоннаси учун энг юқори нарх қанча бўлган?
+- id: a05
+  questions:
+    ru: Сколько контрактов зарегистрировано в Андижанской области?
+    uz_latn: Andijon viloyatida nechta shartnoma ro'yxatdan o'tgan?
+    uz_cyrl: Андижон вилоятида нечта шартнома рўйхатдан ўтган?
+- id: a06
+  questions:
+    ru: Сколько компаний-покупателей зарегистрировано в Бухарской области?
+    uz_latn: Buxoro viloyatida ro'yxatdan o'tgan xaridor kompaniyalar soni qancha?
+    uz_cyrl: Бухоро вилоятида рўйхатдан ўтган харидор компаниялар сони қанча?
+- id: a07
+  questions:
+    ru: Какой был курс доллара 10 августа 2023 года?
+    uz_latn: 2023 yil 10 avgustda dollar kursi qancha edi?
+    uz_cyrl: 2023 йил 10 августда доллар курси қанча эди?
+- id: a08
+  questions:
+    ru: Сколько сделок по сахару было аннулировано в 2024 году?
+    uz_latn: 2024 yilda shakar bo'yicha nechta bitim bekor qilindi?
+    uz_cyrl: 2024 йилда шакар бўйича нечта битим бекор қилинди?
+- id: a09
+  questions:
+    ru: Какой брокер обслужил больше всего покупателей в 2025 году?
+    uz_latn: 2025 yilda qaysi broker eng ko'p xaridorga xizmat ko'rsatgan?
+    uz_cyrl: 2025 йилда қайси брокер энг кўп харидорга хизмат кўрсатган?
+- id: a10
+  questions:
+    ru: Средний объём одной сделки с цементом в тоннах за 2024 год
+    uz_latn: 2024 yilda sement bo'yicha bitta bitimning o'rtacha hajmi necha tonna?
+    uz_cyrl: 2024 йилда цемент бўйича битта битимнинг ўртача ҳажми неча тонна?
+- id: a11
+  questions:
+    ru: Сколько экспортных контрактов заключено в долларах?
+    uz_latn: Dollarda tuzilgan eksport shartnomalari nechta?
+    uz_cyrl: Долларда тузилган экспорт шартномалари нечта?
+- id: a12
+  questions:
+    ru: Сколько сделок с хлопком-сырцом оплатили позже срока в 2025 году?
+    uz_latn: 2025 yilda paxta xomashyosi bo'yicha nechta bitim muddatidan kech to'langan?
+    uz_cyrl: 2025 йилда пахта хомашёси бўйича нечта битим муддатидан кеч тўланган?
+- id: a13
+  questions:
+    ru: В какой день 2024 года было заключено больше всего сделок?
+    uz_latn: 2024 yilning qaysi kunida eng ko'p bitim tuzilgan?
+    uz_cyrl: 2024 йилнинг қайси кунида энг кўп битим тузилган?
+- id: a14
+  questions:
+    ru: Каким было минимальное значение курса доллара в 2023 году?
+    uz_latn: 2023 yilda dollar kursining eng past qiymati qancha bo'lgan?
+    uz_cyrl: 2023 йилда доллар курсининг энг паст қиймати қанча бўлган?
+- id: a15
+  questions:
+    ru: Сколько форвардных сделок было в Самаркандской области в 2025 году?
+    uz_latn: 2025 yilda Samarqand viloyatida nechta forvard bitim bo'lgan?
+    uz_cyrl: 2025 йилда Самарқанд вилоятида нечта форвард битим бўлган?
+- id: a16
+  questions:
+    ru: Сколько брокерских контор работает в Ташкенте?
+    uz_latn: Toshkent shahrida nechta broker idorasi bor?
+    uz_cyrl: Тошкент шаҳрида нечта брокер идораси бор?
+- id: a17
+  questions:
+    ru: Сколько продавцов являются плательщиками НДС?
+    uz_latn: Nechta sotuvchi QQS to'lovchisi hisoblanadi?
+    uz_cyrl: Нечта сотувчи ҚҚС тўловчиси ҳисобланади?
+- id: a18
+  questions:
+    ru: Сколько процентов сделок 2024 года было исполнено полностью?
+    uz_latn: 2024 yilgi bitimlarning necha foizi to'liq bajarilgan?
+    uz_cyrl: 2024 йилги битимларнинг неча фоизи тўлиқ бажарилган?
+- id: a19
+  questions:
+    ru: Какие товары продавались в 2025 году через английский аукцион чаще всего?
+    uz_latn: 2025 yilda ingliz auksioni orqali qaysi tovarlar eng ko'p sotilgan?
+    uz_cyrl: 2025 йилда инглиз аукциони орқали қайси товарлар энг кўп сотилган?
+- id: a20
+  questions:
+    ru: Сколько тонн минеральных удобрений продано за 2024 год?
+    uz_latn: 2024 yilda necha tonna mineral o'g'it sotilgan?
+    uz_cyrl: 2024 йилда неча тонна минерал ўғит сотилган?
+- id: a21
+  questions:
+    ru: Какой средний залог в процентах по контрактам на дизельное топливо?
+    uz_latn: Dizel yoqilg'isi shartnomalarida garov o'rtacha necha foiz?
+    uz_cyrl: Дизель ёқилғиси шартномаларида гаров ўртача неча фоиз?
+- id: a22
+  questions:
+    ru: Сколько сделок провела компания Zoket Invest в качестве покупателя?
+    uz_latn: Zoket Invest kompaniyasi xaridor sifatida nechta bitim tuzgan?
+    uz_cyrl: Zoket Invest компанияси харидор сифатида нечта битим тузган?
+- id: a23
+  questions:
+    ru: Сколько дней в среднем занимает поставка после оплаты по сахару?
+    uz_latn: Shakar bo'yicha to'lovdan keyin yetkazib berish o'rtacha necha kun oladi?
+    uz_cyrl: Шакар бўйича тўловдан кейин етказиб бериш ўртача неча кун олади?
+- id: a24
+  questions:
+    ru: Сколько сделок было в каждом месяце 2023 года?
+    uz_latn: 2023 yilning har bir oyida nechta bitim bo'lgan?
+    uz_cyrl: 2023 йилнинг ҳар бир ойида нечта битим бўлган?
+- id: a25
+  questions:
+    ru: Какая доля экспортных сделок в общем числе сделок за 2025 год?
+    uz_latn: 2025 yilda barcha bitimlar ichida eksport bitimlarining ulushi qancha?
+    uz_cyrl: 2025 йилда барча битимлар ичида экспорт битимларининг улуши қанча?
