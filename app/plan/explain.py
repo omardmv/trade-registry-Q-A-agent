@@ -18,7 +18,7 @@ _T = {
         "share": "доля ({b}), где {c}, — от всей выборки", "share_count": "по числу", "share_all": ", включая аннулированные",
         "share_valid": ", без аннулированных",
         "top": "топ-{n}", "top_per": "топ-{n} в каждой группе ({g})", "default_limit": "показаны первые {n}",
-        "asc": "по возрастанию (наименьшие значения)",
+        "asc": "по возрастанию (наименьшие значения)", "desc": "по убыванию (наибольшие значения)",
         "compare": "сравнение периодов: {p1} и {p2}; изменение в % к первому периоду",
         "compare_points": "доли — изменение в процентных пунктах",
         "yes": "да", "no": "нет", "not": "не {v}", "between": "от {a} до {b}", "ge": "≥ {v}", "le": "≤ {v}",
@@ -45,7 +45,7 @@ _T = {
         "share": "ulush ({b}), bunda {c}, — butun tanlovdan", "share_count": "soni bo‘yicha",
         "share_all": ", bekor qilinganlar bilan", "share_valid": ", bekor qilinganlarsiz",
         "top": "eng yaxshi {n} ta", "top_per": "har bir guruhda ({g}) eng yaxshi {n} ta", "default_limit": "birinchi {n} tasi ko‘rsatilgan",
-        "asc": "o‘sish tartibida (eng kichik qiymatlar)",
+        "asc": "o‘sish tartibida (eng kichik qiymatlar)", "desc": "kamayish tartibida (eng katta qiymatlar)",
         "compare": "davrlar taqqoslanadi: {p1} va {p2}; birinchi davrga nisbatan o‘zgarish, %",
         "compare_points": "ulushlar — o‘zgarish foiz punktlarida",
         "yes": "ha", "no": "yo‘q", "not": "{v} emas", "between": "{a} dan {b} gacha", "ge": "≥ {v}", "le": "≤ {v}",
@@ -283,6 +283,8 @@ def explain_plan(plan: Plan, d: Dictionary, notes: list[str], lang: str) -> str:
             parts.append(t["top"].format(n=plan.limit))
     if plan.order == "asc":
         parts.append(t["asc"])
+    elif plan.limit is not None and any(m.agg == "min" for m in plan.measures):
+        parts.append(t["desc"])       # a ranking by a minimum, largest first: say so next to «минимум»
     scope_free_only = bool(plan.measures) and all(
         m.agg == "share" or (m.agg in s.measures and s.measures[m.agg].scope_free) for m in plan.measures)
     for note in notes:

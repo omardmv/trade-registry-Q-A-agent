@@ -32,12 +32,6 @@ CASES = [
      {"subject": "deals", "measures": [{"agg": "count"}], "filters": [F("year", 2024)]},
      {"subject": "deals", "measures": [{"agg": "count"}], "filters": [F("year", 2024), F("contract_type", "Экспортный")]},
      "Экспортный"),
-    ("Какой товар продан на наименьшую сумму в 2023 году?",
-     {"subject": "deals", "measures": [{"agg": "sum", "of": "amount_uzs"}], "filters": [F("year", 2023)],
-      "group_by": ["product"], "limit": 1},
-     {"subject": "deals", "measures": [{"agg": "sum", "of": "amount_uzs"}], "filters": [F("year", 2023)],
-      "group_by": ["product"], "limit": 1, "order": "asc"},
-     "asc"),
     ("Сколько тонн хлопка-сырца 1 сорт продано?",
      {"subject": "deals", "measures": [{"agg": "sum", "of": "tonnes"}], "filters": [F("product", "Хлопок-сырец")]},
      {"subject": "deals", "measures": [{"agg": "sum", "of": "tonnes"}],
@@ -74,6 +68,14 @@ CASES = [
       "filters": [{"field": "contract_type", "value": "Экспортный", "numerator": True}]},
      "share"),
 ]
+
+
+def test_least_wording_is_ordered_ascending_before_the_guard():
+    """«наименьшую сумму»: apply_defaults sets order asc (checks.extreme_order), so the guard's least check is not
+    needed for it any more."""
+    p = prepare({"subject": "deals", "measures": [{"agg": "sum", "of": "amount_uzs"}], "filters": [F("year", 2023)],
+                 "group_by": ["product"], "limit": 1}, "Какой товар продан на наименьшую сумму в 2023 году?")
+    assert p.order == "asc"
 
 
 @pytest.mark.parametrize("q, bad, good, needle", CASES, ids=[c[3] for c in CASES])

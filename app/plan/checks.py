@@ -38,8 +38,42 @@ ALL_STATUSES_RE = re.compile(
     r"bekor\s+qilingan\w*\s+(?:bilan|ham)\b|бекор\s+қилинган\w*\s+(?:билан|ҳам)(?!\w)", re.IGNORECASE)
 
 
+# Extreme words of a ranking (normalize_text form: Russian transliterated, Uzbek Cyrillic in Latin). "low": the
+# question asks for the smallest values (самый дешёвый, наименьший, минимальный, меньше всего, eng arzon, eng kam);
+# "high": the largest (самый дорогой, наибольший, больше всего, eng qimmat, eng ko‘p).
+_LOW_RE = re.compile(
+    r"\b(?:sam\w*\s+(?:deshyov|deshev|nizk|malen|melk|redk)\w*|naimen\w*|(?<!kak )minim\w*|"
+    r"(?:menshe|deshevle|nije|reje)\s+vse(?:go|x)|vse(?:go|x)\s+(?:menshe|deshevle|reje)|"
+    r"eng\s+(?:arzon|kam(?!ida)|past|kichik|oz)\w*)")
+_HIGH_RE = re.compile(
+    r"\b(?:sam\w*\s+(?:dorog|visok|bolsh|krupn|chast)\w*|naibol\w*|maksim\w*|"
+    r"(?:bolshe|doroje|vishe|chashe)\s+vse(?:go|x)|vse(?:go|x)\s+(?:bolshe|doroje|chashe)|"
+    r"eng\s+(?:qimmat|kop|yuqori|baland|katta|yirik)\w*)")
+
+
+def extreme_order(plan: Plan, question: str) -> str | None:
+    """The order a ranked plan must have, or None when nothing decides it. The question's extreme words decide
+    when they point one way (самый дешёвый / eng arzon -> asc; больше всего / eng qimmat -> desc); with no
+    extreme word (or words of both kinds: «самый высокий минимум») a ranking by min sorts asc and by max desc."""
+    if plan.limit is None or not plan.measures or not plan.group_by:
+        return None
+    q = normalize_text(question)
+    low, high = bool(_LOW_RE.search(q)), bool(_HIGH_RE.search(q))
+    if low != high:
+        return "asc" if low else "desc"
+    if low and high:
+        return None
+    aggs = {m.agg for m in plan.measures}
+    if aggs == {"min"}:
+        return "asc"
+    if aggs == {"max"}:
+        return "desc"
+    return None
+
+
 def apply_defaults(plan: Plan, d: Dictionary, question: str) -> Plan:
-    """Status view for deals (as the structured form did) and the default limit of a large grouping."""
+    """Status view for deals (as the structured form did), the default limit of a large grouping, and the order
+    of a ranking by an extreme (extreme_order)."""
     s = d.subject(plan.subject)
     if s.cancelled:
         q = question.lower()
@@ -66,6 +100,9 @@ def apply_defaults(plan: Plan, d: Dictionary, question: str) -> Plan:
     fields = [s.fields[g] for g in plan.group_by]
     if plan.limit is None and any(f.many or f.type == "record" for f in fields) and not _record_key_filtered(s, plan):
         plan = plan.with_(limit=DEFAULT_LIMIT, default_limit=True)
+    want = extreme_order(plan, question)
+    if want is not None and plan.order != want:
+        plan = plan.with_(order=want)
     return plan
 
 

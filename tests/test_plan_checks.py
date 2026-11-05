@@ -227,3 +227,36 @@ def test_trades_outside_the_exchange_are_not_in_the_data():
               "2025 yilgi bitimlarning necha foizida sotuvchi ham, xaridor ham bitta brokerdan foydalangan?"):
         err = not_in_data_error(q)
         assert err is None or "outside exchange" not in err and "profit" not in err, q
+
+
+# ---- fresh3 fixes ----
+def test_ranking_by_an_extreme_sorts_the_way_the_question_asks():
+    """h041: «Когда в 2025 году доллар был самым дешёвым?» was planned {agg: min} by day, limit 1, order desc and
+    showed the highest rate labelled «минимум». The extreme words decide the order; without them min sorts asc and
+    max desc."""
+    cheapest = {"subject": "usd_rates", "measures": [{"agg": "min", "of": "rate"}], "filters": [F("year", 2025)],
+                "group_by": ["day"], "limit": 1, "order": "desc"}
+    for q in ("Когда в 2025 году доллар был самым дешёвым?", "2025-yilda dollar qaysi kuni eng arzon bo‘lgan?",
+              "2025 йилда доллар қайси куни энг арзон бўлган?", "в какой день 2025 года курс был минимальным",
+              "в какой день 2025 года"):
+        assert prepare(cheapest, q).order == "asc", q
+    dearest = {**cheapest, "measures": [{"agg": "max", "of": "rate"}], "order": "asc", "limit": 3}
+    for q in ("2026-yilda dollar eng qimmat bo‘lgan uchta kunni ayt", "2026 йилда доллар энг қиммат бўлган учта кунни айт",
+              "три самых дорогих дня доллара в 2026", "в какие дни 2025"):
+        assert prepare(dearest, q).order == "desc", q
+    # a count ranking: «меньше всего» / «eng kam» -> asc, «больше всего» / «eng ko‘p» -> desc
+    regions = {"subject": "deals", "measures": [{"agg": "count"}], "filters": [F("year", 2024)],
+               "group_by": ["region"], "limit": 3}
+    for q, want in (("в каких регионах меньше всего сделок в 2024", "asc"),
+                    ("2024-yilda qaysi viloyatlarda eng kam bitim bo‘lgan", "asc"),
+                    ("2024 йилда қайси вилоятларда энг кам битим бўлган", "asc"),
+                    ("где больше всего сделок в 2024", "desc"), ("2024-yilda eng ko‘p bitim", "desc")):
+        assert prepare({**regions, "order": "desc" if want == "asc" else "asc"}, q).order == want, q
+    # words of both kinds («самый высокий минимум»): the planner's order stays
+    both = {**cheapest, "group_by": ["month"], "order": "desc"}
+    assert prepare(both, "в каком месяце 2025 минимальный курс был самым высоким").order == "desc"
+    # «как минимум» / «eng kamida» (at least) are not extreme words; no ranking -> nothing changes
+    assert prepare({**regions, "order": "desc"}, "регионы, где как минимум 10 сделок в 2024").order == "desc"
+    assert prepare({**regions, "order": "desc"}, "2024-yilda eng kamida 10 ta bitim").order == "desc"
+    assert prepare({"subject": "deals", "measures": [{"agg": "min", "of": "amount_uzs"}],
+                    "filters": [F("year", 2024)]}, "самая дешёвая сделка").order == "desc"

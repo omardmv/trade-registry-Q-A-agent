@@ -98,3 +98,16 @@ def test_uzbek_cyrillic_sentence_has_no_latin_words_but_keeps_values():
     assert text.startswith("Ҳисоб: битимлар; 2024-йил")
     assert "Cotton Lint Export" in text                          # data values are never transliterated
     assert not re.search(r"[A-Za-z]", text.replace("Cotton Lint Export", "")), text
+
+
+def test_extreme_ranking_label_states_the_direction():
+    """h041: a ranking by a minimum states which end it shows (it was «минимум; топ-1» over the highest rate)."""
+    plan = {"subject": "usd_rates", "measures": [{"agg": "min", "of": "rate"}], "filters": [F("year", 2025)],
+            "group_by": ["day"], "limit": 1, "order": "desc"}
+    assert "минимум" in ex(plan, "ru", "Когда в 2025 году доллар был самым дешёвым?")
+    assert "по возрастанию (наименьшие значения)" in ex(plan, "ru", "Когда в 2025 году доллар был самым дешёвым?")
+    assert "o‘sish tartibida" in ex(plan, "uz", "2025-yilda dollar qaysi kuni eng arzon bo‘lgan?")
+    assert "ўсиш тартибида" in ex(plan, "uz-Cyrl", "2025 йилда доллар қайси куни энг арзон бўлган?")
+    # «самый высокий минимум» keeps desc, and the label says the largest values are shown
+    month = {**plan, "group_by": ["month"]}
+    assert "по убыванию (наибольшие значения)" in ex(month, "ru", "в каком месяце минимальный курс был самым высоким")
