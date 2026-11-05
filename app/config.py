@@ -106,3 +106,5 @@ GRAMMAR_MAX_FIX_RETRIES = int(os.environ.get("UZEX_GRAMMAR_MAX_FIX_RETRIES", "4"
 ROW_LIMIT = 1000
 # Planner: grammar (small general plan, run_plan; app/plan/; default) or legacy (old structured form, compile_query)
 PLANNER = os.environ.get("PLANNER", "grammar").strip().lower() or "grammar"
+# closed vocabulary (app/plan/vocab.py, grammar planner): refuse questions with words outside the data's lexicon
+CLOSED_VOCAB = os.environ.get("UZEX_CLOSED_VOCAB", "1").strip().lower() not in ("0", "false", "no", "off")

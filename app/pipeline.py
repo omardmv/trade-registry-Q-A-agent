@@ -220,6 +220,8 @@ def build_pipeline() -> Pipeline:
         from app.agent.grammar_writer import GrammarWriter
         writer = GrammarWriter(llm, db, resolver, config.MAX_TOOL_CALLS + 4, config.GRAMMAR_MAX_FIX_RETRIES,
                                config.LLM_TIMEOUT_S)
+        if not config.CLOSED_VOCAB:
+            writer.vocab = None          # both stages off
     else:
         writer = Writer(llm, db, resolver, ExampleStore.from_yaml(config.EXAMPLES_PATH),
                         render_schema_prompt(load_semantic()), config.MAX_TOOL_CALLS, config.MAX_FIX_RETRIES,
