@@ -4,6 +4,8 @@
     uv run python -m eval.real.run --split dev --langs ru  # tuning half, Russian only
     uv run python -m eval.real.run --only r001,r014
     uv run python -m eval.real.run --split dev --providers qwen_local      # one provider (or a chain: a,b)
+    uv run python -m eval.real.run --paraphrases eval/real/unanswerable_paraphrases.yaml --providers openai \
+        --max-cost 0.05                     # a paraphrase set instead of the intents (refusal / answered only)
 
 For every phrasing: a reading is correct when all of its key values (first ≤ 5 rows) appear in the answer.
 Reported: any reading right, all readings shown (ambiguous intents), refused correctly, wrong answers, latency,
@@ -17,6 +19,7 @@ import statistics
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import yaml
 
@@ -101,12 +104,19 @@ def main() -> int:
     ap.add_argument("--usd-per-m-tokens", type=float, default=0.17,
                     help="estimated USD per 1M input tokens, output included (calibrated from the OpenAI usage page: "
                          "$2.06 for 12.23M input tokens with gpt-5.4-mini)")
+    ap.add_argument("--paraphrases", default="", help="a paraphrase file (eval/real/*_paraphrases.yaml) instead of "
+                                                      "the intents: unanswerable_* must be refused; answerable_* "
+                                                      "have no gold SQL, only answered / refused is scored")
     ap.add_argument("--rescore", default="", help="re-score a saved results file without calling the model")
     args = ap.parse_args()
     if args.rescore:
         return rescore(args.rescore)
 
-    intents = yaml.safe_load(open(INTENTS, encoding="utf-8"))
+    if args.paraphrases:
+        intents = load_paraphrases(args.paraphrases)
+        args.split = "all"
+    else:
+        intents = yaml.safe_load(open(INTENTS, encoding="utf-8"))
     problems = schema_word_problems(intents)
     if problems:
         print("Questions with schema words or English hints (fix before scoring):", *problems, sep="\n  ")
@@ -152,9 +162,14 @@ def main() -> int:
             row.update(any_ok=False, all_ok=False, answered=False, answer="")
             return row
         row.update(answer=res.answer, source=res.source, sql=res.sql, answered=res.answered,
-                   providers=getattr(res, "providers_used", None))
+                   providers=getattr(res, "providers_used", None), reason=res.reason,
+                   judge=[t for t in res.trace if t.get("tool") == "judge"],
+                   fixes=[t["error"] for t in res.trace if t.get("error")])
         if not intent["answerable"]:
             row.update(any_ok=not res.answered, all_ok=not res.answered)
+            return row
+        if not golds[intent["id"]]:      # answerable paraphrase: no gold SQL, answered is all that is scored
+            row.update(unscored=True, any_ok=res.answered, all_ok=res.answered)
             return row
         hits = [res.answered and score_reading(g, res.answer) for g in golds[intent["id"]]]
         row.update(reading_hits=hits, any_ok=any(hits), all_ok=all(hits))
@@ -204,10 +219,22 @@ def main() -> int:
     out = config.ROOT / "eval" / "results"
     out.mkdir(parents=True, exist_ok=True)
     stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    (out / f"real-{args.split}-{stamp}.json").write_text(json.dumps(
+    name = f"para-{Path(args.paraphrases).stem}" if args.paraphrases else args.split
+    (out / f"real-{name}-{stamp}.json").write_text(json.dumps(
         {"summary": summary, "breakdown": breakdown, "rows": rows,
          "golds": {k: v for k, v in golds.items()}}, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
     return 0
+
+
+def load_paraphrases(path: str) -> list[dict]:
+    """Paraphrase items as intents: no readings; unanswerable_* files are no-answer questions."""
+    answerable = "unanswerable" not in str(path).rsplit("/", 1)[-1]
+    out = []
+    for p in yaml.safe_load(open(path, encoding="utf-8")):
+        out.append({"id": p["id"], "split": "para", "subject": p.get("concept", "paraphrase"),
+                    "shape": p.get("kind", "answerable"), "answerable": answerable, "readings": [],
+                    "questions": p["questions"]})
+    return out
 
 
 def rescore(path: str) -> int:

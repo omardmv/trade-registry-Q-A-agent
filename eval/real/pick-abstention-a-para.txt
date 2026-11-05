@@ -1,0 +1,13 @@
+a01/uz_latn
+a01/uz_cyrl
+a09/ru
+a09/uz_latn
+a09/uz_cyrl
+a14/ru
+a18/ru
+a19/uz_latn
+a19/uz_cyrl
+a22/ru
+a23/ru
+a23/uz_latn
+a23/uz_cyrl

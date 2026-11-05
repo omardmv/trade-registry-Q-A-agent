@@ -1,0 +1,14 @@
+t01/ru
+t01/uz_cyrl
+t02/ru
+t02/uz_latn
+t03/uz_latn
+t03/uz_cyrl
+t04/ru
+t04/uz_cyrl
+t05/ru
+t05/uz_latn
+t06/uz_latn
+t06/uz_cyrl
+t07/ru
+t07/uz_cyrl
