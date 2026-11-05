@@ -430,11 +430,11 @@
   intent: Top 3 sellers by number of registered contracts, whole registry (INN and name)
   readings:
   - name: contracts per seller
-    sql: SELECT c.seller_inn, p.name, COUNT(*) AS n FROM contracts c JOIN participants p ON p.inn = c.seller_inn GROUP BY c.seller_inn, p.name ORDER BY n DESC LIMIT 3
+    sql: SELECT c.seller_inn, p.name, COUNT(*) AS n FROM contracts c JOIN participants p ON p.inn = c.seller_inn GROUP BY c.seller_inn, p.name ORDER BY n DESC, c.seller_inn LIMIT 3
     key:
     - seller_inn
     - name
-    sql_check: SELECT seller_inn, (SELECT name FROM participants WHERE inn = seller_inn) AS name, COUNT(*) AS n FROM contracts GROUP BY seller_inn ORDER BY n DESC LIMIT 3
+    sql_check: SELECT seller_inn, (SELECT name FROM participants WHERE inn = seller_inn) AS name, COUNT(*) AS n FROM contracts GROUP BY seller_inn ORDER BY n DESC, seller_inn LIMIT 3
   questions:
     ru: Кто из продавцов зарегистрировал больше всего контрактов за всё время? Назовите первых трёх, ИНН и название
     uz_latn: Qaysi sotuvchilar butun davr mobaynida eng koʻp shartnoma royxatdan otkazgan? Birinchi uchtasini ayting, STIR va nomi bilan
