@@ -15,6 +15,7 @@ import re
 from dataclasses import dataclass
 
 from app.agent.guard import _tok_match, mentioned_spans
+from app.plan.checks import years_covered
 from app.plan.dictionary import Dictionary, Subject
 from app.plan.model import Filter, Mention, Plan
 from app.plan.validate import GROUND_KIND
@@ -67,33 +68,6 @@ def _num(text: str) -> float:
 
 def _values(flt: Filter) -> tuple:
     return flt.value if isinstance(flt.value, tuple) else (flt.value,)
-
-
-def _years_covered(plan: Plan, s: Subject):
-    """-> predicate year -> bool: is the year inside the plan's period (clamped ranges tolerate years outside the
-    data on the clamped side). None when the plan has no period."""
-    lo_d, hi_d = (s.data_range[0].year, s.data_range[1].year) if s.data_range else (None, None)
-    checks = []
-    for flt in plan.filters:
-        f = s.fields.get(flt.field)
-        if f is None or not (flt.field == "year" or f.type == "date"):
-            continue
-        vals = [v if isinstance(v, int) else v.year for v in _values(flt)]
-        if flt.op in ("=", "in"):
-            checks.append(lambda y, vals=vals: y in vals)
-        elif flt.op == "between":
-            a, b = vals
-            checks.append(lambda y, a=a, b=b: a <= y <= b or (y < a and a == lo_d) or (y > b and b == hi_d))
-        elif flt.op == ">=":
-            checks.append(lambda y, a=vals[0]: y >= a or (y < a and a == lo_d))
-        elif flt.op == "<=":
-            checks.append(lambda y, b=vals[0]: y <= b or (y > b and b == hi_d))
-    if plan.compare:
-        years = {p.year for p in plan.compare}
-        checks.append(lambda y: y in years)
-    if not checks:
-        return None
-    return lambda y: any(c(y) for c in checks)
 
 
 def _targets(plan: Plan, raw_filters: set[str]) -> list[str]:
@@ -195,7 +169,7 @@ def mention_error(plan: Plan, d: Dictionary, question: str, index, resolutions=(
                         f"for it>, used_as: group_by:{g}}}, or drop it from group_by")
 
     # c) numbers of a mention agree with the element it sets
-    covered = _years_covered(plan, s)
+    covered = years_covered(plan, s)
     for m in period_mentions:
         for y in (int(x) for x in _YEAR_RE.findall(normalize_text(m.text))):
             if covered is None or not covered(y):

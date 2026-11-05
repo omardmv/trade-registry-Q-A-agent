@@ -367,8 +367,9 @@ class Writer:
 
     def _sql(self, args, allowed, question, deadline, names=(), state=None) -> WriterResult | str:
         if state is not None and state.get("guard"):
-            return ("submit_sql is not allowed after compile_query reported a missing condition "
-                    f"({state['guard'][:160]}...): fix the spec, or call declare_unanswerable")
+            return (f"submit_sql is not allowed after {self.compile_tool} reported a missing condition "
+                    f"({state['guard'][:160]}...): fix the {'plan' if self.compile_tool == 'run_plan' else 'spec'}, "
+                    "or call declare_unanswerable")
         sql = str(args.get("sql", ""))
         if (err := sql_missing_condition_error(question, sql, self._guard_index, names)) is not None:
             return err

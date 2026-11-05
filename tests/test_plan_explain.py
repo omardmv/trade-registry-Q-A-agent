@@ -70,3 +70,12 @@ def test_variant_spelling_count(db):
     text = ex({"subject": "deals", "measures": [{"agg": "count"}], "filters": [F("product_variant", "АИ-92")]},
               variants=r.variant_names)
     assert f"вариант названия товара: АИ-92 ({len(r.variant_names('АИ-92'))} написаний)" in text
+
+
+def test_time_filters_not_in_the_period_phrase_are_listed():
+    text = ex({"subject": "deals", "measures": [{"agg": "count"}],
+               "filters": [F("year", 2024), F("month", [1, 2, 3], "in")]})
+    assert "за 2024 год" in text and "месяц: 1, 2, 3" in text
+    text = ex({"subject": "deals", "measures": [{"agg": "count"}],
+               "filters": [F("year", [2023, 2024], "between"), F("quarter", 2)]})
+    assert "2023–2024" in text and "квартал: 2" in text

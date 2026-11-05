@@ -90,38 +90,38 @@ def _one(plan_filters, name):
     return next((f for f in plan_filters if f.field == name), None)
 
 
-def _period(s: Subject, filters, t) -> tuple[str, bool]:
-    """(period phrase, reaches the end of the data)."""
+def _period(s: Subject, filters, t) -> tuple[str, bool, list]:
+    """(period phrase, reaches the end of the data, the time filters the phrase states)."""
     lo, hi = s.data_range
     y, m, q = _one(filters, "year"), _one(filters, "month"), _one(filters, "quarter")
     dflt = _one(filters, s.date_field) or _one(filters, "day")
     if dflt is not None:
         v = dflt.value
         if dflt.op == "=":
-            return t["date_eq"].format(d=_d(v)), False
+            return t["date_eq"].format(d=_d(v)), False, [dflt]
         if dflt.op == "between":
-            return t["dates"].format(d1=_d(v[0]), d2=_d(v[1])), v[1] >= hi
+            return t["dates"].format(d1=_d(v[0]), d2=_d(v[1])), v[1] >= hi, [dflt]
         if dflt.op == ">=":
-            return t["date_from"].format(d1=_d(v)), True
+            return t["date_from"].format(d1=_d(v)), True, [dflt]
         if dflt.op == "<=":
-            return t["date_to"].format(d2=_d(v)), False
+            return t["date_to"].format(d2=_d(v)), False, [dflt]
     if y is None:
-        return t["all_time"].format(d1=_d(lo), d2=_d(hi)), False
+        return t["all_time"].format(d1=_d(lo), d2=_d(hi)), False, []
     if y.op == "=":
         yy = y.value
         if q is not None and q.op == "=":
-            return t["quarter"].format(q=q.value, y=yy), yy == hi.year and 3 * q.value >= hi.month
+            return t["quarter"].format(q=q.value, y=yy), yy == hi.year and 3 * q.value >= hi.month, [y, q]
         if m is not None and m.op in ("=", "between"):
             m1, m2 = (m.value, m.value) if m.op == "=" else m.value
             text = (t["month"].format(m=f"{m1:02d}.{yy}") if m1 == m2
                     else t["months"].format(m1=f"{m1:02d}.{yy}", m2=f"{m2:02d}.{yy}"))
-            return text, yy == hi.year and m2 >= hi.month
-        return t["year"].format(y=yy), yy == hi.year
+            return text, yy == hi.year and m2 >= hi.month, [y, m]
+        return t["year"].format(y=yy), yy == hi.year, [y]
     if y.op == "between":
-        return t["years"].format(y1=y.value[0], y2=y.value[1]), y.value[1] >= hi.year
+        return t["years"].format(y1=y.value[0], y2=y.value[1]), y.value[1] >= hi.year, [y]
     if y.op == "in":
-        return t["years_in"].format(ys=", ".join(str(v) for v in y.value)), hi.year in y.value
-    return f"{label(s.fields['year'], 'ru' if t is _T['ru'] else 'uz')} {_value(y, t)}", True
+        return t["years_in"].format(ys=", ".join(str(v) for v in y.value)), hi.year in y.value, [y]
+    return f"{label(s.fields['year'], 'ru' if t is _T['ru'] else 'uz')} {_value(y, t)}", True, [y]
 
 
 def _period_text(s: Subject, p: Period, t) -> str:
@@ -180,10 +180,13 @@ def explain_plan(plan: Plan, d: Dictionary, notes: list[str], lang: str) -> str:
         if any(m.agg in ("share", "cancelled_share") for m in plan.measures):
             parts.append(t["compare_points"])
     elif s.data_range is not None:
-        text, to_end = _period(s, plan.filters, t)
+        text, to_end, used = _period(s, plan.filters, t)
         if to_end:
             text += t["data_until"].format(d=_d(s.data_range[1]))
         parts.append(text)
+        # time filters the period phrase does not state (a month list, a quarter with a year range, ...)
+        parts += [_filter_phrase(s, f, notes, lang, t) for f in plan.filters
+                  if f.field in time_names and not any(f is u for u in used)]
     lookup = any(s.fields[f.field].type == "record" and f.op in ("=", "in") for f in plan.filters)
     if lookup:
         parts = parts[:1]

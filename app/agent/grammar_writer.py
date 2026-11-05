@@ -8,7 +8,7 @@ from app.agent.validators import grounding_status, missing_message
 from app.agent.writer import Writer, WriterResult
 from app.db import QueryError
 from app.plan.build import build_sql
-from app.plan.checks import apply_defaults, consistency_error
+from app.plan.checks import apply_defaults, consistency_error, plan_missing_condition_error
 from app.plan.dictionary import Dictionary, load_dictionary
 from app.plan.mentions import Resolution, mention_error
 from app.plan.model import PlanError, parse_plan
@@ -38,6 +38,11 @@ class GrammarWriter(Writer):
         raw_filters = frozenset(f.field for f in plan.filters)
         plan = apply_defaults(plan, d, question)
         if (err := consistency_error(plan, d, question)) is not None:
+            return err
+        if (err := plan_missing_condition_error(question, plan, d, self._guard_index, names,
+                                                self._product_attrs)) is not None:
+            if state is not None:
+                state["guard"] = state.get("guard") or err      # submit_sql may not bypass it
             return err
         statuses = {(k, v): grounding_status(v, k, allowed, question, self._exists) for k, v in grounding_pairs(plan, d)}
         absent = sorted(v for (k, v), st in statuses.items() if st == "missing")
