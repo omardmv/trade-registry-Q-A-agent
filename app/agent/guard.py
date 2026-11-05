@@ -158,9 +158,10 @@ def _context_ok(v: _Value, question: str, q_tokens: list[str], span: tuple[int, 
         t in _COUNT_WORDS for t in q_tokens[max(0, span[0] - 2):span[0]])
 
 
-def mentioned_values(question: str, index: list[_Value], ignore_names=()) -> list[_Value]:
-    """Catalog values named in the question; a value inside a longer matched value is dropped (метр / куб.метр).
-    Words that belong to a resolved company/broker name are ignored."""
+def mentioned_spans(question: str, index: list[_Value], ignore_names=()) -> list[tuple[int, int, _Value]]:
+    """(start, end, value) of catalog values named in the question, as token spans of normalize_text(question);
+    a value inside a longer matched value is dropped (метр / куб.метр). Words that belong to a resolved
+    company/broker name are ignored."""
     keep = {" ".join(v.tokens) for v in index}
     q = _strip_names(normalize_text(question).split(), ignore_names, keep)
     spans = []
@@ -175,9 +176,14 @@ def mentioned_values(question: str, index: list[_Value], ignore_names=()) -> lis
     out = []
     for a, b, v in spans:
         inside = any(a2 <= a and b <= b2 and (b2 - a2) > (b - a) for a2, b2, _ in spans)
-        if not inside and v not in out and all(o.value != v.value or o.field != v.field for o in out):
-            out.append(v)
+        if not inside and all(o.value != v.value or o.field != v.field for _, _, o in out):
+            out.append((a, b, v))
     return out
+
+
+def mentioned_values(question: str, index: list[_Value], ignore_names=()) -> list[_Value]:
+    """Catalog values named in the question (see mentioned_spans)."""
+    return [v for _, _, v in mentioned_spans(question, index, ignore_names)]
 
 
 def _spec_strings(spec: Spec) -> dict[str, set[str]]:

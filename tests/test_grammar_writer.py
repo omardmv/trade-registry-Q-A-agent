@@ -35,7 +35,12 @@ def F(field, value, op="="):
     return {"field": field, "op": op, "value": value}
 
 
-SELLER_PLAN = {"subject": "deals", "measures": [{"agg": "count"}], "filters": [F("seller", INN), F("year", 2025)]}
+def M(text, used_as):
+    return {"text": text, "used_as": used_as}
+
+
+SELLER_PLAN = {"subject": "deals", "measures": [{"agg": "count"}], "filters": [F("seller", INN), F("year", 2025)],
+               "mentions": [M("Pudexiz Plast", "filter:seller"), M("2025", "filter:year")]}
 
 
 def tool_payload(llm, n):
@@ -64,7 +69,8 @@ def test_ungrounded_inn_is_rejected(parts):
 
 
 def test_ungrounded_product_is_rejected(parts):
-    plan = {"subject": "deals", "measures": [{"agg": "count"}], "filters": [F("product", "Сахар"), F("year", 2025)]}
+    plan = {"subject": "deals", "measures": [{"agg": "count"}], "filters": [F("product", "Сахар"), F("year", 2025)],
+            "mentions": [M("с сахаром", "filter:product"), M("2025", "filter:year")]}
     writer, llm = make(parts, [call("run_plan", plan=plan, assumptions=[]),
                                call("resolve", kind="product", text="сахар"),
                                call("run_plan", plan=plan, assumptions=[])])
@@ -75,14 +81,16 @@ def test_ungrounded_product_is_rejected(parts):
 def test_deal_id_named_in_question_is_grounded(parts):
     db, _ = parts
     deal = str(db.query("SELECT MIN(deal_id) FROM deals").rows[0][0])
-    plan = {"subject": "deals", "filters": [F("deal", deal)], "group_by": ["deal"]}
+    plan = {"subject": "deals", "filters": [F("deal", deal)], "group_by": ["deal"],
+            "mentions": [M(deal, "filter:deal"), M("сделку", "group_by:deal")]}
     writer, _ = make(parts, [call("run_plan", plan=plan, assumptions=[])])
     res = writer.run(f"Покажи сделку {deal}", "ru", deadline())
     assert res.status == "ok" and str(res.result.rows[0][0]) == deal
 
 
 def test_missing_deal_id_says_it_does_not_exist(parts):
-    plan = {"subject": "deals", "filters": [F("deal", "999999")], "group_by": ["deal"]}
+    plan = {"subject": "deals", "filters": [F("deal", "999999")], "group_by": ["deal"],
+            "mentions": [M("999999", "filter:deal"), M("сделку", "group_by:deal")]}
     writer, llm = make(parts, [call("run_plan", plan=plan, assumptions=[]),
                                call("declare_unanswerable", reason="no such deal")])
     res = writer.run("Покажи сделку 999999", "ru", deadline())
@@ -98,8 +106,10 @@ def test_validation_error_is_fed_back_then_fixed(parts):
 
 
 def test_period_check_feeds_back(parts):
-    plan = {"subject": "deals", "measures": [{"agg": "count"}], "filters": [F("year", 2025)]}
-    fixed = {**plan, "filters": [F("year", 2025), F("month", 10)]}
+    plan = {"subject": "deals", "measures": [{"agg": "count"}], "filters": [F("year", 2025)],
+            "mentions": [M("в октябре 2025", "filter:year")]}
+    fixed = {**plan, "filters": [F("year", 2025), F("month", 10)],
+             "mentions": [M("в октябре 2025", "filter:year"), M("октябре", "filter:month")]}
     writer, llm = make(parts, [call("run_plan", plan=plan, assumptions=[]), call("run_plan", plan=fixed, assumptions=[])])
     res = writer.run("Сколько сделок было в октябре 2025?", "ru", deadline())
     assert "month/quarter" in tool_payload(llm, 0)["error"] and res.status == "ok"
@@ -107,7 +117,8 @@ def test_period_check_feeds_back(parts):
 
 def test_product_variant_flow(parts):
     plan = {"subject": "deals", "measures": [{"agg": "count"}],
-            "filters": [F("product_variant", "АИ-92"), F("year", 2025)]}
+            "filters": [F("product_variant", "АИ-92"), F("year", 2025)],
+            "mentions": [M("АИ-92", "filter:product_variant"), M("2025", "filter:year")]}
     writer, llm = make(parts, [call("resolve", kind="product_variant", text="АИ-92"),
                                call("run_plan", plan=plan, assumptions=[])])
     res = writer.run("Сколько сделок по АИ-92 в 2025?", "ru", deadline())
@@ -149,16 +160,45 @@ def test_prompt_and_schema_size_under_budget():
     assert size["total"] < 12_000, size
 
 
-def test_examples_are_valid_plans():
+def test_examples_are_valid_plans_with_valid_mentions(db):
+    import re
+
+    from app.agent.guard import build_index
+    from app.catalog import load_catalog
+    from app.plan.checks import apply_defaults, consistency_error
+    from app.plan.mentions import Resolution, mention_error
     from app.plan.model import parse_plan
+    from app.plan.prompt import example_plan
     from app.plan.validate import validate_plan
+    d, catalog = load_dictionary(), load_catalog(db)
+    index = build_index(catalog)
     exs = load_examples()
-    assert len(exs) >= 20
+    assert len(exs) >= 15        # the prompt budget (12 000 chars with the mentions) allows no more
     subjects = set()
     for ex in exs:
-        p = validate_plan(parse_plan(ex["plan"]), load_dictionary())
+        resolutions = []
+        if ex.get("resolve"):
+            kind, text, value = re.fullmatch(r'(\w+) "(.+)" -> (.+)', ex["resolve"]).groups()
+            value = text if kind == "product_variant" else value
+            resolutions.append(Resolution(kind, text, frozenset({value})))
+        p = apply_defaults(validate_plan(parse_plan(example_plan(ex)), d, catalog), d, ex["q"])
+        if not resolutions:      # the planner resolves the mentioned phrase of each named value
+            for f in [*p.filters, *(w for m in p.measures for w in m.where)]:
+                texts = [m.text for m in p.mentions if m.used_as == f"filter:{f.field}"]
+                resolutions += [Resolution("any", t, frozenset({str(f.value)})) for t in texts]
+        assert consistency_error(p, d, ex["q"]) is None, ex["q"]
+        assert mention_error(p, d, ex["q"], index, resolutions) is None, ex["q"]
         subjects.add(p.subject)
-    assert subjects == {"deals", "contracts", "companies", "brokers", "usd_rates"}
+    assert subjects == {"deals", "contracts", "companies", "usd_rates"}   # brokers: deals by buyer/seller_broker
+
+
+def test_plan_without_mentions_gets_a_fix_error(parts):
+    plan = {k: v for k, v in SELLER_PLAN.items() if k != "mentions"}
+    writer, llm = make(parts, [call("resolve", kind="company", text="Pudexiz Plast"),
+                               call("run_plan", plan=plan, assumptions=[]),
+                               call("run_plan", plan=SELLER_PLAN, assumptions=[])])
+    res = writer.run("Сколько продала Pudexiz Plast в 2025?", "ru", deadline())
+    assert "mention" in tool_payload(llm, 1)["error"] and res.status == "ok"
 
 
 def test_examples_do_not_copy_eval_questions():
@@ -188,12 +228,27 @@ def test_build_pipeline_picks_writer(monkeypatch, db_path):
 
 def test_pipeline_explains_plan_and_detects_no_data(parts):
     from app.pipeline import Pipeline
-    plan = {"subject": "deals", "measures": [{"agg": "count"}], "filters": [F("year", 2024)]}
+    plan = {"subject": "deals", "measures": [{"agg": "count"}], "filters": [F("year", 2024)],
+            "mentions": [M("2024 году", "filter:year")]}
     writer, _ = make(parts, [call("run_plan", plan=plan, assumptions=[])])
     res = Pipeline(writer, FakeLLM(completions=["нет", "нет"])).ask("Сколько сделок в 2024 году?")
     assert res.answered and res.explanation.startswith("Расчёт: сделки; за 2024 год; число сделок")
     empty = {"subject": "deals", "measures": [{"agg": "sum", "of": "tonnes"}],
-             "filters": [F("unit", "штука"), F("year", 2024)]}
+             "filters": [F("unit", "штука"), F("year", 2024)],
+             "mentions": [M("штучных товаров", "filter:unit"), M("2024 году", "filter:year"), M("тонн", "measure:0")]}
     writer, _ = make(parts, [call("run_plan", plan=empty, assumptions=[])])
     res = Pipeline(writer, FakeLLM()).ask("Сколько тонн штучных товаров в 2024 году?")
     assert not res.answered and res.source == "no_data"
+
+
+def test_resolve_catalog_values(parts):
+    writer, llm = make(parts, [call("resolve", kind="catalog", text="транспортных компаний"),
+                               call("resolve", kind="catalog", text="category"),
+                               call("resolve", kind="catalog", text="status"),
+                               call("declare_unanswerable", reason="x")])
+    writer.run("Сколько транспортных компаний?", "ru", deadline())
+    top = tool_payload(llm, 0)["candidates"][0]
+    assert top["value"] == "Транспортная компания" and "buyer_activity" in top["fields"]
+    cats = tool_payload(llm, 1)
+    assert cats["catalog"] == "category" and "Нефтепродукты" in cats["values"]
+    assert "Аннулирован(Не оплачен)" in tool_payload(llm, 2)["values"]

@@ -14,7 +14,8 @@ from tests.fakes import FakeLLM, call
 
 INN = "975923536"
 PLAN = {"subject": "deals", "measures": [{"agg": "count"}],
-        "filters": [{"field": "seller", "value": INN}, {"field": "year", "value": 2025}]}
+        "filters": [{"field": "seller", "value": INN}, {"field": "year", "value": 2025}],
+        "mentions": [{"text": "Pudexiz Plast", "used_as": "filter:seller"}, {"text": "2025", "used_as": "filter:year"}]}
 SPEC = {"kind": "deals_aggregate", "measures": ["deal_count"], "filters": {"year": 2025, "seller_inns": [INN]}}
 Q = "Сколько продала Pudexiz Plast в 2025?"
 

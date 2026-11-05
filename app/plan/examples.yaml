@@ -1,52 +1,55 @@
 # Examples for the grammar planner prompt (app/plan/prompt.py). Written for the new grammar; not taken from the
 # evaluation sets. IDs are illustrative: the planner must use what resolve() returns.
+# mentions: [text (copied from the question), used_as (plan element)]; rendered as {text, used_as} objects.
 - q: Сколько сделок купила компания «Agro Savdo» в 2024 году?
   resolve: company "Agro Savdo" -> 301234567
   plan: {subject: deals, measures: [{agg: count}], filters: [{field: buyer, value: "301234567"}, {field: year, value: 2024}]}
+  mentions: [[Agro Savdo, "filter:buyer"], ["2024", "filter:year"]]
 - q: 2023-yilda paxta xom ashyosi qancha tonna sotilgan?
   resolve: product "paxta xom ashyosi" -> Хлопок-сырец
   plan: {subject: deals, measures: [{agg: sum, of: tonnes}], filters: [{field: product, value: Хлопок-сырец}, {field: year, value: 2023}]}
-- q: Средняя цена подсолнечного масла в 2025 году?
-  plan: {subject: deals, measures: [{agg: price_per_kg}, {agg: avg, of: deal_price_per_kg}], filters: [{field: product, value: Масло подсолнечное}, {field: year, value: 2025}]}
-- q: Какая доля экспортных сделок в 2024 году?
-  plan: {subject: deals, measures: [{agg: share}], filters: [{field: contract_type, value: Экспортный, numerator: true}, {field: year, value: 2024}]}
-- q: 2024-yilda bug‘doyning savdo summasidagi ulushi qancha?
-  plan: {subject: deals, measures: [{agg: share, of: amount_uzs}], filters: [{field: product, value: Пшеница, numerator: true}, {field: year, value: 2024}]}
+  mentions: [["2023", "filter:year"], [paxta xom ashyosi, "filter:product"], [tonna, "measure:0"]]
+- q: Средняя цена подсолнечного масла?
+  plan: {subject: deals, measures: [{agg: price_per_kg}, {agg: avg, of: deal_price_per_kg}], filters: [{field: product, value: Масло подсолнечное}]}
+  mentions: [[подсолнечного масла, "filter:product"]]
+- q: Bug‘doyning savdo summasidagi ulushi qancha?
+  plan: {subject: deals, measures: [{agg: share, of: amount_uzs}], filters: [{field: product, value: Пшеница, numerator: true}]}
+  mentions: [[Bug‘doyning, "filter:product"]]
 - q: Топ-3 продавца сахара по сумме за 2025 год
   plan: {subject: deals, measures: [{agg: sum, of: amount_uzs}], filters: [{field: product, value: Сахар}, {field: year, value: 2025}], group_by: [seller], limit: 3}
+  mentions: [[Топ-3, limit], [продавца, "group_by:seller"], [сахара, "filter:product"], ["2025", "filter:year"]]
 - q: 2022-yilda qaysi tovar eng kam summaga sotilgan?
   plan: {subject: deals, measures: [{agg: sum, of: amount_uzs}], filters: [{field: year, value: 2022}], group_by: [product], order: asc, limit: 1}
-- q: Сколько разных брокеров работало с портландцементом в 2022 году?
-  plan: {subject: deals, measures: [{agg: distinct, of: broker}], filters: [{field: product, value: Портландцемент}, {field: year, value: 2022}]}
-- q: Как изменилось число сделок с хлопковым маслом в 2023 году по сравнению с 2022?
-  plan: {subject: deals, measures: [{agg: count}], filters: [{field: product, value: Масло хлопковое}], compare: [{year: 2022}, {year: 2023}]}
+  mentions: [["2022", "filter:year"], [tovar, "group_by:product"], [eng kam, order]]
 - q: 2024 va 2026-yillarning birinchi yarmida bitimlar summasi qanchaga o‘zgardi?
   plan: {subject: deals, measures: [{agg: sum, of: amount_uzs}], compare: [{year: 2024, month_from: 1, month_to: 6}, {year: 2026, month_from: 1, month_to: 6}]}
-- q: Помесячно объём пшеницы в тоннах за 2024 год
-  plan: {subject: deals, measures: [{agg: sum, of: tonnes}], filters: [{field: product, value: Пшеница}, {field: year, value: 2024}], group_by: [month]}
-- q: Сумма сделок по формам контракта за 2023 год
-  plan: {subject: deals, measures: [{agg: sum, of: amount_uzs}], filters: [{field: year, value: 2023}], group_by: [contract_form]}
-- q: Самая крупная сделка 2024 года по сумме
-  plan: {subject: deals, measures: [{agg: sum, of: amount_uzs}], filters: [{field: year, value: 2024}], group_by: [deal], limit: 1}
+  mentions: [[2024 va 2026-yillarning birinchi yarmida, compare]]
+- q: Помесячно объём пшеницы с 2023 по 2024 год
+  plan: {subject: deals, measures: [{agg: sum, of: tonnes}], filters: [{field: product, value: Пшеница}, {field: year, op: between, values: [2023, 2024]}], group_by: [month]}
+  mentions: [[Помесячно, "group_by:month"], [пшеницы, "filter:product"], [с 2023 по 2024, "filter:year"]]
 - q: Покажи сделку 412345
   plan: {subject: deals, filters: [{field: deal, value: 412345}], group_by: [deal]}
-- q: Кто больше всего торговал хлопком-сырцом в 2025 году?
-  plan: {subject: deals, measures: [{agg: sum, of: tonnes}, {agg: sum, of: amount_uzs}], filters: [{field: product, value: Хлопок-сырец}, {field: year, value: 2025}], group_by: [participant], limit: 3}
-- q: Сколько тонн бензина АИ-95 продано в 2024, без аннулированных?
+  mentions: [["412345", "filter:deal"], [сделку, "group_by:deal"]]
+- q: Кто больше всего торговал хлопком-сырцом?
+  plan: {subject: deals, measures: [{agg: sum, of: tonnes}, {agg: sum, of: amount_uzs}], filters: [{field: product, value: Хлопок-сырец}], group_by: [participant], limit: 3}
+  mentions: [[Кто, "group_by:participant"], [хлопком-сырцом, "filter:product"]]
+- q: Сколько тонн бензина АИ-95 продано, без аннулированных?
   resolve: product_variant "АИ-95" -> 4 spellings
-  plan: {subject: deals, measures: [{agg: sum, of: tonnes}], filters: [{field: product_variant, value: АИ-95}, {field: year, value: 2024}, {field: cancelled, value: false}]}
-- q: Сколько сделок аннулировано в 2023 году?
-  plan: {subject: deals, measures: [{agg: count}], filters: [{field: cancelled, value: true}, {field: year, value: 2023}]}
-- q: Сколько форвардных контрактов зарегистрировано в 2025 году?
-  plan: {subject: contracts, measures: [{agg: count}], filters: [{field: contract_form, value: Форвард}, {field: year, value: 2025}]}
-- q: Shartnomalarda o‘rtacha to‘lov muddati necha kun?
-  plan: {subject: contracts, measures: [{agg: avg, of: payment_term_days}]}
-- q: Сколько покупателей — плательщиков НДС зарегистрировано в Самаркандской области?
-  resolve: region "Самаркандская область" -> Samarqand viloyati
+  plan: {subject: deals, measures: [{agg: sum, of: tonnes}], filters: [{field: product_variant, value: АИ-95}, {field: cancelled, value: false}]}
+  mentions: [[тонн, "measure:0"], [АИ-95, "filter:product_variant"], [без аннулированных, "filter:cancelled"]]
+- q: Сколько форвардных контрактов зарегистрировано?
+  plan: {subject: contracts, measures: [{agg: count}], filters: [{field: contract_form, value: Форвард}]}
+  mentions: [[форвардных, "filter:contract_form"]]
+- q: Сколько покупателей — плательщиков НДС в Самаркандской области?
+  resolve: region "Самаркандской области" -> Samarqand viloyati
   plan: {subject: companies, measures: [{agg: count}], filters: [{field: role, value: Покупатель}, {field: vat_payer, value: true}, {field: region, value: Samarqand viloyati}]}
+  mentions: [[покупателей, "filter:role"], [НДС, "filter:vat_payer"], [Самаркандской области, "filter:region"]]
 - q: Какой брокер провёл больше всего сделок на стороне покупателя?
-  plan: {subject: brokers, measures: [{agg: sum, of: deals_as_buyer_broker}], group_by: [broker], limit: 1}
+  plan: {subject: deals, measures: [{agg: count}], group_by: [buyer_broker], limit: 1}
+  mentions: [[на стороне покупателя, "group_by:buyer_broker"]]
 - q: Какой был курс доллара 15.03.2024?
   plan: {subject: usd_rates, measures: [{agg: avg, of: rate}], filters: [{field: rate_date, value: "2024-03-15"}]}
+  mentions: [["15.03.2024", "filter:rate_date"]]
 - q: 2023-yilda dollar kursi eng yuqori bo‘lgan kun qaysi?
   plan: {subject: usd_rates, measures: [{agg: max, of: rate}], filters: [{field: year, value: 2023}], group_by: [day], limit: 1}
+  mentions: [["2023", "filter:year"], [kun, "group_by:day"]]

@@ -264,8 +264,8 @@ companies:
                label: {ru: вид деятельности, uz: faoliyat turi}}
     role: {type: dimension, sql: p.role, ground: enum, values: [Покупатель, Продавец], label: {ru: роль, uz: rol}}
     vat_payer: {type: bool, sql: p.vat_payer, label: {ru: плательщик НДС, uz: QQS to‘lovchi}}
-    deals_as_buyer: {type: number, sql: p.deals_as_buyer, label: {ru: сделок как покупатель, uz: xaridor sifatida bitimlar}}
-    deals_as_seller: {type: number, sql: p.deals_as_seller, label: {ru: сделок как продавец, uz: sotuvchi sifatida bitimlar}}
+    deals_as_buyer: {type: number, sql: p.deals_as_buyer, label: {ru: сделок как покупатель (все состояния, включая аннулированные), uz: xaridor sifatida bitimlar (barcha holatlar, bekor qilinganlar bilan)}}
+    deals_as_seller: {type: number, sql: p.deals_as_seller, label: {ru: сделок как продавец (все состояния, включая аннулированные), uz: sotuvchi sifatida bitimlar (barcha holatlar, bekor qilinganlar bilan)}}
 
 brokers:
   label: {ru: брокеры, uz: brokerlar}
@@ -284,9 +284,9 @@ brokers:
       label: {ru: брокер, uz: broker}
     region: {type: dimension, sql: b.region, ground: region, label: {ru: регион, uz: hudud}}
     deals_as_seller_broker: {type: number, sql: b.deals_as_seller_broker,
-                             label: {ru: сделок как брокер продавца, uz: sotuvchi brokeri sifatida bitimlar}}
+                             label: {ru: сделок как брокер продавца (все состояния, включая аннулированные), uz: sotuvchi brokeri sifatida bitimlar (barcha holatlar, bekor qilinganlar bilan)}}
     deals_as_buyer_broker: {type: number, sql: b.deals_as_buyer_broker,
-                            label: {ru: сделок как брокер покупателя, uz: xaridor brokeri sifatida bitimlar}}
+                            label: {ru: сделок как брокер покупателя (все состояния, включая аннулированные), uz: xaridor brokeri sifatida bitimlar (barcha holatlar, bekor qilinganlar bilan)}}
 
 usd_rates:
   label: {ru: курс доллара, uz: dollar kursi}

@@ -10,7 +10,7 @@ AGGS = ("count", "sum", "avg", "median", "min", "max", "distinct", "share")
 OPS = ("=", "in", "!=", "between", ">=", "<=")
 ORDERS = ("desc", "asc")
 PERIOD_KEYS = ("year", "quarter", "month_from", "month_to")
-PLAN_KEYS = ("subject", "measures", "filters", "numerator", "group_by", "order", "limit", "compare")
+PLAN_KEYS = ("subject", "measures", "filters", "numerator", "group_by", "order", "limit", "compare", "mentions")
 MAX_LIMIT = 50
 
 
@@ -30,6 +30,12 @@ class Measure:
     agg: str                        # count | sum | ... | share | a named measure of the subject
     of: str | None = None
     where: tuple[Filter, ...] = ()  # share: numerator condition
+
+
+@dataclass(frozen=True)
+class Mention:
+    text: str                       # a phrase copied from the question
+    used_as: str                    # filter:<field> | group_by:<field> | measure:<i> | order | limit | subject | compare
 
 
 @dataclass(frozen=True)
@@ -58,6 +64,7 @@ class Plan:
     compare: tuple[Period, ...] = ()
     default_limit: bool = False     # set by checks.apply_defaults when the limit was not asked for
     scope: str = ""                 # deals status view chosen by checks.apply_defaults: all | valid | split
+    mentions: tuple[Mention, ...] = ()
 
     def with_(self, **kw) -> "Plan":
         return replace(self, **kw)
@@ -171,6 +178,19 @@ def parse_period(d) -> Period:
     return p
 
 
+def parse_mention(d) -> Mention:
+    if not isinstance(d, dict):
+        raise PlanError(f"each mention must be an object {{text, used_as}}, got {d!r}")
+    unknown = [k for k in d if k not in ("text", "used_as") and not _empty(d[k])]
+    if unknown:
+        raise PlanError(f"unknown key {unknown[0]!r} in mention; allowed: text, used_as")
+    text = str(d.get("text") or "").strip()
+    used = "".join(str(d.get("used_as") or "").split()).lower()
+    if not text or not used:
+        raise PlanError("each mention needs text (a phrase copied from the question) and used_as")
+    return Mention(text, used)
+
+
 def parse_plan(d) -> Plan:
     if not isinstance(d, dict):
         raise PlanError(f"plan must be an object, got {type(d).__name__}")
@@ -222,4 +242,8 @@ def parse_plan(d) -> Plan:
     compare = tuple(parse_period(p) for p in compare_raw)
     if compare and len(compare) != 2:
         raise PlanError("compare must list exactly two periods")
-    return Plan(subject, measures, filters, group_by, order, limit, compare)
+    mentions_raw = d.get("mentions") or []
+    if isinstance(mentions_raw, dict):
+        mentions_raw = [mentions_raw]
+    mentions = tuple(parse_mention(m) for m in mentions_raw)
+    return Plan(subject, measures, filters, group_by, order, limit, compare, mentions=mentions)
