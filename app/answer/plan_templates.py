@@ -360,4 +360,46 @@ def render(plan: Plan, d: Dictionary, columns: list[str], rows: list, lang: str)
         return None
 
 
-__all__ = ["render", "MAX_LINES", "Subject"]
+_EXTRA_LABELS = {"ru": {"year": "год", "month_from": "месяц с", "month_to": "месяц по", "day": "день",
+                        "change_pct": "изменение, %", "change_pp": "изменение, п.п.", "ranking": "рейтинг по",
+                        "broker_side": "сторона", "unit": "единица"},
+                 "uz": {"year": "yil", "month_from": "oydan", "month_to": "oygacha", "day": "kun",
+                        "change_pct": "o‘zgarish, %", "change_pp": "o‘zgarish, f.p.", "ranking": "reyting",
+                        "broker_side": "tomon", "unit": "birlik"}}
+
+
+def column_labels(plan: Plan, d: Dictionary, columns: list[str], lang: str) -> list[str]:
+    """A readable label per result column in the question's language (the raw name when none is known), for the
+    data table shown under the answer."""
+    try:
+        r = _R(plan, d, columns, lang)
+    except (_Unusual, KeyError, IndexError, TypeError, ValueError):
+        return list(columns)
+    extra = _EXTRA_LABELS[r.l]
+    out = []
+    for c in columns:
+        text = None
+        if c in r.measures:
+            m, view = r.measures[c]
+            every = "все" if r.l == "ru" else "barchasi"
+            text = r.measure_label(m) + {"all": f" ({every})", "valid": f" ({r.w['valid']})", "": ""}[view]
+        elif c.endswith(("_change_pct", "_change_pp")) or c in extra:
+            base = c.rsplit("_change_", 1)[0] if "_change_" in c else ""
+            key = "change_pp" if c.endswith("_pp") else "change_pct" if c.endswith("_pct") else c
+            text = extra[key]
+            if base and (base in r.measures or base + "_all" in r.measures):
+                text = f"{r.measure_label((r.measures.get(base) or r.measures[base + '_all'])[0])}: {text}"
+        else:
+            try:
+                text = r.field_label(c)
+            except _Unusual:
+                text = None
+        if text and c.endswith("_inn") or c == "inn":
+            text = f"{text}, {r.w['inn']}" if text and text != r.w["inn"] else text
+        elif text and c.endswith("_name") and c != "product_name":
+            text = f"{text}, {'название' if r.l == 'ru' else 'nomi'}"
+        out.append(r.t(text) if text else c)
+    return out
+
+
+__all__ = ["render", "column_labels", "MAX_LINES", "Subject"]

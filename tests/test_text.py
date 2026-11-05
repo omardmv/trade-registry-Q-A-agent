@@ -25,3 +25,11 @@ def test_detect_lang():
     assert detect_lang("2025-yilda eng ko'p savdo qilgan korxona qaysi?") == "uz"
     assert detect_lang("2025 йилда энг кўп савдо қилган корхона қайси?") == "uz-Cyrl"
     assert detect_lang("Нечта битим тузилган?") == "uz-Cyrl"
+
+
+def test_latin_company_names_do_not_make_a_russian_question_uzbek():
+    from app.text import detect_lang
+    assert detect_lang("Кто директор Linom Energo?") == "ru"
+    assert detect_lang("Linom Energo direktori kim?") == "uz"
+    assert detect_lang("Linom Energo компаниясининг директори ким?") == "uz-Cyrl"
+    assert detect_lang("Paxta xomashyosining narxi qancha?") == "uz"

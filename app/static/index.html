@@ -5,32 +5,107 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Биржа — вопросы по данным / Birja — ma’lumotlar bo‘yicha savollar</title>
 <style>
-  body { font: 16px/1.5 system-ui, sans-serif; max-width: 860px; margin: 0 auto; padding: 16px; }
-  #log { display: flex; flex-direction: column; gap: 12px; margin-bottom: 96px; }
-  .q { align-self: flex-end; background: #e8f0fe; padding: 8px 12px; border-radius: 12px; max-width: 80%; }
-  .a { background: #f4f4f4; padding: 8px 12px; border-radius: 12px; white-space: pre-wrap; }
-  .a.nodata { background: #fff4e5; }
-  details { margin-top: 6px; font-size: 13px; }
-  pre { white-space: pre-wrap; background: #fff; padding: 8px; border: 1px solid #ddd; }
-  table { border-collapse: collapse; font-size: 13px; }
-  td, th { border: 1px solid #ddd; padding: 2px 6px; }
-  form { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; padding: 12px; border-top: 1px solid #ddd; }
+  /* shadcn/ui look (neutral theme) in plain CSS: same tokens, radius, card / button / input / badge / table */
+  :root {
+    --background: 0 0% 100%; --foreground: 240 10% 3.9%; --card: 0 0% 100%; --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%; --border: 240 5.9% 90%; --input: 240 5.9% 90%; --primary: 240 5.9% 10%;
+    --primary-foreground: 0 0% 98%; --ring: 240 5.9% 10%; --warn: 38 92% 50%; --radius: 0.5rem;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --background: 240 10% 3.9%; --foreground: 0 0% 98%; --card: 240 10% 5.5%; --muted: 240 3.7% 15.9%;
+      --muted-foreground: 240 5% 64.9%; --border: 240 3.7% 15.9%; --input: 240 3.7% 15.9%; --primary: 0 0% 98%;
+      --primary-foreground: 240 5.9% 10%; --ring: 240 4.9% 83.9%;
+    }
+  }
+  * { box-sizing: border-box; border-color: hsl(var(--border)); }
+  html, body { background: hsl(var(--background)); color: hsl(var(--foreground)); }
+  body { font: 14px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0;
+         -webkit-font-smoothing: antialiased; }
+  main { max-width: 860px; margin: 0 auto; padding: 32px 16px 140px; }
+  h1 { font-size: 24px; font-weight: 600; letter-spacing: -0.025em; margin: 0 0 6px; }
+  .sub { color: hsl(var(--muted-foreground)); margin: 0 0 20px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 28px; }
+  .chip { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; font: inherit; font-size: 13px;
+          border: 1px solid hsl(var(--border)); border-radius: var(--radius); background: hsl(var(--background));
+          color: hsl(var(--foreground)); cursor: pointer; transition: background .15s; }
+  .chip:hover { background: hsl(var(--muted)); }
+  #log { display: flex; flex-direction: column; gap: 16px; }
+  .q { align-self: flex-end; background: hsl(var(--primary)); color: hsl(var(--primary-foreground));
+       padding: 8px 14px; border-radius: var(--radius); max-width: 80%; }
+  .card { border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) + 4px); padding: 16px 20px;
+          background: hsl(var(--card)); box-shadow: 0 1px 2px 0 rgb(0 0 0 / .05); }
+  .card.nodata { border-color: hsl(var(--warn) / .5); background: hsl(var(--warn) / .08); }
+  .answer { white-space: pre-wrap; font-size: 15px; line-height: 1.6; }
+  .badge { display: inline-flex; align-items: center; border-radius: 9999px; padding: 1px 10px; font-size: 12px;
+           font-weight: 500; border: 1px solid hsl(var(--border)); color: hsl(var(--muted-foreground)); }
+  .basis { margin-top: 16px; border-top: 1px solid hsl(var(--border)); padding-top: 14px; }
+  .basis h3 { font-size: 12px; font-weight: 500; color: hsl(var(--muted-foreground)); margin: 0 0 6px; }
+  .how { background: hsl(var(--muted)); border-radius: var(--radius); padding: 8px 12px; font-size: 13px; }
+  .tablewrap { overflow-x: auto; margin-top: 4px; border: 1px solid hsl(var(--border)); border-radius: var(--radius); }
+  table { border-collapse: collapse; font-size: 13px; width: 100%; }
+  th { text-align: left; font-weight: 500; color: hsl(var(--muted-foreground)); height: 36px; }
+  td, th { border-bottom: 1px solid hsl(var(--border)); padding: 6px 12px; vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  tbody tr:hover, tr:hover td { background: hsl(var(--muted) / .5); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .rowsnote { color: hsl(var(--muted-foreground)); font-size: 12px; padding: 6px 12px; }
+  details { margin-top: 12px; font-size: 13px; }
+  summary { cursor: pointer; color: hsl(var(--muted-foreground)); }
+  summary:hover { color: hsl(var(--foreground)); }
+  pre { white-space: pre-wrap; background: hsl(var(--muted)); padding: 10px 12px; border-radius: var(--radius);
+        font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .meta { margin-top: 12px; display: flex; gap: 6px; }
+  form { position: fixed; bottom: 0; left: 0; right: 0; background: hsl(var(--background) / .95);
+         backdrop-filter: blur(8px); padding: 12px 16px; border-top: 1px solid hsl(var(--border)); }
   form > div { max-width: 860px; margin: 0 auto; display: flex; gap: 8px; }
-  input { flex: 1; font: inherit; padding: 8px; }
-  .meta { color: #777; font-size: 12px; }
+  input { flex: 1; height: 40px; font: inherit; padding: 0 12px; border: 1px solid hsl(var(--input));
+          border-radius: var(--radius); background: hsl(var(--background)); color: hsl(var(--foreground)); }
+  input:focus-visible { outline: none; box-shadow: 0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--ring)); }
+  button#send { height: 40px; padding: 0 16px; font: inherit; font-weight: 500; border: 0; border-radius: var(--radius);
+                background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); cursor: pointer; }
+  button#send:hover { opacity: .9; }
+  button:disabled { opacity: .5; cursor: default; }
+  .wait { color: hsl(var(--muted-foreground)); }
 </style>
 </head>
 <body>
-<h1>Реестр сделок биржи · Birja bitimlari</h1>
-<div id="log"></div>
+<main>
+  <h1>Реестр сделок биржи · Birja bitimlari · Биржа битимлари</h1>
+  <p class="sub">Спрашивайте по-русски или по-узбекски (латиница и кириллица). Ответ строится только из данных
+    биржи за 2022–2026 годы; под каждым ответом видно, как он посчитан и на каких строках основан.<br>
+    Rus yoki o‘zbek tilida so‘rang. Javob faqat birja ma’lumotlaridan olinadi; har bir javob ostida u qanday
+    hisoblangani va qaysi ma’lumotlarga asoslangani ko‘rsatiladi.</p>
+  <div class="chips" id="chips"></div>
+  <div id="log"></div>
+</main>
 <form id="f">
   <div>
     <input id="q" autocomplete="off" placeholder="Сколько сделок было в октябре 2025 года? / 2025-yilda nechta bitim tuzilgan?">
-    <button>Спросить / So‘rash</button>
+    <button id="send">Спросить · So‘rash</button>
   </div>
 </form>
 <script>
+const EXAMPLES = [
+  "Сколько сделок было в октябре 2025 года?",
+  "Топ-3 покупателя хлопка-сырца в 2025 году по тоннам",
+  "Курс доллара на 1 января 2025 и на 1 января 2026 — на сколько процентов изменился?",
+  "2024-yilda bug‘doy necha tonna sotilgan?",
+  "2025 йилда энг кўп битим тузган брокер ким?",
+  "Кто директор Linom Energo?",
+];
+const T = {
+  ru: {how: "Как посчитано", data: "Данные, на которых основан ответ", sql: "Запрос к базе (SQL)",
+       shown: (n, m) => `показано ${n} из ${m} строк`, time: "с", wait: "Считаю…", err: "Ошибка сети"},
+  uz: {how: "Qanday hisoblangan", data: "Javob asosidagi ma’lumotlar", sql: "Bazaga so‘rov (SQL)",
+       shown: (n, m) => `${m} qatordan ${n} tasi ko‘rsatilgan`, time: "s", wait: "Hisoblanmoqda…", err: "Tarmoq xatosi"},
+  "uz-Cyrl": {how: "Қандай ҳисобланган", data: "Жавоб асосидаги маълумотлар", sql: "Базага сўров (SQL)",
+       shown: (n, m) => `${m} қатордан ${n} таси кўрсатилган`, time: "с", wait: "Ҳисобланмоқда…", err: "Тармоқ хатоси"},
+};
+const SHOW_ROWS = 20;
 const log = document.getElementById("log");
+const input = document.getElementById("q");
+const send = document.getElementById("send");
 let previous = null;
 
 function el(tag, cls, text) {
@@ -40,49 +115,118 @@ function el(tag, cls, text) {
   return e;
 }
 
-function table(columns, rows) {
-  const t = el("table");
-  const head = el("tr");
-  columns.forEach(c => head.appendChild(el("th", null, c)));
-  t.appendChild(head);
-  rows.slice(0, 50).forEach(r => {
-    const tr = el("tr");
-    r.forEach(v => tr.appendChild(el("td", null, v === null ? "—" : String(v))));
-    t.appendChild(tr);
-  });
-  return t;
+// script of the question: Cyrillic with Uzbek letters -> uz-Cyrl, Latin -> uz, else ru (until the server says)
+function guessLang(q) {
+  if (/[ўқғҳ]/i.test(q)) return "uz-Cyrl";
+  if (/[а-яё]/i.test(q)) return "ru";
+  return "uz";
 }
 
-document.getElementById("f").addEventListener("submit", async (ev) => {
-  ev.preventDefault();
-  const input = document.getElementById("q");
-  const question = input.value.trim();
-  if (!question) return;
-  input.value = "";
+const ID_COL = /(^|_)(inn|id|code|year|month|month_from|month_to|day|quarter|hour)$|^(deal|contract|broker)$/;
+function cell(col, v) {
+  const td = el("td");
+  if (v === null || v === undefined) { td.textContent = "—"; return td; }
+  if (typeof v === "boolean") { td.textContent = v ? "✓" : "✗"; return td; }
+  if (typeof v === "number" && !ID_COL.test(col)) {
+    td.className = "num";
+    td.textContent = v.toLocaleString("ru-RU", {maximumFractionDigits: 2});
+    return td;
+  }
+  td.textContent = String(v);
+  if (typeof v === "number") td.className = "num";
+  return td;
+}
+
+function dataTable(body, t) {
+  const wrap = el("div", "tablewrap");
+  const table = el("table");
+  const head = el("tr");
+  const labels = (body.column_labels && body.column_labels.length === body.columns.length) ? body.column_labels : body.columns;
+  labels.forEach((c, i) => { const th = el("th", null, c); th.title = body.columns[i]; head.appendChild(th); });
+  table.appendChild(head);
+  body.rows.slice(0, SHOW_ROWS).forEach(r => {
+    const tr = el("tr");
+    r.forEach((v, i) => tr.appendChild(cell(body.columns[i], v)));
+    table.appendChild(tr);
+  });
+  wrap.appendChild(table);
+  const total = body.row_count || body.rows.length;
+  if (total > SHOW_ROWS) wrap.appendChild(el("div", "rowsnote", t.shown(Math.min(SHOW_ROWS, body.rows.length), total)));
+  return wrap;
+}
+
+async function ask(question) {
   log.appendChild(el("div", "q", question));
-  const answer = el("div", "a", "…");
-  log.appendChild(answer);
-  answer.scrollIntoView();
+  const card = el("div", "card");
+  const t0 = performance.now();
+  const wait = el("div", "wait", T[guessLang(question)].wait);
+  card.appendChild(wait);
+  log.appendChild(card);
+  card.scrollIntoView({behavior: "smooth", block: "end"});
+  const tick = setInterval(() => { wait.textContent = `${T[guessLang(question)].wait} ${((performance.now() - t0) / 1000).toFixed(0)} ${T[guessLang(question)].time}`; }, 1000);
+  send.disabled = true;
   try {
     const r = await fetch("/ask", {method: "POST", headers: {"Content-Type": "application/json"},
                                    body: JSON.stringify({question, previous})});
     const body = await r.json();
-    answer.textContent = body.answer || JSON.stringify(body.detail || body);
-    if (!body.answered) answer.classList.add("nodata");
-    if (body.sql) {
-      const d = el("details");
-      d.appendChild(el("summary", null, "SQL и данные / SQL va ma’lumotlar"));
-      d.appendChild(el("pre", null, body.sql));
-      d.appendChild(table(body.columns, body.rows));
-      answer.appendChild(d);
-      previous = {question, sql: body.sql};
+    const t = T[body.lang] || T[guessLang(question)];
+    card.textContent = "";
+    let text = body.answer || JSON.stringify(body.detail || body);
+    if (body.explanation && text.endsWith(body.explanation)) text = text.slice(0, -body.explanation.length).trim();
+    card.appendChild(el("div", "answer", text));
+    if (!body.answered) card.classList.add("nodata");
+    if (body.answered && (body.explanation || (body.rows && body.rows.length))) {
+      const basis = el("div", "basis");
+      if (body.explanation) {
+        basis.appendChild(el("h3", null, t.how));
+        basis.appendChild(el("div", "how", body.explanation.replace(/^(Расчёт|Hisob|Ҳисоб):\s*/, "")));
+      }
+      if (body.rows && body.rows.length) {
+        const h = el("h3", null, t.data);
+        h.style.marginTop = "10px";
+        basis.appendChild(h);
+        basis.appendChild(dataTable(body, t));
+      }
+      if (body.sql) {
+        const d = el("details");
+        d.appendChild(el("summary", null, t.sql));
+        d.appendChild(el("pre", null, body.sql));
+        basis.appendChild(d);
+        previous = {question, sql: body.sql};
+      }
+      card.appendChild(basis);
     }
-    answer.appendChild(el("div", "meta",
-      `${body.source} · ${body.verified ? "verified" : "unverified"} · ${(body.timings || {}).total_s ?? "?"} s`));
+    const secs = body.timings && body.timings.total_s != null ? body.timings.total_s : (performance.now() - t0) / 1000;
+    const meta = el("div", "meta");
+    meta.appendChild(el("span", "badge", `${Number(secs).toFixed(1)} ${t.time}`));
+    meta.appendChild(el("span", "badge", {ru: "русский", uz: "o‘zbekcha", "uz-Cyrl": "ўзбекча"}[body.lang] || body.lang));
+    card.appendChild(meta);
   } catch (e) {
-    answer.textContent = "Ошибка сети / Tarmoq xatosi: " + e;
+    card.textContent = `${T[guessLang(question)].err}: ${e}`;
+    card.classList.add("nodata");
+  } finally {
+    clearInterval(tick);
+    send.disabled = false;
+    input.focus();
+    card.scrollIntoView({behavior: "smooth", block: "end"});
   }
+}
+
+EXAMPLES.forEach(x => {
+  const c = el("button", "chip", x);
+  c.type = "button";
+  c.addEventListener("click", () => { if (!send.disabled) ask(x); });
+  document.getElementById("chips").appendChild(c);
 });
+
+document.getElementById("f").addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  const question = input.value.trim();
+  if (!question || send.disabled) return;
+  input.value = "";
+  ask(question);
+});
+input.focus();
 </script>
 </body>
 </html>
