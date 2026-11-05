@@ -3,7 +3,8 @@ import json
 import re
 
 from app import config
-from app.agent.llm import EmptyReplyError, LLMError, LLMReply, ProviderError, ToolCall, ToolSpec, note_provider
+from app.agent.llm import (EmptyReplyError, LLMError, LLMReply, ProviderError, ToolCall, ToolSpec, note_provider,
+                           record_usage)
 
 _TYPES = {"OBJECT": "object", "STRING": "string", "ARRAY": "array", "INTEGER": "integer",
           "BOOLEAN": "boolean", "NUMBER": "number"}
@@ -35,7 +36,15 @@ def _transient_status(status: int) -> bool:
     return status in (408, 409, 429) or status >= 500
 
 
-def _create(client, reasoning_effort: str = "", temperature: str = "", **kwargs):
+def _record(name: str, resp) -> None:
+    u = getattr(resp, "usage", None)
+    if u is not None:
+        details = getattr(u, "prompt_tokens_details", None)
+        record_usage(name, getattr(u, "prompt_tokens", 0), getattr(details, "cached_tokens", 0) if details else 0,
+                     getattr(u, "completion_tokens", 0))
+
+
+def _create(client, reasoning_effort: str = "", temperature: str = "", provider: str = "openai", **kwargs):
     """chat.completions.create with openai exceptions mapped to TimeoutError / ProviderError."""
     import openai
     if reasoning_effort:
@@ -43,7 +52,9 @@ def _create(client, reasoning_effort: str = "", temperature: str = "", **kwargs)
     if temperature:
         kwargs["temperature"] = float(temperature)
     try:
-        return client.chat.completions.create(**kwargs)
+        resp = client.chat.completions.create(**kwargs)
+        _record(provider, resp)
+        return resp
     except openai.APITimeoutError as e:
         raise TimeoutError(f"OpenAI timeout: {e}") from e
     except openai.APIStatusError as e:
@@ -98,7 +109,7 @@ class OpenAIChat:
         kwargs = dict(model=self._model, messages=candidate)
         if self._tools:
             kwargs.update(tools=self._tools, tool_choice="auto")
-        msg = _choice(_create(self._client, self._effort, self._temperature, **kwargs)).message
+        msg = _choice(_create(self._client, self._effort, self._temperature, self.name, **kwargs)).message
         calls, native = [], []
         for tc in msg.tool_calls or []:
             fn = getattr(tc, "function", None)
@@ -219,8 +230,8 @@ class TextToolChat(OpenAIChat):
 
     def _call(self, new: list[dict]) -> LLMReply:
         candidate = [*self._messages, *new]
-        msg = _choice(_create(self._client, self._effort, self._temperature, model=self._model,
-                              messages=candidate)).message
+        msg = _choice(_create(self._client, self._effort, self._temperature, self.name,
+                              model=self._model, messages=candidate)).message
         text = msg.content or ""
         calls = []
         for block in _TOOL_CALL_RE.findall(text):
@@ -293,7 +304,7 @@ class OpenAILLM:
         return cls(self._client, self._model, system, tools, self._effort, self._temperature, self.name)
 
     def complete(self, system: str, prompt: str) -> str:
-        resp = _create(self._client, self._effort, self._temperature, model=self._model,
+        resp = _create(self._client, self._effort, self._temperature, self.name, model=self._model,
                        messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}])
         text = (_choice(resp).message.content or "").strip()
         if not text:

@@ -21,6 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 import yaml
 
 from app import config
+from app.agent.llm import usage_totals
 from app.db import Database, to_jsonable
 from app.pipeline import build_pipeline
 from eval.run import value_in_text
@@ -91,6 +92,12 @@ def main() -> int:
     ap.add_argument("--workers", type=int, default=3)
     ap.add_argument("--providers", default="", help="LLM providers in order, e.g. qwen_local or gemini,openai "
                                                     "(default: LLM_PROVIDERS)")
+    ap.add_argument("--pick", default="", help="file with id/lang lines: exactly these phrasings")
+    ap.add_argument("--max-cost", type=float, default=0.0, help="stop starting questions once the estimated spend "
+                                                                   "reaches this many USD (0 = no limit)")
+    ap.add_argument("--usd-per-m-tokens", type=float, default=0.17,
+                    help="estimated USD per 1M input tokens, output included (calibrated from the OpenAI usage page: "
+                         "$2.06 for 12.23M input tokens with gpt-5.4-mini)")
     ap.add_argument("--rescore", default="", help="re-score a saved results file without calling the model")
     args = ap.parse_args()
     if args.rescore:
@@ -103,6 +110,10 @@ def main() -> int:
         return 2
     if args.split != "all":
         intents = [i for i in intents if i["split"] == args.split]
+    picked = None
+    if args.pick:
+        picked = {tuple(line.strip().split("/")) for line in open(args.pick, encoding="utf-8") if line.strip()}
+        intents = [i for i in intents if i["id"] in {p[0] for p in picked}]
     if args.only:
         wanted = set(args.only.split(","))
         intents = [i for i in intents if i["id"] in wanted]
@@ -113,10 +124,16 @@ def main() -> int:
     db = Database(config.DB_PATH)
     golds = {i["id"]: [gold_values(db, r) for r in i.get("readings") or []] for i in intents}
     pipeline = build_pipeline()
-    jobs = [(i, lang) for i in intents for lang in langs if (i.get("questions") or {}).get(lang)]
+    jobs = [(i, lang) for i in intents for lang in langs if (i.get("questions") or {}).get(lang)
+            and (picked is None or (i["id"], lang) in picked)]
+
+    def spent() -> float:
+        return sum(u[1] for u in usage_totals().values()) / 1e6 * args.usd_per_m_tokens
 
     def one(job):
         intent, lang = job
+        if args.max_cost and spent() >= args.max_cost:
+            return None  # budget reached: not asked
         question = intent["questions"][lang]
         t0 = time.monotonic()
         try:
@@ -141,7 +158,8 @@ def main() -> int:
         return row
 
     with ThreadPoolExecutor(args.workers) as ex:
-        rows = list(ex.map(one, jobs))
+        rows = [r for r in ex.map(one, jobs) if r is not None]
+    skipped = len(jobs) - len(rows)
 
     def rate(rs, key="any_ok"):
         return f"{sum(bool(r[key]) for r in rs)}/{len(rs)}" if rs else "-"
@@ -151,6 +169,10 @@ def main() -> int:
     amb = [r for r in ans if r["ambiguous"]]
     summary = {
         "providers": ",".join(config.LLM_PROVIDERS),
+        "not_asked_budget": skipped,
+        "usage": {k: dict(zip(("requests", "input_tokens", "cached_input_tokens", "output_tokens"), v))
+                  for k, v in usage_totals().items()},
+        "estimated_usd": round(spent(), 3),
         "planner": config.PLANNER,
         "phrasings": len(rows),
         "answerable_any": rate(ans),

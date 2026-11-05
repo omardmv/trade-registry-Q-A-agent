@@ -1,4 +1,5 @@
 """LLM abstraction so the agent can be tested with scripted fakes; Gemini is the real backend."""
+import threading
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -91,6 +92,32 @@ def track_providers() -> Iterator[list[str]]:
         yield used
     finally:
         _PROVIDERS.reset(token)
+
+
+_USAGE: dict[str, list[int]] = {}  # provider -> [requests, input tokens, cached input tokens, output tokens]
+_USAGE_LOCK = threading.Lock()
+
+
+def record_usage(provider: str, inp: int | None, cached: int | None, out: int | None) -> None:
+    """Process-wide token counter (the evaluation reports it and stops at a budget)."""
+    with _USAGE_LOCK:
+        u = _USAGE.setdefault(provider, [0, 0, 0, 0])
+        u[0] += 1
+        u[1] += inp or 0
+        u[2] += cached or 0
+        u[3] += out or 0
+
+
+def usage_totals() -> dict[str, list[int]]:
+    with _USAGE_LOCK:
+        return {k: list(v) for k, v in _USAGE.items()}
+
+
+def _gemini_usage(name: str, resp) -> None:
+    m = getattr(resp, "usage_metadata", None)
+    if m is not None:
+        out = (getattr(m, "candidates_token_count", 0) or 0) + (getattr(m, "thoughts_token_count", 0) or 0)
+        record_usage(name, getattr(m, "prompt_token_count", 0), getattr(m, "cached_content_token_count", 0), out)
 
 
 def note_provider(name: str) -> None:
@@ -251,6 +278,7 @@ class GeminiChat:
     def _call(self, user_content) -> LLMReply:
         candidate = [*self._contents, user_content]
         resp = self._client.models.generate_content(model=self._model, contents=candidate, config=self._config)
+        _gemini_usage(self.name, resp)
         content = _content_of(resp)
         self._contents = [*candidate, content]  # commit only after a successful response
         parts = content.parts or []
@@ -312,6 +340,7 @@ class GeminiLLM:
             config=self._types.GenerateContentConfig(
                 system_instruction=system, temperature=0,
                 thinking_config=self._types.ThinkingConfig(thinking_budget=self._thinking_budget)))
+        _gemini_usage(self.name, resp)
         content = _content_of(resp)
         text = "".join(p.text for p in (content.parts or []) if getattr(p, "text", None) and not getattr(p, "thought", None))
         if not text.strip():

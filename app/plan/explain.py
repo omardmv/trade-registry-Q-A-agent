@@ -1,7 +1,10 @@
 """One deterministic sentence describing what a plan computed, from the plan and the dictionary labels."""
 import datetime as dt
+import re
 
-from app.plan.dictionary import Dictionary, Subject, label
+from app.plan.dictionary import Dictionary, Subject
+from app.plan.dictionary import label as _dict_label
+from app.text import to_cyrillic
 from app.plan.model import Filter, Measure, Period, Plan
 
 _T = {
@@ -58,6 +61,25 @@ _T = {
         "record": "yozuvlar",
     },
 }
+
+
+def _cyr_template(text: str) -> str:
+    """Template words to Uzbek Cyrillic; {placeholders} stay as they are."""
+    return "".join(part if part.startswith("{") else to_cyrillic(part) for part in re.split(r"(\{[^}]*\})", text))
+
+
+_T["uz-Cyrl"] = {k: _cyr_template(v) for k, v in _T["uz"].items()}
+
+
+def label(f, lang: str) -> str:
+    """Dictionary label; for uz-Cyrl the (Latin) Uzbek label in Cyrillic. Data values are never converted."""
+    text = _dict_label(f, lang)
+    return to_cyrillic(text) if lang == "uz-Cyrl" else text
+
+
+def _lbl(s: Subject, lang: str) -> str:
+    text = s.lbl(lang)
+    return to_cyrillic(text) if lang == "uz-Cyrl" else text
 _NOTE_KEYS = ("excluded_cancelled", "all_statuses", "status_split", "uzs_converted", "usd_converted",
               "broker_both_sides", "role_split", "broker_side_split", "volume_by_unit", "ties_kept")
 _TIME = ("year", "quarter", "month", "day")
@@ -125,7 +147,7 @@ def _period(s: Subject, filters, t) -> tuple[str, bool, list]:
         return t["years"].format(y1=y.value[0], y2=y.value[1]), y.value[1] >= hi.year, [y]
     if y.op == "in":
         return t["years_in"].format(ys=", ".join(str(v) for v in y.value)), hi.year in y.value, [y]
-    return f"{label(s.fields['year'], 'ru' if t is _T['ru'] else 'uz')} {_value(y, t)}", True, [y]
+    return f"{label(s.fields['year'], next(k for k, v in _T.items() if v is t))} {_value(y, t)}", True, [y]
 
 
 def _period_text(s: Subject, p: Period, t) -> str:
@@ -150,13 +172,14 @@ def _filter_phrase(s: Subject, flt: Filter, notes, lang, t) -> str:
 
 def _measure_phrase(s: Subject, plan: Plan, m: Measure, lang, t) -> str:
     if m.agg == "count":
-        return s.count_label.get("uz" if lang.startswith("uz") else "ru") or s.count_col
+        text = s.count_label.get("uz" if lang.startswith("uz") else "ru") or s.count_col
+        return to_cyrillic(text) if lang == "uz-Cyrl" else text
     if m.agg in s.measures:
         return label(s.measures[m.agg], lang)
     if m.agg == "share":
         cond = "; ".join(_filter_phrase(s, w, [], lang, t) for w in m.where)
         basis = t["share_count"] if m.of is None else label(s.fields[m.of], lang)
-        text = t["share"].format(b=basis, c=cond, s=s.lbl(lang))
+        text = t["share"].format(b=basis, c=cond, s=_lbl(s, lang))
         if s.cancelled:
             touches = any(w.field in s.status_fields for w in m.where) or any(
                 f.field in s.status_fields for f in plan.filters)
@@ -169,10 +192,10 @@ def _measure_phrase(s: Subject, plan: Plan, m: Measure, lang, t) -> str:
 
 
 def explain_plan(plan: Plan, d: Dictionary, notes: list[str], lang: str) -> str:
-    t = _T["uz"] if lang in ("uz", "uz-Cyrl") or lang.startswith("uz") else _T["ru"]
-    lang = "uz" if t is _T["uz"] else "ru"
+    lang = "uz-Cyrl" if lang == "uz-Cyrl" else ("uz" if lang.startswith("uz") else "ru")
+    t = _T[lang]
     s = d.subject(plan.subject)
-    parts = [s.lbl(lang)]
+    parts = [_lbl(s, lang)]
     time_names = {"year", "month", "quarter", "day", s.date_field} if s.date_field else set()
     if plan.compare:
         p1, p2 = (_period_text(s, p, t) for p in plan.compare)

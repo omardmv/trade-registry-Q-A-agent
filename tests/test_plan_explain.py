@@ -79,3 +79,13 @@ def test_time_filters_not_in_the_period_phrase_are_listed():
     text = ex({"subject": "deals", "measures": [{"agg": "count"}],
                "filters": [F("year", [2023, 2024], "between"), F("quarter", 2)]})
     assert "2023–2024" in text and "квартал: 2" in text
+
+
+def test_uzbek_cyrillic_sentence_has_no_latin_words_but_keeps_values():
+    import re
+    text = ex({"subject": "deals", "measures": [{"agg": "sum", "of": "tonnes"}],
+               "filters": [F("product", "Cotton Lint Export"), F("year", 2024)], "group_by": ["buyer"], "limit": 3},
+              "uz-Cyrl")
+    assert text.startswith("Ҳисоб: битимлар; 2024-йил")
+    assert "Cotton Lint Export" in text                          # data values are never transliterated
+    assert not re.search(r"[A-Za-z]", text.replace("Cotton Lint Export", "")), text
