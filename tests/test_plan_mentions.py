@@ -186,3 +186,26 @@ def test_clamped_year_range_passes(index):
 def test_no_conditions_needs_no_mentions(index):
     plan = {"subject": "contracts", "measures": [{"agg": "avg", "of": "payment_term_days"}]}
     assert err(plan, "Shartnomalarda o‘rtacha to‘lov muddati necha kun?", index) is None
+
+
+def test_all_problems_are_reported_at_once(index):
+    plan = {"subject": "deals", "measures": [{"agg": "sum", "of": "amount_uzs"}], "filters": [F("year", 2024)],
+            "group_by": ["product"], "limit": 5, "mentions": [M("товаров", "group_by:product")]}
+    e = err(plan, "Топ-5 товаров по сумме за 2024 год", index)
+    assert e.startswith("mentions: 1) ") and "2) " in e and "Топ-5" in e and "2024" in e
+
+
+def test_used_as_spellings_and_roles_are_read_tolerantly(index):
+    plan = {"subject": "deals", "measures": [{"agg": "count"}], "filters": [F("year", 2023)],
+            "group_by": ["region"], "order": "asc", "limit": 1,
+            "mentions": [M("2023", "filters:year"), M("по региону склада", "filter:region"),
+                         M("меньше всего", "order")]}
+    assert err(plan, "В каком регионе меньше всего сделок в 2023 году (по региону склада)?", index) is None
+
+
+def test_inflected_product_links_to_its_value(index):
+    plan = {"subject": "deals", "measures": [{"agg": "sum", "of": "tonnes"}],
+            "filters": [F("product", "Хлопок-сырец"), F("year", 2025)],
+            "mentions": [M("хлопка-сырца", "filter:product"), M("2025", "filter:year"), M("тонн", "measure:0")]}
+    assert err(plan, "Сколько тонн хлопка-сырца продали в 2025?", index,
+               resolutions=[Resolution("product", "Хлопок-сырец", frozenset({"Хлопок-сырец"}))]) is None

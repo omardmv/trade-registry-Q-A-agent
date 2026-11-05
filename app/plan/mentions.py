@@ -55,7 +55,20 @@ def _find(sub: list[str], toks: list[str]) -> list[tuple[int, int]]:
 def _overlap(a: str, b: str) -> bool:
     """Two phrases share a word (inflection-tolerant)."""
     ta, tb = normalize_text(a).split(), normalize_text(b).split()
-    return any(_tok_match(x, y, False) or _tok_match(y, x, False) for x in ta for y in tb)
+    return any(_tok_match(x, y, False) or _tok_match(y, x, False) or _stem(x, y) for x in ta for y in tb)
+
+
+def _stem(x: str, y: str) -> bool:
+    """Same word in another case form (хлопок / хлопка, pshenitsa / pshenitsi): a common prefix of at least 4
+    letters covering 60% of the shorter word."""
+    if not (x.isalpha() and y.isalpha()) or min(len(x), len(y)) < 4:
+        return False
+    n = 0
+    for cx, cy in zip(x, y):
+        if cx != cy:
+            break
+        n += 1
+    return n >= max(4, -(-3 * min(len(x), len(y)) // 5))
 
 
 def _period_fields(s: Subject) -> set[str]:
@@ -100,10 +113,45 @@ def _fix(text: str) -> str:
     return text + "; then call run_plan again (or declare_unanswerable if the plan cannot express it)"
 
 
+MAX_PROBLEMS = 5
+
+
 def mention_error(plan: Plan, d: Dictionary, question: str, index, resolutions=(), names=(),
                   raw_filters: frozenset[str] = frozenset()) -> str | None:
-    """None, or a fix instruction. plan: validated plan after defaults; raw_filters: filter fields of the plan as
-    the planner sent it (defaults may drop a status filter that a mention points to)."""
+    """None, or one fix instruction listing every mention problem (so the planner fixes them in one round).
+    plan: validated plan after defaults; raw_filters: filter fields of the plan as the planner sent it (defaults
+    may drop a status filter that a mention points to)."""
+    problems = list(dict.fromkeys(_problems(_relink(plan, raw_filters), d, question, index, resolutions, names,
+                                            raw_filters)))
+    if not problems:
+        return None
+    if len(problems) == 1:
+        return _fix(problems[0])
+    shown = problems[:MAX_PROBLEMS]
+    return _fix("mentions: " + " ".join(f"{i}) {p}." for i, p in enumerate(shown, 1)))
+
+
+_USED_ALIASES = {"filters": "filter", "measures": "measure", "groupby": "group_by", "group": "group_by",
+                 "grouping": "group_by", "limits": "limit", "orders": "order", "sort": "order"}
+
+
+def _relink(plan: Plan, raw_filters) -> Plan:
+    """Tolerant reading of used_as: plural / alias spellings, and filter:<f> vs group_by:<f> when the plan has the
+    field in the other role only."""
+    filtered = {f.field for f in plan.filters} | {w.field for m in plan.measures for w in m.where} | set(raw_filters)
+    out = []
+    for m in plan.mentions:
+        kind, sep, arg = m.used_as.partition(":")
+        kind = _USED_ALIASES.get(kind, kind)
+        if kind == "filter" and arg and arg not in filtered and arg in plan.group_by:
+            kind = "group_by"
+        elif kind == "group_by" and arg and arg not in plan.group_by and arg in filtered:
+            kind = "filter"
+        out.append(Mention(m.text, f"{kind}{sep}{arg}"))
+    return plan.with_(mentions=tuple(out))
+
+
+def _problems(plan: Plan, d: Dictionary, question: str, index, resolutions, names, raw_filters):
     s = d.subject(plan.subject)
     q, origin = _words(question)
     periods = _period_fields(s)
@@ -114,12 +162,12 @@ def mention_error(plan: Plan, d: Dictionary, question: str, index, resolutions=(
         mt = normalize_text(m.text).split()
         found = _find(mt, q) if mt else []
         if not found:
-            return _fix(f"mention «{m.text}» is not in the question: copy the phrase exactly as the question writes it")
+            yield (f"mention «{m.text}» is not in the question: copy the phrase exactly as the question writes it")
         spans += [(a, b, m) for a, b in found]
     # b) each mention points to an element of the plan
     for m in plan.mentions:
         if m.used_as.partition(":")[0] not in TARGETS or not _target_ok(m.used_as, plan, raw_filters):
-            return _fix(f"mention «{m.text}» used_as {m.used_as!r} points to nothing in the plan; this plan has: "
+            yield (f"mention «{m.text}» used_as {m.used_as!r} points to nothing in the plan; this plan has: "
                         f"{', '.join(_targets(plan, raw_filters))}")
 
     def used(prefix_or_name: str) -> list[Mention]:
@@ -150,22 +198,23 @@ def mention_error(plan: Plan, d: Dictionary, question: str, index, resolutions=(
     for i, flt in [(None, f) for f in plan.filters] + share_filters:
         if flt.field in periods:
             if not period_mentions:
-                return _fix(f"the {flt.field} filter is not linked to the question: add a mention "
-                            f"{{text: <the date/year phrase>, used_as: filter:{flt.field}}}")
+                yield (f"the {flt.field} filter is not linked to the question: add a mention "
+                       f"{{text: <the date/year phrase>, used_as: filter:{flt.field}}}")
             continue
         ms = used(f"filter:{flt.field}") + (used(f"measure:{i}") if i is not None else [])
         if not ms:
-            return _fix(f"filter {flt.field} = {_show(flt)} is not linked to the question: add a mention "
+            yield (f"filter {flt.field} = {_show(flt)} is not linked to the question: add a mention "
                         f"{{text: <the question phrase>, used_as: filter:{flt.field}}} (a phrase may be listed again with "
                         "another used_as), or drop the filter if the question does not ask for it")
+            continue
         for v in _values(flt):
             if not linked(flt, v, ms):
-                return _fix(f"filter {flt.field} = {v} is not linked to the mention "
+                yield (f"filter {flt.field} = {v} is not linked to the mention "
                             f"«{'», «'.join(m.text for m in ms)}»: resolve() that phrase and use what it returns, or "
                             "point the mention at the phrase that names this value")
     for g in plan.group_by:
         if not used(f"group_by:{g}"):
-            return _fix(f"group_by {g} is not linked to the question: add a mention {{text: <the phrase that asks "
+            yield (f"group_by {g} is not linked to the question: add a mention {{text: <the phrase that asks "
                         f"for it>, used_as: group_by:{g}}} (a phrase may be listed again with another used_as), or "
                         "drop it from group_by")
 
@@ -175,19 +224,19 @@ def mention_error(plan: Plan, d: Dictionary, question: str, index, resolutions=(
         for y in (int(x) for x in _YEAR_RE.findall(normalize_text(m.text))):
             if covered is None or not covered(y):
                 where = "compare" if m.used_as == "compare" else "the period filters"
-                return _fix(f"mention «{m.text}» names the year {y} but {where} of the plan do not include {y}: "
+                yield (f"mention «{m.text}» names the year {y} but {where} of the plan do not include {y}: "
                             "set the period exactly as the phrase says (a range is between [from, to])")
     for m in plan.mentions:
         nums = [_num(x) for x in _NUM_RE.findall(m.text)]
         if m.used_as == "limit" and nums and plan.limit not in nums:
-            return _fix(f"mention «{m.text}» asks for {int(nums[0]) if nums[0].is_integer() else nums[0]} rows but "
+            yield (f"mention «{m.text}» asks for {int(nums[0]) if nums[0].is_integer() else nums[0]} rows but "
                         f"limit is {plan.limit}: set limit to that number")
         name = m.used_as[7:] if m.used_as.startswith("filter:") else ""
         if name and name in s.fields and s.fields[name].type == "number" and nums:
             vals = {float(v) for f in plan.filters if f.field == name for v in _values(f)}
             missing = [n for n in nums if n not in vals]
             if missing:
-                return _fix(f"mention «{m.text}» names {missing[0]:g} but the {name} filter is "
+                yield (f"mention «{m.text}» names {missing[0]:g} but the {name} filter is "
                             f"{sorted(vals) or 'missing'}: use the number of the question")
 
     # d) condition-like phrases of the question are in some mention
@@ -201,24 +250,24 @@ def mention_error(plan: Plan, d: Dictionary, question: str, index, resolutions=(
         word = origin[i]
         if _ID_RE.fullmatch(t):
             if not any(m.used_as.startswith("filter:") for m in ms):
-                return _fix(f"the question names the id «{word}» but no mention uses it: add a mention "
+                yield (f"the question names the id «{word}» but no mention uses it: add a mention "
                             f"{{text: «{word}», used_as: filter:<field>}} and filter it")
         elif _YEAR_RE.fullmatch(t):
             ok = [m for m in ms if m in period_mentions or (m.used_as.startswith("filter:")
                                                             and s.fields.get(m.used_as[7:]) is not None
                                                             and GROUND_KIND.get(s.fields[m.used_as[7:]].ground))]
             if not ok:
-                return _fix(f"the question names the year {t} («{word}») but no mention uses it: add a mention "
+                yield (f"the question names the year {t} («{word}») but no mention uses it: add a mention "
                             f"{{text: <the year phrase>, used_as: filter:year}} (or compare) and set the period")
         elif not ms:
-            return _fix(f"the question phrase «{word}» is not covered by any mention: add it to mentions with the "
+            yield (f"the question phrase «{word}» is not covered by any mention: add it to mentions with the "
                         "plan element it sets (filter:<field>, limit, ...)")
     for a, b, v in mentioned_spans(question, index, names):
         phrase = " ".join(dict.fromkeys(origin[a:b]))
         ms = covering(a, b)
         if v.field == "unit":
             if not ms:
-                return _fix(f"the question phrase «{phrase}» (unit {v.value}) is not covered by any mention: add it "
+                yield (f"the question phrase «{phrase}» (unit {v.value}) is not covered by any mention: add it "
                             "with the plan element it sets (a measure, or filter:unit)")
             continue
         fields = _CATALOG_FIELDS.get(v.field, (v.field,))
@@ -233,10 +282,9 @@ def mention_error(plan: Plan, d: Dictionary, question: str, index, resolutions=(
                 good.append(m)
         if not good:
             where = ", ".join(f"filter:{n}" for n in fields) or f"a field of another subject ({v.field})"
-            return _fix(f"the question phrase «{phrase}» names the {v.field} value «{v.value}», but no mention "
+            yield (f"the question phrase «{phrase}» names the {v.field} value «{v.value}», but no mention "
                         f"links it to a filter: filter it ({where}) with a mention {{text: «{phrase}», used_as: "
                         f"filter:<field>}}")
-    return None
 
 
 def _show(flt: Filter) -> str:

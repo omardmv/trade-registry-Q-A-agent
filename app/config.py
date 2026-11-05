@@ -66,6 +66,8 @@ DEADLINE_S = float(os.environ.get("UZEX_DEADLINE_S", "75"))
 LLM_TIMEOUT_S = float(os.environ.get("UZEX_LLM_TIMEOUT_S", "15"))
 MAX_TOOL_CALLS = 8
 MAX_FIX_RETRIES = 2
+# the grammar planner has more checks (mentions, guard): more fix rounds, still bounded by the deadline
+GRAMMAR_MAX_FIX_RETRIES = int(os.environ.get("UZEX_GRAMMAR_MAX_FIX_RETRIES", "4"))
 ROW_LIMIT = 1000
 # Planner: legacy (structured form, compile_query) or grammar (small general plan, run_plan; app/plan/)
 PLANNER = os.environ.get("PLANNER", "legacy").strip().lower() or "legacy"

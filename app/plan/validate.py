@@ -216,6 +216,30 @@ def _check_ranges(s: Subject, plan: Plan) -> None:
                                 "and add an assumption that the period is covered only within it")
 
 
+def _drop_restated_periods(plan: Plan) -> Plan:
+    """With compare, year / quarter / month filters that only restate the compared periods (year=2025 next to
+    compare [2025 Q1, 2026 Q1]) are dropped; any other time filter stays and is rejected by _check_compare."""
+    if not plan.compare:
+        return plan
+    years = {p.year for p in plan.compare}
+    months = [p.months() for p in plan.compare]
+
+    def restated(f: Filter) -> bool:
+        vals = f.value if isinstance(f.value, tuple) else (f.value,)
+        if f.op not in ("=", "in", "between") or not all(isinstance(v, int) for v in vals):
+            return False
+        if f.field == "year":
+            return all(v in years for v in vals)
+        if f.field in ("month", "quarter") and all(m is not None for m in months):
+            span = [(3 * v - 2, 3 * v) if f.field == "quarter" else (v, v) for v in vals]
+            if f.op == "between":
+                span = [(span[0][0], span[-1][1])]
+            return all(m[0] <= a and b <= m[1] for a, b in span for m in months)
+        return False
+
+    return plan.with_(filters=tuple(f for f in plan.filters if not restated(f)))
+
+
 def _check_compare(s: Subject, plan: Plan) -> None:
     if not plan.compare:
         return
@@ -329,6 +353,7 @@ def validate_plan(plan: Plan, d: Dictionary, catalog: dict | None = None) -> Pla
             if s.fields.get(name):
                 raise PlanError(f"a {name} filter needs a year filter; for a cross-year range filter "
                                 f"{s.date_field} with between")
+    out = _drop_restated_periods(out)
     _check_ranges(s, out)
     _check_compare(s, out)
     return out

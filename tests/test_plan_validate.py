@@ -145,8 +145,12 @@ def test_compare_rules():
     assert "same length" in err({"subject": "deals", "measures": COUNT,
                                  "compare": [{"year": 2024}, {"year": 2025, "quarter": 1}]})
     assert "month_to 10" in err({"subject": "deals", "measures": COUNT, "compare": [{"year": 2025}, {"year": 2026}]})
-    assert "only in compare" in err({"subject": "deals", "measures": COUNT, "filters": [F("year", 2024)],
+    assert "only in compare" in err({"subject": "deals", "measures": COUNT, "filters": [F("year", 2022)],
                                      "compare": [{"year": 2023}, {"year": 2024}]})
+    # a time filter that only restates a compared period is dropped
+    p = V({"subject": "deals", "measures": COUNT, "filters": [F("year", 2025), F("quarter", 1)],
+           "compare": [{"year": 2025, "quarter": 1}, {"year": 2026, "quarter": 1}]})
+    assert p.filters == ()
     assert "without group_by" in err({"subject": "deals", "measures": COUNT, "group_by": ["product"],
                                       "compare": [{"year": 2023}, {"year": 2024}]})
     assert "dated subject" in err({"subject": "companies", "measures": COUNT,
@@ -202,8 +206,9 @@ def test_numerator_flag_moves_filter_into_share():
     p = V({"subject": "deals", "measures": [{"agg": "share", "of": "amount_uzs"}],
            "filters": [{"field": "product", "value": "Сахар", "numerator": True}, F("year", 2024)]})
     assert [f.field for f in p.filters] == ["year"] and p.measures[0].where[0].value == "Сахар"
-    assert "only used with the share" in err({"subject": "deals", "measures": COUNT,
-                                              "filters": [{"field": "year", "value": 2024, "numerator": True}]})
+    # without a share measure the flag is ignored: the condition stays a plain filter
+    p = V({"subject": "deals", "measures": COUNT, "filters": [{"field": "year", "value": 2024, "numerator": True}]})
+    assert [(f.field, f.value) for f in p.filters] == [("year", 2024)]
 
 
 def test_zero_limit_means_no_limit():

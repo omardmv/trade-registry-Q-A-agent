@@ -194,7 +194,8 @@ def build_pipeline() -> Pipeline:
     resolver = Resolver(db)
     if config.PLANNER == "grammar":
         from app.agent.grammar_writer import GrammarWriter
-        writer = GrammarWriter(llm, db, resolver, config.MAX_TOOL_CALLS, config.MAX_FIX_RETRIES, config.LLM_TIMEOUT_S)
+        writer = GrammarWriter(llm, db, resolver, config.MAX_TOOL_CALLS + 4, config.GRAMMAR_MAX_FIX_RETRIES,
+                               config.LLM_TIMEOUT_S)
     else:
         writer = Writer(llm, db, resolver, ExampleStore.from_yaml(config.EXAMPLES_PATH),
                         render_schema_prompt(load_semantic()), config.MAX_TOOL_CALLS, config.MAX_FIX_RETRIES,

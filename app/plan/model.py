@@ -214,7 +214,9 @@ def parse_plan(d) -> Plan:
     for f in filters_raw:
         if isinstance(f, dict) and f.get("numerator") not in (None, False, True, "", "true", "false"):
             raise PlanError("filter numerator is true or false")
-    is_num = [isinstance(f, dict) and f.get("numerator") in (True, "true") for f in filters_raw]
+    # numerator:true on a plan without a share is a plain filter (the condition still applies)
+    has_share = any(m.agg == "share" for m in measures)
+    is_num = [has_share and isinstance(f, dict) and f.get("numerator") in (True, "true") for f in filters_raw]
     filters = tuple(parse_filter(f) for f, n in zip(filters_raw, is_num) if not n)
     num_raw = d.get("numerator") or []
     if isinstance(num_raw, dict):
