@@ -3,7 +3,10 @@
     uv run python -m eval.real.vocab_check                 # eval set (360 phrasings) + paraphrase set
     uv run python -m eval.real.vocab_check --show-known    # also list the refused words of every phrasing
 
-Stage 1 (before the planner): unknown words that are not a word of any entity name in the database.
+Stage 1 (before the planner), as built now (Vocab.prefilter, "pre"): refused only when the question names no subject
+of the data or an unknown word is the subject of a rate; the other unknown words go to the planner and, when the
+plan does not use them, to the judge ("judge" = phrasings that would reach it with the gold entities).
+Old stage 1 ("stage1"): any unknown word that is not a word of any entity name in the database.
 Stage 2 proxy (after the plan): lexicon misses that are not words of the entities the gold SQL uses (INNs and
 broker codes in the reference readings, quoted product / region values) - what stage 2 refuses when the planner
 uses the same entities as the gold query. For no-answer intents the proxy takes the entities their question
@@ -57,10 +60,14 @@ def run(db_path=config.DB_PATH, verbose=False) -> dict:
             q = i["questions"][lang]
             s1 = vocab.unknown(q)
             s2 = vocab.unknown_in_plan(q, gold_names(resolver, i, q))
-            for stage, unk in (("stage1", s1), ("stage2", s2), ("any", s1 or s2)):
+            pre = vocab.prefilter(q)
+            for stage, unk in (("stage1", s1), ("stage2", s2), ("any", s1 or s2), ("pre", pre.refuse),
+                               ("judge", not pre.refuse and s2)):
                 st = stats[(stage, group, i["split"])]
                 st[0] += bool(unk)
                 st[1] += 1
+            if pre.refuse and group == "answerable":
+                lines.append(f"{i['id']} {i['split']:4} {lang:7} answerable PRE REFUSAL ({pre.why}: {pre.refuse.word}) | {q}")
             if (group == "answerable" and (s1 or s2)) or (group == "no-answer") or verbose:
                 tag = ("FALSE REFUSAL" if group == "answerable" and (s1 or s2) else
                        "refused" if s1 or s2 else "passed" if group == "no-answer" else "ok")
@@ -71,22 +78,30 @@ def run(db_path=config.DB_PATH, verbose=False) -> dict:
             q = p["questions"][lang]
             s1 = vocab.unknown(q)
             s2 = vocab.unknown_in_plan(q, gold_names(resolver, {}, q))
-            for stage, unk in (("stage1", s1), ("stage2", s2), ("any", s1 or s2)):
+            pre = vocab.prefilter(q)
+            for stage, unk in (("stage1", s1), ("stage2", s2), ("any", s1 or s2), ("pre", pre.refuse),
+                               ("judge", not pre.refuse and s2)):
                 st = stats[(stage, "paraphrase", p["kind"])]
                 st[0] += bool(unk)
                 st[1] += 1
             tag = "refused" if s1 else "s2 only" if s2 else "PASSED"
-            lines.append(f"{p['id']} {p['kind']:6} {lang:7} paraphrase {tag:8} s1={[u.word for u in s1]} "
+            ptag = f"pre-refused ({pre.why}: {pre.refuse.word})" if pre.refuse else "to judge" if s2 else "NO GATE"
+            lines.append(f"{p['id']} {p['kind']:6} {lang:7} paraphrase {tag:8} {ptag} s1={[u.word for u in s1]} "
                          f"s2={[u.word for u in s2]} | {q}")
     for a in yaml.safe_load(ANSWERABLE.read_text(encoding="utf-8")):
         for lang in LANGS:
             q = a["questions"][lang]
             s1 = vocab.unknown(q)
             s2 = vocab.unknown_in_plan(q, gold_names(resolver, {}, q) + _named(resolver, q))
-            for stage, unk in (("stage1", s1), ("stage2", s2), ("any", s1 or s2)):
+            pre = vocab.prefilter(q)
+            for stage, unk in (("stage1", s1), ("stage2", s2), ("any", s1 or s2), ("pre", pre.refuse),
+                               ("judge", not pre.refuse and s2)):
                 st = stats[(stage, "answerable-paraphrase", "new")]
                 st[0] += bool(unk)
                 st[1] += 1
+            if pre.refuse:
+                lines.append(f"{a['id']} new    {lang:7} answerable-paraphrase PRE REFUSAL ({pre.why}: "
+                             f"{pre.refuse.word}) | {q}")
             if s1 or s2 or verbose:
                 lines.append(f"{a['id']} new    {lang:7} answerable-paraphrase {'FALSE REFUSAL' if s1 or s2 else 'ok'} "
                              f"s1={[u.word for u in s1]} s2={[u.word for u in s2]} | {q}")
@@ -110,7 +125,8 @@ def main():
     print()
     for key in sorted(out["stats"]):
         refused, total = out["stats"][key]
-        print(f"{' / '.join(key):40} refused {refused:3}/{total}")
+        verb = "reach the judge" if key[0] == "judge" else "refused"
+        print(f"{' / '.join(key):40} {verb} {refused:3}/{total}")
 
 
 if __name__ == "__main__":
