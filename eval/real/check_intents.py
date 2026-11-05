@@ -25,7 +25,7 @@ SHAPES = [
     "lookup", "count", "total", "average", "share", "top_n", "least", "distinct_count",
     "compare_periods", "trend", "breakdown", "date_of_extreme",
 ]
-SPLITS = {"dev", "test", "fresh", "fresh2", "fresh3"}
+SPLITS = {"dev", "test", "fresh", "fresh2", "fresh3", "fresh4"}
 MAX_ROWS = 5
 
 

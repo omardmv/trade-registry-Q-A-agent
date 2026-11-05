@@ -1,0 +1,958 @@
+# Fresh evaluation set 4: written from the data (data/README.md, data_dictionary, the DuckDB tables) only,
+# independently of the system; asks what different real users would type (wheat trader, fuel-station owner, accountant,
+# hokimiyat official, student, journalist). Same format as intents.yaml; split "fresh4" for all.
+# Check: uv run python -m eval.real.check_intents --file eval/real/fresh4_intents.yaml
+# Run:   uv run python -m eval.real.run --intents eval/real/fresh4_intents.yaml --split fresh4
+
+- id: k001
+  split: fresh4
+  subject: deals
+  shape: lookup
+  answerable: true
+  intent: Product and amount of deal No. 350321
+  readings:
+  - name: product and amount
+    sql: SELECT product_canonical, amount FROM deals WHERE deal_id = 350321
+    key:
+    - product_canonical
+    - amount
+    sql_check: SELECT c.product_canonical, d.amount FROM deals d JOIN contracts c ON c.contract_id = d.contract_id WHERE d.deal_id = 350321
+  questions:
+    ru: Подскажите по сделке 350321 — что там за товар и на какую сумму сошлись?
+    uz_latn: 350321-bitim bo'yicha ayting-chi, qanaqa tovar sotilgan va qancha pulga kelishilgan?
+    uz_cyrl: 350321-битим бўйича айтингчи, қанақа товар сотилган ва қанча пулга келишилган?
+- id: k002
+  split: fresh4
+  subject: deals
+  shape: lookup
+  answerable: true
+  intent: Amount in US dollars and payment date of export deal No. 280126
+  readings:
+  - name: usd amount and payment date
+    sql: SELECT amount_usd, payment_date FROM deals WHERE deal_id = 280126
+    key:
+    - amount_usd
+    - payment_date
+    sql_check: SELECT amount AS amount_usd, payment_date FROM deals WHERE deal_id = 280126 AND currency = 'USD'
+  questions:
+    ru: Экспортная сделка №280126 — на сколько долларов и когда покупатель перевёл деньги?
+    uz_latn: 280126 raqamli eksport bitimi necha dollarlik bolgan va xaridor pulni qachon otkazgan?
+    uz_cyrl: 280126 рақамли экспорт битими неча долларлик бўлган ва харидор пулни қачон ўтказган?
+- id: k003
+  split: fresh4
+  subject: deals
+  shape: count
+  answerable: true
+  intent: 'Number of deals in 2024 with warehouses in Namangan region (status not specified: all deals, or without annulled)'
+  readings:
+  - name: all deals
+    sql: SELECT COUNT(*) AS n FROM deals WHERE region = 'Namangan viloyati' AND year = 2024
+    key:
+    - n
+    sql_check: SELECT COUNT(*) AS n FROM deals WHERE region = 'Namangan viloyati' AND deal_date BETWEEN DATE '2024-01-01' AND DATE '2024-12-31'
+  - name: without annulled
+    sql: SELECT COUNT(*) AS n FROM deals WHERE region = 'Namangan viloyati' AND year = 2024 AND NOT is_cancelled
+    key:
+    - n
+    sql_check: SELECT COUNT(*) AS n FROM deals WHERE region = 'Namangan viloyati' AND deal_date BETWEEN DATE '2024-01-01' AND DATE '2024-12-31' AND status <> 'Аннулирован(Не оплачен)'
+  questions:
+    ru: Сколько всего сделок прошло в 2024 году по складам Наманганской области? Хокимияту нужна цифра
+    uz_latn: 2024-yilda Namangan viloyati omborlari boyicha jami nechta bitim bolgan? Hokimiyatga raqam kerak edi
+    uz_cyrl: 2024 йилда Наманган вилояти омборлари бўйича жами нечта битим бўлган? Ҳокимиятга рақам керак эди
+- id: k004
+  split: fresh4
+  subject: deals
+  shape: count
+  answerable: true
+  intent: Number of deals paid but not yet delivered as of 30 October 2026
+  readings:
+  - name: status paid
+    sql: SELECT COUNT(*) AS n FROM deals WHERE status = 'Оплачен'
+    key:
+    - n
+    sql_check: SELECT COUNT(*) AS n FROM deals WHERE status LIKE 'Оплач%'
+  questions:
+    ru: Сколько сделок на конец октября 2026 уже оплачены, но товар ещё не отгружен?
+    uz_latn: 2026-yil oktabr oxiriga holat boyicha nechta bitim pulini tolagan-u, mol hali yetkazilmagan?
+    uz_cyrl: 2026 йил октябр охирига ҳолат бўйича нечта битим пулини тўлаган-у, мол ҳали етказилмаган?
+- id: k005
+  split: fresh4
+  subject: deals
+  shape: total
+  answerable: true
+  intent: 'Tonnes of urea (carbamide) traded in 2024 (status not specified: all deals, or without annulled)'
+  readings:
+  - name: all deals
+    sql: SELECT SUM(volume_tonnes) AS tonnes FROM deals WHERE product_canonical = 'Карбамид' AND year = 2024
+    key:
+    - tonnes
+    sql_check: SELECT SUM(quantity * lot) AS tonnes FROM deals WHERE product_canonical = 'Карбамид' AND unit = 'тонна' AND deal_date BETWEEN DATE '2024-01-01' AND DATE '2024-12-31'
+  - name: without annulled
+    sql: SELECT SUM(volume_tonnes) AS tonnes FROM deals WHERE product_canonical = 'Карбамид' AND year = 2024 AND NOT is_cancelled
+    key:
+    - tonnes
+    sql_check: SELECT SUM(quantity * lot) AS tonnes FROM deals WHERE product_canonical = 'Карбамид' AND unit = 'тонна' AND status <> 'Аннулирован(Не оплачен)' AND deal_date BETWEEN DATE '2024-01-01' AND DATE '2024-12-31'
+  questions:
+    ru: Сколько тонн карбамида (мочевины) прошло через биржу за 2024 год? Хочу прикинуть, как у нас в хозяйстве по удобрениям
+    uz_latn: 2024-yilda birja orqali necha tonna karbamid (mochevina) otgan? Xojalikda ugit boyicha solishtirib koray dedim
+    uz_cyrl: 2024 йилда биржа орқали неча тонна карбамид (мочевина) ўтган? Хўжаликда ўғит бўйича солиштириб кўрай дедим
+- id: k006
+  split: fresh4
+  subject: deals
+  shape: total
+  answerable: true
+  intent: Litres of petrol sold in 2025 (deals measured in litres), excluding annulled deals
+  readings:
+  - name: without annulled
+    sql: SELECT SUM(volume) AS liters FROM deals WHERE product_canonical = 'Бензин автомобильный' AND unit = 'литр' AND year = 2025 AND NOT is_cancelled
+    key:
+    - liters
+    sql_check: SELECT SUM(quantity * lot) AS liters FROM deals WHERE product_canonical = 'Бензин автомобильный' AND unit = 'литр' AND status <> 'Аннулирован(Не оплачен)' AND deal_date BETWEEN DATE '2025-01-01' AND DATE '2025-12-31'
+  questions:
+    ru: 'У меня АЗС, интересно: сколько литров автобензина реально продали на бирже в 2025 году, без аннулированных?'
+    uz_latn: 'Menda yoqilgi quyish shoxobchasi bor, qiziq: 2025-yilda birjada necha litr avtobenzin sotilgan, bekor bolganlarini hisobga olmasdan?'
+    uz_cyrl: 'Менда ёқилғи қуйиш шохобчаси бор, қизиқ: 2025 йилда биржада неча литр автобензин сотилган, бекор бўлганларини ҳисобга олмасдан?'
+- id: k007
+  split: fresh4
+  subject: deals
+  shape: average
+  answerable: true
+  intent: Average number of days from deal to payment for cottonseed oil deals in 2024 (paid deals only)
+  readings:
+  - name: paid deals
+    sql: SELECT AVG(days_to_payment) AS avg_days FROM deals WHERE product_canonical = 'Масло хлопковое' AND year = 2024 AND payment_date IS NOT NULL
+    key:
+    - avg_days
+    sql_check: SELECT AVG(date_diff('day', deal_date, payment_date)) AS avg_days FROM deals WHERE product_canonical = 'Масло хлопковое' AND payment_date IS NOT NULL AND deal_date BETWEEN DATE '2024-01-01' AND DATE '2024-12-31'
+  questions:
+    ru: 'По хлопковому маслу за 2024 год: в среднем за сколько дней покупатель оплачивает после сделки? Бухгалтерия спрашивает'
+    uz_latn: 2024-yilda paxta moyi bitimlarida xaridor bitimdan keyin oʻrtacha necha kunda pul tolaydi? Buxgalteriya soragan edi
+    uz_cyrl: 2024 йилда пахта мойи битимларида харидор битимдан кейин ўртача неча кунда пул тўлайди? Бухгалтерия сўраган эди
+- id: k008
+  split: fresh4
+  subject: deals
+  shape: average
+  answerable: true
+  intent: 'Average amount in US dollars of one export deal in 2026 (status not specified: all deals, or without annulled)'
+  readings:
+  - name: all deals
+    sql: SELECT AVG(amount_usd) AS avg_usd FROM deals WHERE contract_type = 'Экспортный' AND year = 2026
+    key:
+    - avg_usd
+    sql_check: SELECT AVG(amount) AS avg_usd FROM deals WHERE currency = 'USD' AND deal_date BETWEEN DATE '2026-01-01' AND DATE '2026-12-31'
+  - name: without annulled
+    sql: SELECT AVG(amount_usd) AS avg_usd FROM deals WHERE contract_type = 'Экспортный' AND year = 2026 AND NOT is_cancelled
+    key:
+    - avg_usd
+    sql_check: SELECT AVG(amount) AS avg_usd FROM deals WHERE currency = 'USD' AND status <> 'Аннулирован(Не оплачен)' AND deal_date BETWEEN DATE '2026-01-01' AND DATE '2026-12-31'
+  questions:
+    ru: Какая в среднем сумма одной экспортной сделки в долларах за 2026 год?
+    uz_latn: 2026-yilda bitta eksport bitimining oʻrtacha summasi necha dollar boladi?
+    uz_cyrl: 2026 йилда битта экспорт битимининг ўртача суммаси неча доллар бўлади?
+- id: k009
+  split: fresh4
+  subject: deals
+  shape: share
+  answerable: true
+  intent: Share (%) of partially executed deals among all deals of 2025
+  readings:
+  - name: all 2025 deals
+    sql: SELECT 100.0 * COUNT(*) FILTER (WHERE status = 'Исполнен(Частично)') / COUNT(*) AS pct FROM deals WHERE year = 2025
+    key:
+    - pct
+    sql_check: SELECT 100.0 * SUM(CASE WHEN status LIKE '%Частично%' THEN 1 ELSE 0 END) / COUNT(*) AS pct FROM deals WHERE deal_date BETWEEN DATE '2025-01-01' AND DATE '2025-12-31'
+  questions:
+    ru: Какой процент сделок 2025 года исполнен только частично, то есть оплатили, а привезли не всё?
+    uz_latn: 2025-yildagi bitimlarning necha foizi faqat qisman bajarilgan, yaʼni pul tolangan-u, mol toliq keltirilmagan?
+    uz_cyrl: 2025 йилдаги битимларнинг неча фоизи фақат қисман бажарилган, яъни пул тўланган-у, мол тўлиқ келтирилмаган?
+- id: k010
+  split: fresh4
+  subject: deals
+  shape: share
+  answerable: true
+  intent: Share (%) of Khorezm region in wheat tonnes sold in 2024, excluding annulled
+  readings:
+  - name: without annulled
+    sql: SELECT 100.0 * SUM(volume_tonnes) FILTER (WHERE region = 'Xorazm viloyati') / SUM(volume_tonnes) AS pct FROM deals WHERE product_canonical = 'Пшеница' AND year = 2024 AND NOT is_cancelled
+    key:
+    - pct
+    sql_check: SELECT 100.0 * (SELECT SUM(quantity * lot) FROM deals WHERE product_canonical = 'Пшеница' AND unit = 'тонна' AND region = 'Xorazm viloyati' AND status <> 'Аннулирован(Не оплачен)' AND year = 2024) / (SELECT SUM(quantity * lot) FROM deals WHERE product_canonical = 'Пшеница' AND unit = 'тонна' AND status <> 'Аннулирован(Не оплачен)' AND year = 2024) AS pct
+  questions:
+    ru: Я торгую пшеницей. Какая доля хорезмских складов в тоннаже пшеницы за 2024 год, без аннулированных сделок?
+    uz_latn: Men bugdoy savdosi bilan shugʻullanaman. 2024-yilda sotilgan bugdoy tonnasining necha foizi Xorazm omborlariga toʻgʻri keladi? Bekor bolgan bitimlarsiz
+    uz_cyrl: Мен буғдой савдоси билан шуғулланаман. 2024 йилда сотилган буғдой тоннасининг неча фоизи Хоразм омборларига тўғри келади? Бекор бўлган битимларсиз
+- id: k011
+  split: fresh4
+  subject: deals
+  shape: top_n
+  answerable: true
+  intent: Top 3 buyers of polyethylene by tonnes in 2024, excluding annulled (INN and name)
+  readings:
+  - name: without annulled
+    sql: SELECT d.buyer_inn, p.name, SUM(d.volume_tonnes) AS tonnes FROM deals d JOIN participants p ON p.inn = d.buyer_inn WHERE d.product_canonical = 'Полиэтилен' AND d.year = 2024 AND NOT d.is_cancelled GROUP BY d.buyer_inn, p.name ORDER BY tonnes DESC LIMIT 3
+    key:
+    - buyer_inn
+    - name
+    sql_check: SELECT buyer_inn, (SELECT name FROM participants WHERE inn = buyer_inn) AS name, SUM(quantity * lot) AS tonnes FROM deals WHERE product_canonical = 'Полиэтилен' AND unit = 'тонна' AND status <> 'Аннулирован(Не оплачен)' AND deal_date BETWEEN DATE '2024-01-01' AND DATE '2024-12-31' GROUP BY buyer_inn ORDER BY tonnes DESC LIMIT 3
+  questions:
+    ru: Пишу курсовую по полимерам. Назовите тройку крупнейших покупателей полиэтилена за 2024 год по тоннам (не считая аннулированные), с ИНН
+    uz_latn: Polimerlar boyicha kursovoy yozyapman. 2024-yilda polietilenni eng kop tonna olgan uchta xaridorni ayting (bekor bolganlarsiz), STIRi bilan
+    uz_cyrl: Полимерлар бўйича курсовой ёзяпман. 2024 йилда полиэтиленни энг кўп тонна олган учта харидорни айтинг (бекор бўлганларсиз), СТИРи билан
+- id: k012
+  split: fresh4
+  subject: deals
+  shape: least
+  answerable: true
+  intent: Product with the fewest deals in 2026 (all deals)
+  readings:
+  - name: all deals
+    sql: SELECT product_canonical, COUNT(*) AS n FROM deals WHERE year = 2026 GROUP BY product_canonical ORDER BY n ASC, product_canonical LIMIT 1
+    key:
+    - product_canonical
+    - n
+    sql_check: SELECT c.product_canonical, COUNT(*) AS n FROM deals d JOIN contracts c ON c.contract_id = d.contract_id WHERE d.deal_date BETWEEN DATE '2026-01-01' AND DATE '2026-12-31' GROUP BY c.product_canonical ORDER BY n, c.product_canonical LIMIT 1
+  questions:
+    ru: Какого товара в 2026 году продали меньше всего по числу сделок и сколько там сделок?
+    uz_latn: 2026-yilda qaysi tovar eng kam bitim boʻlgan va u nechta?
+    uz_cyrl: 2026 йилда қайси товар энг кам битим бўлган ва у нечта?
+- id: k013
+  split: fresh4
+  subject: deals
+  shape: least
+  answerable: true
+  intent: 'Warehouse region with the fewest deals in 2022 (status not specified: all deals, or without annulled)'
+  readings:
+  - name: all deals
+    sql: SELECT region, COUNT(*) AS n FROM deals WHERE year = 2022 GROUP BY region ORDER BY n ASC, region LIMIT 1
+    key:
+    - region
+    - n
+    sql_check: SELECT region, COUNT(*) AS n FROM deals WHERE deal_date BETWEEN DATE '2022-01-01' AND DATE '2022-12-31' GROUP BY region ORDER BY n, region LIMIT 1
+  - name: without annulled
+    sql: SELECT region, COUNT(*) AS n FROM deals WHERE year = 2022 AND NOT is_cancelled GROUP BY region ORDER BY n ASC, region LIMIT 1
+    key:
+    - region
+    - n
+    sql_check: SELECT region, COUNT(*) AS n FROM deals WHERE deal_date BETWEEN DATE '2022-01-01' AND DATE '2022-12-31' AND status <> 'Аннулирован(Не оплачен)' GROUP BY region ORDER BY n, region LIMIT 1
+  questions:
+    ru: В каком регионе в 2022 году было меньше всего сделок по складам? Репортёру надо для заметки
+    uz_latn: 2022-yilda qaysi viloyat omborlari boʻyicha eng kam bitim boʻlgan? Muxbirga maqola uchun kerak
+    uz_cyrl: 2022 йилда қайси вилоят омборлари бўйича энг кам битим бўлган? Муxбирга мақола учун керак
+- id: k014
+  split: fresh4
+  subject: deals
+  shape: distinct_count
+  answerable: true
+  intent: 'Number of different sellers of Portland cement in 2024 (status not specified: any deal, or without annulled)'
+  readings:
+  - name: any deal
+    sql: SELECT COUNT(DISTINCT seller_inn) AS n FROM deals WHERE product_canonical = 'Портландцемент' AND year = 2024
+    key:
+    - n
+    sql_check: SELECT COUNT(*) AS n FROM (SELECT seller_inn FROM deals WHERE product_canonical = 'Портландцемент' AND deal_date BETWEEN DATE '2024-01-01' AND DATE '2024-12-31' GROUP BY seller_inn)
+  - name: without annulled
+    sql: SELECT COUNT(DISTINCT seller_inn) AS n FROM deals WHERE product_canonical = 'Портландцемент' AND year = 2024 AND NOT is_cancelled
+    key:
+    - n
+    sql_check: SELECT COUNT(*) AS n FROM (SELECT seller_inn FROM deals WHERE product_canonical = 'Портландцемент' AND status <> 'Аннулирован(Не оплачен)' AND deal_date BETWEEN DATE '2024-01-01' AND DATE '2024-12-31' GROUP BY seller_inn)
+  questions:
+    ru: Сколько разных фирм продавали портландцемент в 2024 году? Хочу понять, сколько у нас поставщиков на рынке
+    uz_latn: 2024-yilda portlandsement sotgan nechta turli firma bor? Bozorda taminotchilar qancha ekanini bilmoqchiman
+    uz_cyrl: 2024 йилда портландцемент сотган нечта турли фирма бор? Бозорда таъминотчилар қанча эканини билмоқчиман
+- id: k015
+  split: fresh4
+  subject: deals
+  shape: compare_periods
+  answerable: true
+  intent: Tonnes of petroleum bitumen sold in 2024 versus 2025, excluding annulled
+  readings:
+  - name: 2024 vs 2025
+    sql: SELECT year, SUM(volume_tonnes) AS tonnes FROM deals WHERE product_canonical = 'Битум нефтяной' AND year IN (2024, 2025) AND NOT is_cancelled GROUP BY year ORDER BY year
+    key:
+    - year
+    - tonnes
+    sql_check: SELECT year(deal_date) AS year, SUM(quantity * lot) AS tonnes FROM deals WHERE product_canonical = 'Битум нефтяной' AND unit = 'тонна' AND status <> 'Аннулирован(Не оплачен)' AND (deal_date BETWEEN DATE '2024-01-01' AND DATE '2024-12-31' OR deal_date BETWEEN DATE '2025-01-01' AND DATE '2025-12-31') GROUP BY 1 ORDER BY 1
+  questions:
+    ru: Битума в 2025 году продали больше тонн, чем в 2024? Без аннулированных, цифры по обоим годам
+    uz_latn: Bitum 2025-yilda 2024-yilga qaraganda kop tonna sotilganmi? Bekor bolganlarsiz, ikkala yilning raqamini bering
+    uz_cyrl: Битум 2025 йилда 2024 йилга қараганда кўп тонна сотилганми? Бекор бўлганларсиз, иккала йилнинг рақамини беринг
+- id: k016
+  split: fresh4
+  subject: deals
+  shape: compare_periods
+  answerable: true
+  intent: 'Number of deals from 1 January to 30 October in 2025 versus 2026 (status not specified: all deals, or without annulled)'
+  readings:
+  - name: all deals
+    sql: SELECT year, COUNT(*) AS n FROM deals WHERE year IN (2025, 2026) AND (month < 10 OR (month = 10 AND day(deal_date) <= 30)) GROUP BY year ORDER BY year
+    key:
+    - year
+    - n
+    sql_check: SELECT year(deal_date) AS year, COUNT(*) AS n FROM deals WHERE deal_date BETWEEN DATE '2025-01-01' AND DATE '2025-10-30' OR deal_date BETWEEN DATE '2026-01-01' AND DATE '2026-10-30' GROUP BY 1 ORDER BY 1
+  - name: without annulled
+    sql: SELECT year, COUNT(*) AS n FROM deals WHERE year IN (2025, 2026) AND (month < 10 OR (month = 10 AND day(deal_date) <= 30)) AND NOT is_cancelled GROUP BY year ORDER BY year
+    key:
+    - year
+    - n
+    sql_check: SELECT year(deal_date) AS year, COUNT(*) AS n FROM deals WHERE status <> 'Аннулирован(Не оплачен)' AND (deal_date BETWEEN DATE '2025-01-01' AND DATE '2025-10-30' OR deal_date BETWEEN DATE '2026-01-01' AND DATE '2026-10-30') GROUP BY 1 ORDER BY 1
+  questions:
+    ru: Сравните, пожалуйста, число сделок с 1 января по 30 октября 2025 и за тот же период 2026. Растём или падаем?
+    uz_latn: 1-yanvardan 30-oktabrgacha boʻlgan bitimlar sonini 2025 va 2026-yilda solishtirib bering. Oʻsyapmizmi yoki pasayyapmizmi?
+    uz_cyrl: 1 январдан 30 октябргача бўлган битимлар сонини 2025 ва 2026 йилда солиштириб беринг. Ўсяпмизми ёки пасяпмизми?
+- id: k017
+  split: fresh4
+  subject: deals
+  shape: trend
+  answerable: true
+  intent: Export turnover in US dollars by year, 2022 to 2026, excluding annulled
+  readings:
+  - name: by year
+    sql: SELECT year, SUM(amount_usd) AS usd FROM deals WHERE contract_type = 'Экспортный' AND NOT is_cancelled GROUP BY year ORDER BY year
+    key:
+    - year
+    - usd
+    sql_check: SELECT year(deal_date) AS year, SUM(amount) AS usd FROM deals WHERE currency = 'USD' AND status <> 'Аннулирован(Не оплачен)' GROUP BY 1 ORDER BY 1
+  questions:
+    ru: Как менялся экспорт по годам в долларах с 2022 по 2026? Аннулированные не берите
+    uz_latn: 2022-yildan 2026-yilgacha eksport dollarda yillar boʻyicha qanday oʻzgargan? Bekor bolganlarini olmang
+    uz_cyrl: 2022 йилдан 2026 йилгача экспорт доллорда йиллар бўйича қандай ўзгарган? Бекор бўлганларини олманг
+- id: k018
+  split: fresh4
+  subject: deals
+  shape: breakdown
+  answerable: true
+  intent: 'Number of deals in 2024 by trade type (status not specified: all deals, or without annulled)'
+  readings:
+  - name: all deals
+    sql: SELECT trade_type, COUNT(*) AS n FROM deals WHERE year = 2024 GROUP BY trade_type ORDER BY n DESC
+    key:
+    - trade_type
+    - n
+    sql_check: SELECT trade_type, COUNT(*) AS n FROM deals WHERE deal_date BETWEEN DATE '2024-01-01' AND DATE '2024-12-31' GROUP BY 1 ORDER BY 2 DESC
+  - name: without annulled
+    sql: SELECT trade_type, COUNT(*) AS n FROM deals WHERE year = 2024 AND NOT is_cancelled GROUP BY trade_type ORDER BY n DESC
+    key:
+    - trade_type
+    - n
+    sql_check: SELECT trade_type, COUNT(*) AS n FROM deals WHERE status <> 'Аннулирован(Не оплачен)' AND deal_date BETWEEN DATE '2024-01-01' AND DATE '2024-12-31' GROUP BY 1 ORDER BY 2 DESC
+  questions:
+    ru: Разбейте сделки 2024 года по виду торгов — английский аукцион, обратный, двусторонний. Сколько каких?
+    uz_latn: 2024-yildagi bitimlarni savdo turi boʻyicha ajratib bering — ingliz auksioni, teskari, ikki tomonlama. Qaysidan nechtadan?
+    uz_cyrl: 2024 йилдаги битимларни савдо тури бўйича ажратиб беринг — инглиз аукциони, тескари, икки томонлама. Қайсидан нечтадан?
+- id: k019
+  split: fresh4
+  subject: deals
+  shape: date_of_extreme
+  answerable: true
+  intent: Day of 2025 with the most deals, excluding annulled, and how many
+  readings:
+  - name: without annulled
+    sql: SELECT deal_date, COUNT(*) AS n FROM deals WHERE year = 2025 AND NOT is_cancelled GROUP BY deal_date ORDER BY n DESC, deal_date LIMIT 1
+    key:
+    - deal_date
+    - n
+    sql_check: SELECT deal_date, COUNT(*) AS n FROM deals WHERE status <> 'Аннулирован(Не оплачен)' AND deal_date BETWEEN DATE '2025-01-01' AND DATE '2025-12-31' GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 1
+  questions:
+    ru: В какой день 2025 года было больше всего реальных сделок (без аннулированных) и сколько их тогда прошло?
+    uz_latn: 2025-yilda qaysi kuni eng koʻp haqiqiy bitim boʻlgan (bekor boʻlganlarsiz) va oʻsha kuni nechta edi?
+    uz_cyrl: 2025 йилда қайси куни энг кўп ҳақиқий битим бўлган (бекор бўлганларсиз) ва ўша куни нечта эди?
+- id: k020
+  split: fresh4
+  subject: contracts
+  shape: lookup
+  answerable: true
+  intent: Packaging, delivery basis and warehouse region of contract No. 101777
+  readings:
+  - name: packaging basis region
+    sql: SELECT packaging, delivery_basis, region FROM contracts WHERE contract_id = 101777
+    key:
+    - packaging
+    - delivery_basis
+    - region
+    sql_check: SELECT packaging, delivery_basis, region FROM contracts WHERE contract_id = 101777 AND region IS NOT NULL
+  questions:
+    ru: 'Контракт 101777: во что упаковано, какой базис поставки и в каком регионе склад?'
+    uz_latn: '101777-shartnoma: qanday qadoqlangan, yetkazib berish bazisi qanaqa va ombor qaysi viloyatda?'
+    uz_cyrl: '101777-шартнома: қандай қадоқланган, етказиб бериш базиси қанақа ва омбор қайси вилоятда?'
+- id: k021
+  split: fresh4
+  subject: contracts
+  shape: count
+  answerable: true
+  intent: Number of wheat contracts registered in the second half of 2025
+  readings:
+  - name: H2 2025
+    sql: SELECT COUNT(*) AS n FROM contracts WHERE product_canonical = 'Пшеница' AND registered_date BETWEEN DATE '2025-07-01' AND DATE '2025-12-31'
+    key:
+    - n
+    sql_check: SELECT COUNT(*) AS n FROM contracts WHERE product_canonical = 'Пшеница' AND year(registered_date) = 2025 AND month(registered_date) >= 7
+  questions:
+    ru: Сколько контрактов на пшеницу зарегистрировали во втором полугодии 2025 года? Я зерновой трейдер, слежу за предложением
+    uz_latn: 2025-yilning ikkinchi yarmida bugdoyga nechta shartnoma royxatdan otgan? Men don treyderiman, taklifni kuzatib turaman
+    uz_cyrl: 2025 йилнинг иккинчи ярмида буғдойга нечта шартнома рўйхатдан ўтган? Мен дон трейдериман, таклифни кузатиб тураман
+- id: k022
+  split: fresh4
+  subject: contracts
+  shape: average
+  answerable: true
+  intent: Average delivery term in days of diesel fuel contracts registered in 2024
+  readings:
+  - name: delivery term
+    sql: SELECT AVG(delivery_term_days) AS avg_days FROM contracts WHERE product_canonical = 'Дизельное топливо' AND year(registered_date) = 2024
+    key:
+    - avg_days
+    sql_check: SELECT SUM(delivery_term_days) * 1.0 / COUNT(delivery_term_days) AS avg_days FROM contracts WHERE product_canonical = 'Дизельное топливо' AND registered_date >= DATE '2024-01-01' AND registered_date < DATE '2025-01-01'
+  questions:
+    ru: В контрактах на дизтопливо, зарегистрированных в 2024 году, какой в среднем срок поставки в днях?
+    uz_latn: 2024-yilda royxatdan otgan dizel yoqilgi shartnomalarida yetkazib berish muddati oʻrtacha necha kun?
+    uz_cyrl: 2024 йилда рўйхатдан ўтган дизел ёқилғи шартномаларида етказиб бериш муддати ўртача неча кун?
+- id: k023
+  split: fresh4
+  subject: contracts
+  shape: share
+  answerable: true
+  intent: Share (%) of forward contracts among contracts registered in 2026
+  readings:
+  - name: forward share
+    sql: SELECT 100.0 * COUNT(*) FILTER (WHERE contract_form = 'Форвард') / COUNT(*) AS pct FROM contracts WHERE year(registered_date) = 2026
+    key:
+    - pct
+    sql_check: SELECT 100.0 * SUM(CASE WHEN contract_form = 'Форвард' THEN 1 ELSE 0 END) / COUNT(*) AS pct FROM contracts WHERE registered_date BETWEEN DATE '2026-01-01' AND DATE '2026-12-31'
+  questions:
+    ru: Какой процент форвардных среди контрактов, зарегистрированных в 2026 году?
+    uz_latn: 2026-yilda royxatdan otgan shartnomalarning necha foizi forvard?
+    uz_cyrl: 2026 йилда рўйхатдан ўтган шартномаларнинг неча фоизи форвард?
+- id: k024
+  split: fresh4
+  subject: contracts
+  shape: top_n
+  answerable: true
+  intent: Top 3 sellers by number of registered contracts, whole registry (INN and name)
+  readings:
+  - name: contracts per seller
+    sql: SELECT c.seller_inn, p.name, COUNT(*) AS n FROM contracts c JOIN participants p ON p.inn = c.seller_inn GROUP BY c.seller_inn, p.name ORDER BY n DESC LIMIT 3
+    key:
+    - seller_inn
+    - name
+    sql_check: SELECT seller_inn, (SELECT name FROM participants WHERE inn = seller_inn) AS name, COUNT(*) AS n FROM contracts GROUP BY seller_inn ORDER BY n DESC LIMIT 3
+  questions:
+    ru: Кто из продавцов зарегистрировал больше всего контрактов за всё время? Назовите первых трёх, ИНН и название
+    uz_latn: Qaysi sotuvchilar butun davr mobaynida eng koʻp shartnoma royxatdan otkazgan? Birinchi uchtasini ayting, STIR va nomi bilan
+    uz_cyrl: Қайси сотувчилар бутун давр мобайнида энг кўп шартнома рўйхатдан ўтказган? Биринчи учтасини айтинг, СТИР ва номи билан
+- id: k025
+  split: fresh4
+  subject: contracts
+  shape: distinct_count
+  answerable: true
+  intent: Number of different warehouse regions in contracts for wheat flour
+  readings:
+  - name: regions
+    sql: SELECT COUNT(DISTINCT region) AS n FROM contracts WHERE product_canonical = 'Мука пшеничная'
+    key:
+    - n
+    sql_check: SELECT COUNT(*) AS n FROM (SELECT region FROM contracts WHERE product_canonical = 'Мука пшеничная' GROUP BY region)
+  questions:
+    ru: В скольких разных областях находятся склады по контрактам на пшеничную муку?
+    uz_latn: Bugdoy uni boʻyicha shartnomalardagi omborlar nechta turli viloyatda joylashgan?
+    uz_cyrl: Буғдой уни бўйича шартномалардаги омборлар нечта турли вилоятда жойлашган?
+- id: k026
+  split: fresh4
+  subject: contracts
+  shape: trend
+  answerable: true
+  intent: Number of contracts registered per year, 2022 to 2026
+  readings:
+  - name: per year
+    sql: SELECT year(registered_date) AS year, COUNT(*) AS n FROM contracts GROUP BY 1 ORDER BY 1
+    key:
+    - year
+    - n
+    sql_check: SELECT date_part('year', registered_date)::INT AS year, COUNT(*) AS n FROM contracts GROUP BY 1 ORDER BY 1
+  questions:
+    ru: Сколько контрактов регистрировали каждый год с 2022 по 2026? Хочу увидеть динамику
+    uz_latn: 2022-yildan 2026-yilgacha har yili nechta shartnoma royxatdan otkazilgan? Dinamikasini koray
+    uz_cyrl: 2022 йилдан 2026 йилгача ҳар йили нечта шартнома рўйхатдан ўтказилган? Динамикасини кўрай
+- id: k027
+  split: fresh4
+  subject: contracts
+  shape: date_of_extreme
+  answerable: true
+  intent: Date of the first registered contract denominated in US dollars
+  readings:
+  - name: earliest USD contract
+    sql: SELECT MIN(registered_date) AS first_date FROM contracts WHERE currency = 'USD'
+    key:
+    - first_date
+    sql_check: SELECT registered_date AS first_date FROM contracts WHERE currency = 'USD' ORDER BY registered_date LIMIT 1
+  questions:
+    ru: Когда зарегистрировали самый первый контракт в долларах?
+    uz_latn: Dollardagi eng birinchi shartnoma qachon royxatdan otgan?
+    uz_cyrl: Доллардаги энг биринчи шартнома қачон рўйхатдан ўтган?
+- id: k028
+  split: fresh4
+  subject: companies
+  shape: lookup
+  answerable: true
+  intent: Region, type of activity and VAT-payer status of the company Shaxur Food
+  readings:
+  - name: region activity vat
+    sql: SELECT region, activity, vat_payer FROM participants WHERE inn = '980514566'
+    key:
+    - region
+    - activity
+    - vat_payer
+    sql_check: SELECT region, activity, vat_payer FROM participants WHERE name_norm = 'shaxur food'
+  questions:
+    ru: Фирма Shaxur Food — из какой области, чем занимается и платит ли НДС?
+    uz_latn: Shaxur Food firmasi qaysi viloyatdan, nima bilan shugʻullanadi va QQS tolovchimi?
+    uz_cyrl: Shaxur Food фирмаси қайси вилоятдан, нима билан шуғулланади ва ҚҚС тўловчими?
+- id: k029
+  split: fresh4
+  subject: companies
+  shape: count
+  answerable: true
+  intent: Number of buyer companies registered in Khorezm region
+  readings:
+  - name: buyers in Khorezm
+    sql: SELECT COUNT(*) AS n FROM participants WHERE role = 'Покупатель' AND region = 'Xorazm viloyati'
+    key:
+    - n
+    sql_check: SELECT COUNT(*) AS n FROM participants WHERE region = 'Xorazm viloyati' AND role <> 'Продавец'
+  questions:
+    ru: Сколько в Хорезмской области зарегистрировано компаний-покупателей?
+    uz_latn: Xorazm viloyatida nechta xaridor kompaniya royxatdan otgan?
+    uz_cyrl: Хоразм вилоятида нечта харидор компания рўйхатдан ўтган?
+- id: k030
+  split: fresh4
+  subject: companies
+  shape: distinct_count
+  answerable: true
+  intent: Number of different products bought by Chisil Plus (INN 939272938) in 2025, excluding annulled deals
+  readings:
+  - name: distinct products
+    sql: SELECT COUNT(DISTINCT product_canonical) AS n FROM deals WHERE buyer_inn = '939272938' AND year = 2025 AND NOT is_cancelled
+    key:
+    - n
+    sql_check: SELECT COUNT(*) AS n FROM (SELECT c.product_canonical FROM deals d JOIN contracts c ON c.contract_id = d.contract_id WHERE d.buyer_inn = '939272938' AND d.status <> 'Аннулирован(Не оплачен)' AND d.deal_date BETWEEN DATE '2025-01-01' AND DATE '2025-12-31' GROUP BY 1)
+  questions:
+    ru: Сколько разных товаров купила компания Chisil Plus (ИНН 939272938) в 2025 году, без аннулированных?
+    uz_latn: Chisil Plus kompaniyasi (STIR 939272938) 2025-yilda necha xil tovar sotib olgan, bekor bolgan bitimlarsiz?
+    uz_cyrl: Chisil Plus компанияси (СТИР 939272938) 2025 йилда неча хил товар сотиб олган, бекор бўлган битимларсиз?
+- id: k031
+  split: fresh4
+  subject: companies
+  shape: total
+  answerable: true
+  intent: Total value in UZS of purchases by Nedaz Group (INN 933979203) in 2024, excluding annulled
+  readings:
+  - name: purchases in UZS
+    sql: SELECT SUM(amount_uzs) AS uzs FROM deals WHERE buyer_inn = '933979203' AND year = 2024 AND NOT is_cancelled
+    key:
+    - uzs
+    sql_check: SELECT SUM(CASE WHEN currency = 'USD' THEN amount * usd_rate ELSE amount END) AS uzs FROM deals WHERE buyer_inn = '933979203' AND status <> 'Аннулирован(Не оплачен)' AND deal_date BETWEEN DATE '2024-01-01' AND DATE '2024-12-31'
+  questions:
+    ru: На какую общую сумму в сумах закупилась Nedaz Group (ИНН 933979203) в 2024 году? Аннулированные не считаем
+    uz_latn: Nedaz Group (STIR 933979203) 2024-yilda jami necha somlik xarid qilgan? Bekor bolganlarini sanamaymiz
+    uz_cyrl: Nedaz Group (СТИР 933979203) 2024 йилда жами неча сомлик харид қилган? Бекор бўлганларини санамаймиз
+- id: k032
+  split: fresh4
+  subject: companies
+  shape: compare_periods
+  answerable: true
+  intent: Sales in UZS of Shaxur Food (INN 980514566) in 2024 versus 2025, excluding annulled
+  readings:
+  - name: 2024 vs 2025
+    sql: SELECT year, SUM(amount_uzs) AS uzs FROM deals WHERE seller_inn = '980514566' AND year IN (2024, 2025) AND NOT is_cancelled GROUP BY year ORDER BY year
+    key:
+    - year
+    - uzs
+    sql_check: SELECT year(deal_date) AS year, SUM(CASE WHEN currency = 'USD' THEN amount * usd_rate ELSE amount END) AS uzs FROM deals WHERE seller_inn = '980514566' AND status <> 'Аннулирован(Не оплачен)' AND (deal_date BETWEEN DATE '2024-01-01' AND DATE '2024-12-31' OR deal_date BETWEEN DATE '2025-01-01' AND DATE '2025-12-31') GROUP BY 1 ORDER BY 1
+  questions:
+    ru: Выручка Shaxur Food (ИНН 980514566) в сумах — в 2025 году выросла или упала по сравнению с 2024? Без аннулированных
+    uz_latn: Shaxur Food (STIR 980514566) tushumi somda 2025-yilda 2024-yilga nisbatan oshdimi yoki tushdimi? Bekor bolganlarsiz
+    uz_cyrl: Shaxur Food (СТИР 980514566) тушуми сўмда 2025 йилда 2024 йилга нисбатан ошдими ёки тушдими? Бекор бўлганларсиз
+- id: k033
+  split: fresh4
+  subject: companies
+  shape: breakdown
+  answerable: true
+  intent: Number of companies registered in Bukhara region by role (seller or buyer)
+  readings:
+  - name: by role
+    sql: SELECT role, COUNT(*) AS n FROM participants WHERE region = 'Buxoro viloyati' GROUP BY role ORDER BY n DESC
+    key:
+    - role
+    - n
+    sql_check: SELECT role, COUNT(*) AS n FROM participants WHERE region LIKE 'Buxoro%' GROUP BY 1 ORDER BY 2 DESC
+  questions:
+    ru: Сколько зарегистрировано компаний в Бухарской области — отдельно продавцов и покупателей?
+    uz_latn: Buxoro viloyatida nechta kompaniya royxatdan otgan — sotuvchi va xaridorlar alohida?
+    uz_cyrl: Бухоро вилоятида нечта компания рўйхатдан ўтган — сотувчи ва харидорлар алоҳида?
+- id: k034
+  split: fresh4
+  subject: companies
+  shape: date_of_extreme
+  answerable: true
+  intent: 'Date of the most recent sale by Miya Agro (INN 911436796) (status not specified: any deal, or one that was not annulled)'
+  readings:
+  - name: any deal
+    sql: SELECT MAX(deal_date) AS last_date FROM deals WHERE seller_inn = '911436796'
+    key:
+    - last_date
+    sql_check: SELECT deal_date AS last_date FROM deals WHERE seller_inn = '911436796' ORDER BY deal_date DESC LIMIT 1
+  - name: without annulled
+    sql: SELECT MAX(deal_date) AS last_date FROM deals WHERE seller_inn = '911436796' AND NOT is_cancelled
+    key:
+    - last_date
+    sql_check: SELECT deal_date AS last_date FROM deals WHERE seller_inn = '911436796' AND status <> 'Аннулирован(Не оплачен)' ORDER BY deal_date DESC LIMIT 1
+  questions:
+    ru: Когда у фирмы Мия Агро (ИНН 911436796) была последняя продажа?
+    uz_latn: Miya Agro firmasi (STIR 911436796) oxirgi marta qachon sotgan?
+    uz_cyrl: Мия Агро фирмаси (СТИР 911436796) охирги марта қачон сотган?
+- id: k035
+  split: fresh4
+  subject: brokers
+  shape: lookup
+  answerable: true
+  intent: Name and region of broker BK083
+  readings:
+  - name: name and region
+    sql: SELECT name, region FROM brokers WHERE broker_code = 'BK083'
+    key:
+    - name
+    - region
+    sql_check: SELECT name, region FROM brokers WHERE broker_code LIKE 'BK083'
+  questions:
+    ru: BK083 — это какая контора и где она находится?
+    uz_latn: BK083 qaysi kontora va qayerda joylashgan?
+    uz_cyrl: BK083 қайси контора ва қаерда жойлашган?
+- id: k036
+  split: fresh4
+  subject: brokers
+  shape: total
+  answerable: true
+  intent: Total value in UZS of 2025 deals where BK092 was the buyer's broker, excluding annulled
+  readings:
+  - name: as buyer broker
+    sql: SELECT SUM(amount_uzs) AS uzs FROM deals WHERE buyer_broker = 'BK092' AND year = 2025 AND NOT is_cancelled
+    key:
+    - uzs
+    sql_check: SELECT SUM(CASE WHEN currency = 'USD' THEN amount * usd_rate ELSE amount END) AS uzs FROM deals WHERE buyer_broker = 'BK092' AND status <> 'Аннулирован(Не оплачен)' AND deal_date BETWEEN DATE '2025-01-01' AND DATE '2025-12-31'
+  questions:
+    ru: Общая сумма в сумах по сделкам 2025 года, где брокер BK092 вёл покупателя, без аннулированных — сколько?
+    uz_latn: BK092 broker 2025-yilda xaridor tomondan olib borgan bitimlarning umumiy summasi somda qancha? Bekor bolganlarsiz
+    uz_cyrl: BK092 брокер 2025 йилда харидор томондан олиб борган битимларнинг умумий суммаси сўмда қанча? Бекор бўлганларсиз
+- id: k037
+  split: fresh4
+  subject: brokers
+  shape: top_n
+  answerable: true
+  intent: Top 3 buyer-side brokers by number of wheat deals in 2025, excluding annulled (code and name)
+  readings:
+  - name: buyer brokers for wheat
+    sql: SELECT d.buyer_broker, b.name, COUNT(*) AS n FROM deals d JOIN brokers b ON b.broker_code = d.buyer_broker WHERE d.product_canonical = 'Пшеница' AND d.year = 2025 AND NOT d.is_cancelled GROUP BY d.buyer_broker, b.name ORDER BY n DESC LIMIT 3
+    key:
+    - buyer_broker
+    - name
+    sql_check: SELECT buyer_broker, (SELECT name FROM brokers WHERE broker_code = buyer_broker) AS name, COUNT(*) AS n FROM deals WHERE product_canonical = 'Пшеница' AND status <> 'Аннулирован(Не оплачен)' AND deal_date BETWEEN DATE '2025-01-01' AND DATE '2025-12-31' GROUP BY buyer_broker ORDER BY n DESC LIMIT 3
+  questions:
+    ru: Какие три брокера чаще всех вели покупателей пшеницы в 2025 году? Аннулированные не считаем, нужны коды и названия
+    uz_latn: 2025-yilda bugdoy xaridorlarini eng kop olib borgan uchta brokerni ayting. Bekor bolganlarni sanamang, kodi va nomi kerak
+    uz_cyrl: 2025 йилда буғдой харидорларини энг кўп олиб борган учта брокерни айтинг. Бекор бўлганларни санаманг, коди ва номи керак
+- id: k038
+  split: fresh4
+  subject: brokers
+  shape: least
+  answerable: true
+  intent: Broker with the fewest deals as buyer's broker in 2024 among those that had any, excluding annulled
+  readings:
+  - name: fewest buyer-side deals
+    sql: SELECT buyer_broker, COUNT(*) AS n FROM deals WHERE year = 2024 AND NOT is_cancelled GROUP BY buyer_broker ORDER BY n ASC, buyer_broker LIMIT 1
+    key:
+    - buyer_broker
+    - n
+    sql_check: SELECT buyer_broker, COUNT(*) AS n FROM deals WHERE status <> 'Аннулирован(Не оплачен)' AND deal_date BETWEEN DATE '2024-01-01' AND DATE '2024-12-31' GROUP BY 1 ORDER BY 2, 1 LIMIT 1
+  questions:
+    ru: Какой брокер в 2024 году вёл покупателей реже всех (из тех, у кого хоть одна сделка была), без аннулированных?
+    uz_latn: 2024-yilda xaridor tomondan eng kam bitim olib borgan broker kim (hech boʻlmasa bitta bitimi borlar ichida), bekor bolganlarsiz?
+    uz_cyrl: 2024 йилда харидор томондан энг кам битим олиб борган брокер ким (ҳеч бўлмаса битта битими борлар ичида), бекор бўлганларсиз?
+- id: k039
+  split: fresh4
+  subject: brokers
+  shape: share
+  answerable: true
+  intent: Share (%) of 2025 deals in which broker BK030 took part on either side, excluding annulled
+  readings:
+  - name: either side
+    sql: SELECT 100.0 * COUNT(*) FILTER (WHERE seller_broker = 'BK030' OR buyer_broker = 'BK030') / COUNT(*) AS pct FROM deals WHERE year = 2025 AND NOT is_cancelled
+    key:
+    - pct
+    sql_check: SELECT 100.0 * (SELECT COUNT(*) FROM deals WHERE status <> 'Аннулирован(Не оплачен)' AND deal_date BETWEEN DATE '2025-01-01' AND DATE '2025-12-31' AND (seller_broker = 'BK030' OR buyer_broker = 'BK030')) / (SELECT COUNT(*) FROM deals WHERE status <> 'Аннулирован(Не оплачен)' AND deal_date BETWEEN DATE '2025-01-01' AND DATE '2025-12-31') AS pct
+  questions:
+    ru: Какую долю всех сделок 2025 года (без аннулированных) прогнал брокер BK030 — с любой стороны?
+    uz_latn: 2025-yildagi barcha bitimlarning (bekor bolganlarsiz) necha foizida BK030 broker ishtirok etgan — istalgan tomondan?
+    uz_cyrl: 2025 йилдаги барча битимларнинг (бекор бўлганларсиз) неча фоизида BK030 брокер иштирок этган — исталган томондан?
+- id: k040
+  split: fresh4
+  subject: brokers
+  shape: average
+  answerable: true
+  intent: Average amount in UZS of 2025 deals where BK075 was the seller's broker, excluding annulled
+  readings:
+  - name: seller broker
+    sql: SELECT AVG(amount_uzs) AS avg_uzs FROM deals WHERE seller_broker = 'BK075' AND year = 2025 AND NOT is_cancelled
+    key:
+    - avg_uzs
+    sql_check: SELECT AVG(CASE WHEN currency = 'USD' THEN amount * usd_rate ELSE amount END) AS avg_uzs FROM deals WHERE seller_broker = 'BK075' AND status <> 'Аннулирован(Не оплачен)' AND deal_date BETWEEN DATE '2025-01-01' AND DATE '2025-12-31'
+  questions:
+    ru: Какой средний чек в сумах у сделок 2025 года, где за продавца работал брокер BK075? Без аннулированных
+    uz_latn: 2025-yilda sotuvchi tomondan BK075 broker ishlagan bitimlarning oʻrtacha summasi somda qancha? Bekor bolganlarsiz
+    uz_cyrl: 2025 йилда сотувчи томондан BK075 брокер ишлаган битимларнинг ўртача суммаси сўмда қанча? Бекор бўлганларсиз
+- id: k041
+  split: fresh4
+  subject: usd_rates
+  shape: lookup
+  answerable: true
+  intent: UZS per USD rate on 20 February 2024
+  readings:
+  - name: rate
+    sql: SELECT rate FROM usd_rates WHERE rate_date = DATE '2024-02-20'
+    key:
+    - rate
+    sql_check: SELECT rate FROM usd_rates WHERE rate_date BETWEEN DATE '2024-02-20' AND DATE '2024-02-20'
+  questions:
+    ru: Какой был курс доллара 20 февраля 2024?
+    uz_latn: 2024-yil 20-fevralda dollar kursi qancha edi?
+    uz_cyrl: 2024 йил 20 февралда доллар курси қанча эди?
+- id: k042
+  split: fresh4
+  subject: usd_rates
+  shape: average
+  answerable: true
+  intent: Average UZS per USD rate in the second half of 2025 (July to December, mean of daily rates)
+  readings:
+  - name: H2 2025
+    sql: SELECT AVG(rate) AS avg_rate FROM usd_rates WHERE rate_date BETWEEN DATE '2025-07-01' AND DATE '2025-12-31'
+    key:
+    - avg_rate
+    sql_check: SELECT AVG(rate) AS avg_rate FROM usd_rates WHERE year(rate_date) = 2025 AND month(rate_date) >= 7
+  questions:
+    ru: Средний курс доллара за вторую половину 2025 года, с июля по декабрь, какой получается?
+    uz_latn: 2025-yil ikkinchi yarmida, iyuldan dekabrgacha dollarning oʻrtacha kursi qancha chiqadi?
+    uz_cyrl: 2025 йил иккинчи ярмида, июлдан декабргача доллорнинг ўртача курси қанча чиқади?
+- id: k043
+  split: fresh4
+  subject: usd_rates
+  shape: trend
+  answerable: true
+  intent: Average UZS per USD rate by month, June to October 2026
+  readings:
+  - name: monthly average
+    sql: SELECT month(rate_date) AS month, AVG(rate) AS avg_rate FROM usd_rates WHERE rate_date BETWEEN DATE '2026-06-01' AND DATE '2026-10-31' GROUP BY 1 ORDER BY 1
+    key:
+    - month
+    - avg_rate
+    sql_check: SELECT date_part('month', rate_date)::INT AS month, SUM(rate) / COUNT(*) AS avg_rate FROM usd_rates WHERE rate_date >= DATE '2026-06-01' AND rate_date < DATE '2026-11-01' GROUP BY 1 ORDER BY 1
+  questions:
+    ru: Как по месяцам менялся средний курс доллара с июня по октябрь 2026 года?
+    uz_latn: 2026-yil iyundan oktabrgacha dollarning oʻrtacha kursi oylar boʻyicha qanday oʻzgargan?
+    uz_cyrl: 2026 йил июндан октябргача доллорнинг ўртача курси ойлар бўйича қандай ўзгарган?
+- id: k044
+  split: fresh4
+  subject: usd_rates
+  shape: date_of_extreme
+  answerable: true
+  intent: Day of 2025 with the highest UZS per USD rate, and that rate
+  readings:
+  - name: highest 2025
+    sql: SELECT rate_date, rate FROM usd_rates WHERE year(rate_date) = 2025 ORDER BY rate DESC, rate_date LIMIT 1
+    key:
+    - rate_date
+    - rate
+    sql_check: SELECT rate_date, rate FROM usd_rates WHERE rate_date BETWEEN DATE '2025-01-01' AND DATE '2025-12-31' AND rate = (SELECT MAX(rate) FROM usd_rates WHERE rate_date BETWEEN DATE '2025-01-01' AND DATE '2025-12-31') ORDER BY rate_date LIMIT 1
+  questions:
+    ru: В какой день 2025 года доллар стоил дороже всего и сколько?
+    uz_latn: 2025-yilda dollar qaysi kuni eng qimmat boʻlgan va qancha turgan?
+    uz_cyrl: 2025 йилда доллар қайси куни энг қиммат бўлган ва қанча турган?
+- id: k045
+  split: fresh4
+  subject: usd_rates
+  shape: top_n
+  answerable: true
+  intent: Three days of 2023 with the lowest UZS per USD rate, with the rates
+  readings:
+  - name: lowest 2023
+    sql: SELECT rate_date, rate FROM usd_rates WHERE year(rate_date) = 2023 ORDER BY rate ASC, rate_date LIMIT 3
+    key:
+    - rate_date
+    - rate
+    sql_check: SELECT rate_date, rate FROM usd_rates WHERE rate_date BETWEEN DATE '2023-01-01' AND DATE '2023-12-31' ORDER BY rate, rate_date LIMIT 3
+  questions:
+    ru: Назовите три дня 2023 года, когда доллар был самым дешёвым, и курс в эти дни
+    uz_latn: 2023-yilda dollar eng arzon boʻlgan uchta kunni va oʻsha kunlardagi kursni ayting
+    uz_cyrl: 2023 йилда доллар энг арзон бўлган учта кунни ва ўша кунлардаги курсни айтинг
+- id: k046
+  split: fresh4
+  subject: deals
+  shape: total
+  answerable: false
+  intent: Total late-payment penalties charged in 2025 — penalties and fines are not in the data (only whether a payment was late)
+  readings: []
+  questions:
+    ru: Сколько всего штрафов и пени начислили покупателям за просрочку оплаты в 2025 году?
+    uz_latn: 2025-yilda toʻlovni kechiktirgan xaridorlarga jami qancha jarima va penya yozilgan?
+    uz_cyrl: 2025 йилда тўловни кечиктирган харидорларга жами қанча жарима ва пеня ёзилган?
+- id: k047
+  split: fresh4
+  subject: companies
+  shape: lookup
+  answerable: false
+  intent: Number of employees of Shaxur Food — headcount is not in the data
+  readings: []
+  questions:
+    ru: Сколько человек работает в фирме Shaxur Food?
+    uz_latn: Shaxur Food firmasida necha kishi ishlaydi?
+    uz_cyrl: Shaxur Food фирмасида неча киши ишлайди?
+- id: k048
+  split: fresh4
+  subject: deals
+  shape: breakdown
+  answerable: false
+  intent: Cotton exports in 2025 by destination country — export deals have no buyer country, only the contract type
+  readings: []
+  questions:
+    ru: В какие страны продавали хлопок на экспорт в 2025 году и сколько в каждую?
+    uz_latn: 2025-yilda paxta eksporti qaysi mamlakatlarga boʻlgan va har biriga qanchadan?
+    uz_cyrl: 2025 йилда пахта экспорти қайси мамлакатларга бўлган ва ҳар бирига қанчадан?
+- id: k049
+  split: fresh4
+  subject: deals
+  shape: lookup
+  answerable: false
+  intent: Hour and minute when the payment of deal No. 350321 was made — only the payment date is in the data, the time is only for the conclusion of the deal
+  readings: []
+  questions:
+    ru: Во сколько часов оплатили сделку 350321? Нужно время платежа
+    uz_latn: 350321-bitim pulini soat nechada tolashgan? Tolov vaqti kerak
+    uz_cyrl: 350321-битим пулини соат нечада тўлашган? Тўлов вақти керак
+- id: k050
+  split: fresh4
+  subject: deals
+  shape: average
+  answerable: false
+  intent: Average number of bidders per auction in 2024 — only the final deal is recorded, not the participants who bid
+  readings: []
+  questions:
+    ru: Сколько в среднем участников торговалось на каждом аукционе в 2024 году?
+    uz_latn: 2024-yilda har bir auksionda oʻrtacha nechta ishtirokchi savdolashgan?
+    uz_cyrl: 2024 йилда ҳар бир аукционда ўртача нечта иштирокчи савдолашган?
+- id: k051
+  split: fresh4
+  subject: usd_rates
+  shape: lookup
+  answerable: false
+  intent: UZS per USD rate on 12 January 2027 — rates end on 31 October 2026
+  readings: []
+  questions:
+    ru: Какой курс доллара будет 12 января 2027 года?
+    uz_latn: 2027-yil 12-yanvarda dollar kursi qancha boladi?
+    uz_cyrl: 2027 йил 12 январда доллар курси қанча бўлади?
+- id: k052
+  split: fresh4
+  subject: usd_rates
+  shape: lookup
+  answerable: false
+  intent: Dollar buying rate and selling rate on 3 March 2025 — only a single daily rate exists
+  readings: []
+  questions:
+    ru: Какой курс покупки и какой курс продажи доллара был 3 марта 2025?
+    uz_latn: 2025-yil 3-martda dollarni sotib olish kursi va sotish kursi qancha edi?
+    uz_cyrl: 2025 йил 3 мартда долларни сотиб олиш курси ва сотиш курси қанча эди?
+- id: k053
+  split: fresh4
+  subject: deals
+  shape: lookup
+  answerable: false
+  intent: Status of deal No. 100137 — a number skipped in the register, the deal does not exist
+  readings: []
+  questions:
+    ru: Скажите, что со сделкой 100137, она исполнена?
+    uz_latn: 100137-raqamli bitim nima boʻldi, bajarilganmi?
+    uz_cyrl: 100137-рақамли битим нима бўлди, бажарилганми?
+- id: k054
+  split: fresh4
+  subject: contracts
+  shape: lookup
+  answerable: false
+  intent: Seller and product of contract No. 107042 — no such contract, numbers run 100001..106616
+  readings: []
+  questions:
+    ru: Кто продавец по контракту 107042 и что в нём за товар?
+    uz_latn: 107042-shartnoma boyicha sotuvchi kim va qanday tovar?
+    uz_cyrl: 107042-шартнома бўйича сотувчи ким ва қандай товар?
+- id: k055
+  split: fresh4
+  subject: brokers
+  shape: lookup
+  answerable: false
+  intent: Name of broker BK125 — no such code, codes go up to BK120
+  readings: []
+  questions:
+    ru: Что за брокерская контора BK125? Дайте название и область
+    uz_latn: BK125 qanaqa brokerlik idorasi? Nomi va viloyatini ayting
+    uz_cyrl: BK125 қанақа брокерлик идораси? Номи ва вилоятини айтинг
+- id: k056
+  split: fresh4
+  subject: companies
+  shape: lookup
+  answerable: false
+  intent: Region of the company with INN 900111222 — no such company in the registry
+  readings: []
+  questions:
+    ru: Из какого региона компания с ИНН 900111222 и чем она занимается?
+    uz_latn: STIRi 900111222 boʻlgan kompaniya qaysi viloyatdan va nima bilan shugʻullanadi?
+    uz_cyrl: СТИРи 900111222 бўлган компания қайси вилоятдан ва нима билан шуғулланади?
+- id: k057
+  split: fresh4
+  subject: none
+  shape: lookup
+  answerable: false
+  intent: Today's price of Brent oil per barrel — world markets are outside the data
+  readings: []
+  questions:
+    ru: Почём сегодня нефть марки Brent за баррель?
+    uz_latn: Bugun Brent neftining bir barreli necha dollar turibdi?
+    uz_cyrl: Бугун Brent нефтининг бир баррели неча доллар турибди?
+- id: k058
+  split: fresh4
+  subject: contracts
+  shape: average
+  answerable: false
+  intent: Average shelf life of the goods in registered contracts — shelf life of products is not in the data (only the contract validity period)
+  readings: []
+  questions:
+    ru: Какой средний срок годности товаров в зарегистрированных контрактах?
+    uz_latn: Roʻyxatdan otgan shartnomalardagi tovarlarning oʻrtacha yaroqlilik muddati qancha?
+    uz_cyrl: Рўйхатдан ўтган шартномалардаги товарларнинг ўртача яроқлилик муддати қанча?
+- id: k059
+  split: fresh4
+  subject: companies
+  shape: top_n
+  answerable: false
+  intent: Top 3 sellers by profit in 2025 — profit and costs are not in the data, only deal amounts
+  readings: []
+  questions:
+    ru: Какие три продавца заработали больше всех чистой прибыли в 2025 году?
+    uz_latn: 2025-yilda qaysi uchta sotuvchi eng kop sof foyda olgan?
+    uz_cyrl: 2025 йилда қайси учта сотувчи энг кўп соф фойда олган?
+- id: k060
+  split: fresh4
+  subject: brokers
+  shape: count
+  answerable: false
+  intent: Number of branches and offices of brokerage firms in Samarkand region — only one region per broker is in the data
+  readings: []
+  questions:
+    ru: Сколько филиалов и офисов у брокерских контор в Самаркандской области?
+    uz_latn: Samarqand viloyatidagi brokerlik idoralarining nechta filiali va ofisi bor?
+    uz_cyrl: Самарқанд вилоятидаги брокерлик идораларининг нечта филиали ва офиси бор?
