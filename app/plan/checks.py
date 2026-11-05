@@ -38,6 +38,18 @@ ALL_STATUSES_RE = re.compile(
     r"bekor\s+qilingan\w*\s+(?:bilan|ham)\b|бекор\s+қилинган\w*\s+(?:билан|ҳам)(?!\w)", re.IGNORECASE)
 
 
+# «все сделки» / «barcha bitimlar» name every deal, not a status: a grouping keeps both views for them
+_ALL_DEALS_WORDS = ("все сделки", "всех сделок", "barcha bitim")
+
+
+def names_status(question: str, grouped: bool = False) -> bool:
+    """The question names a deal status (annulled, paid, executed, ...; app/agent/writer._STATUS_WORDS), in Russian
+    or in Uzbek of either script (matched on the normalize_text form too: бекор -> bekor, to‘lan -> tolan)."""
+    q, n = question.lower(), normalize_text(question)
+    words = [w for w in _STATUS_WORDS if not (grouped and w in _ALL_DEALS_WORDS)]
+    return any(w in q or normalize_text(w) in n for w in words)
+
+
 # Extreme words of a ranking (normalize_text form: Russian transliterated, Uzbek Cyrillic in Latin). "low": the
 # question asks for the smallest values (самый дешёвый, наименьший, минимальный, меньше всего, eng arzon, eng kam);
 # "high": the largest (самый дорогой, наибольший, больше всего, eng qimmat, eng ko‘p).
@@ -76,14 +88,12 @@ def apply_defaults(plan: Plan, d: Dictionary, question: str) -> Plan:
     of a ranking by an extreme (extreme_order)."""
     s = d.subject(plan.subject)
     if s.cancelled:
-        q = question.lower()
         if plan.group_by and ALL_STATUSES_RE.search(question):
             # the question asks for every state: a "without annulled" filter is not what it asked
             plan = plan.with_(filters=tuple(f for f in plan.filters if not _valid_only(f)))
-        ungrouped = not plan.group_by
-        if ungrouped and plan.measures and not _scope_free(s, plan) and not any(w in q for w in _STATUS_WORDS):
-            # ungrouped counts / totals show all deals and, separately, without annulled ones unless the
-            # question names a status: a status filter the question does not ask for is dropped
+        if plan.measures and not _scope_free(s, plan) and not names_status(question):
+            # counts / totals, also grouped (rankings, breakdowns, trends), show all deals and, separately, without
+            # annulled ones unless the question names a status: a status filter it does not ask for is dropped
             plan = plan.with_(filters=tuple(f for f in plan.filters if not _valid_only(f)))
         if _status_filtered(s, plan) or _record_key_filtered(s, plan) or any(g in s.status_fields
                                                                               for g in plan.group_by):
@@ -92,10 +102,10 @@ def apply_defaults(plan: Plan, d: Dictionary, question: str) -> Plan:
             scope = "all"
         elif plan.group_by and ALL_STATUSES_RE.search(question):
             scope = "all"            # «все статусы», «barcha holatlar», «включая аннулированные»
-        elif plan.group_by:
-            scope = "valid"          # rankings, breakdowns and record listings: deals that took place
+        elif plan.group_by and (not plan.measures or names_status(question, grouped=True)):
+            scope = "valid"          # record listings, and groupings whose question names a status word
         else:
-            scope = "split"
+            scope = "split"          # all deals and, separately, without annulled (rankings rank by the latter)
         plan = plan.with_(scope=scope)
     fields = [s.fields[g] for g in plan.group_by]
     if plan.limit is None and any(f.many or f.type == "record" for f in fields) and not _record_key_filtered(s, plan):

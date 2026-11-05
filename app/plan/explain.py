@@ -25,6 +25,7 @@ _T = {
         "variant": "{v} ({n} написаний)",
         "excluded_cancelled": "без аннулированных сделок", "all_statuses": "все состояния сделок",
         "status_split": "все сделки и отдельно без аннулированных",
+        "ranked_valid": "место в рейтинге — по сделкам без аннулированных",
         "uzs_converted": "суммы в сумах (экспортные сделки пересчитаны по курсу на дату сделки)",
         "usd_converted": "суммы в долларах (сумовые сделки пересчитаны по курсу на дату сделки)",
         "broker_both_sides": "брокер учитывается и со стороны продавца, и со стороны покупателя (сделка — один раз)",
@@ -52,6 +53,7 @@ _T = {
         "variant": "{v} ({n} xil yozilishi)",
         "excluded_cancelled": "bekor qilingan bitimlar hisobga olinmagan", "all_statuses": "barcha holatdagi bitimlar",
         "status_split": "barcha bitimlar va alohida bekor qilinganlarsiz",
+        "ranked_valid": "reytingdagi o‘rin — bekor qilinganlarsiz bitimlar bo‘yicha",
         "uzs_converted": "summalar so‘mda (eksport bitimlari bitim sanasidagi kurs bo‘yicha)",
         "usd_converted": "summalar dollarda (so‘mdagi bitimlar bitim sanasidagi kurs bo‘yicha)",
         "broker_both_sides": "broker sotuvchi va xaridor tomonida ham hisobga olingan (bitim bir marta)",
@@ -82,7 +84,7 @@ def label(f, lang: str) -> str:
 def _lbl(s: Subject, lang: str) -> str:
     text = s.lbl(lang)
     return to_cyrillic(text) if lang == "uz-Cyrl" else text
-_NOTE_KEYS = ("excluded_cancelled", "all_statuses", "status_split", "uzs_converted", "usd_converted",
+_NOTE_KEYS = ("excluded_cancelled", "all_statuses", "status_split", "ranked_valid", "uzs_converted", "usd_converted",
               "broker_both_sides", "role_split", "broker_side_split", "volume_by_unit", "ties_kept")
 _TIME = ("year", "quarter", "month", "day")
 

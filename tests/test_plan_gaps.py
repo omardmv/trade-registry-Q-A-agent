@@ -23,7 +23,7 @@ def test_broker_side_split_in_one_plan(db, resolver):
     code = busy_broker(db)
     res, built, _ = run_plan(db, resolver, {"subject": "deals", "measures": [{"agg": "count"}],
                                             "filters": [F("broker", code), F("year", 2024)],
-                                            "group_by": ["broker_side"]})
+                                            "group_by": ["broker_side"]}, "без аннулированных")
     exp = db.query(f"""SELECT side, COUNT(*) FROM (
         SELECT 'seller' AS side FROM deals WHERE seller_broker = '{code}' AND year = 2024 AND NOT is_cancelled
         UNION ALL SELECT 'buyer' FROM deals WHERE buyer_broker = '{code}' AND year = 2024 AND NOT is_cancelled)

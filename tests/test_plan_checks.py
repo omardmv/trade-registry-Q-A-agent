@@ -53,7 +53,8 @@ def test_default_limit_for_large_grouping():
 def test_status_defaults():
     base = {"subject": "deals", "measures": [{"agg": "count"}]}
     assert prepare(base).scope == "split"
-    assert prepare({**base, "group_by": ["region"]}).scope == "valid"
+    assert prepare({**base, "group_by": ["region"]}).scope == "split"           # both views (fresh3 fixes)
+    assert prepare({**base, "group_by": ["region"]}, "по регионам без аннулированных").scope == "valid"
     assert prepare({**base, "filters": [F("status", "Исполнен")]}, "исполненные сделки").scope == "all"
     assert prepare({"subject": "deals", "measures": [{"agg": "cancelled_share"}]}).scope == "all"
     # a "without annulled" filter the question does not ask for falls back to the split view
@@ -116,7 +117,7 @@ def test_uzbek_marta_is_times_not_march():
 
 def test_all_statuses_word_makes_grouped_scope_all():
     """«все статусы» / «barcha holatlar» / «барча ҳолатлар» / «включая аннулированные»: every state counts also in
-    breakdowns, rankings and trends (fresh f039); without such words the grouped default stays without annulled."""
+    breakdowns, rankings and trends (fresh f039); without status words a grouping shows both views (split)."""
     plan = {"subject": "deals", "measures": [{"agg": "count"}], "filters": [F("year", 2022, "between")],
             "group_by": ["year"]}
     plan["filters"] = [{"field": "year", "op": "between", "values": [2022, 2026]}]
@@ -124,7 +125,7 @@ def test_all_statuses_word_makes_grouped_scope_all():
               "yillar bo‘yicha bitimlar, barcha holatlar", "hamma holatlar bilan yillar bo‘yicha bitimlar",
               "ҳар йили нечтадан битим (2022–2026, барча ҳолатлар)?", "бекор қилинганлар билан ҳар йили нечта битим"):
         assert prepare(plan, q).scope == "all", q
-    assert prepare(plan, "сколько сделок по годам с 2022 по 2026").scope == "valid"
+    assert prepare(plan, "сколько сделок по годам с 2022 по 2026").scope == "split"
     assert prepare(plan, "сделки по годам без аннулированных").scope == "valid"
     # a "without annulled" filter the planner added is dropped when the question asks for all statuses
     p = prepare({**plan, "filters": plan["filters"] + [F("cancelled", False)]}, "по годам, все статусы")
@@ -296,3 +297,31 @@ def test_status_values_of_flags_hold_in_the_data(db):
         listed = ", ".join("'" + v + "'" for v in f.status_values)
         bad = db.query(f"SELECT COUNT(*) FROM deals d WHERE ({f.sql}) IS DISTINCT FROM (d.status IN ({listed}))").rows
         assert bad[0][0] == 0, name
+
+
+def test_grouped_deals_show_both_views_unless_the_question_names_a_status():
+    """fresh3 h010 / h011 / h028 / h029: rankings, breakdowns and trends whose question names no status show all
+    deals and, separately, without annulled (scope split); explicit status words keep working."""
+    plan = {"subject": "deals", "measures": [{"agg": "count"}], "filters": [F("year", 2024)],
+            "group_by": ["contract_form"]}
+    for q in ("Разбейте сделки 2024 года по видам: сколько спотовых, сколько форвардов",
+              "2024-yildagi bitimlarni turlarga ajrating", "2024 йилдаги битимларни турларга ажратинг",
+              "Разбейте все сделки 2024 года по видам"):
+        assert prepare(plan, q).scope == "split", q
+    for q in ("по видам, без аннулированных", "turlar bo‘yicha, bekor qilinganlarsiz",
+              "турлар бўйича, бекор қилинганларсиз", "по видам, только исполненные"):
+        assert prepare(plan, q).scope == "valid", q
+    assert prepare(plan, "по видам, все статусы").scope == "all"
+    assert prepare(plan, "барча ҳолатлар бўйича турлар").scope == "all"
+    # a "without annulled" filter the question does not ask for is dropped, an asked one is kept
+    p = prepare({**plan, "filters": plan["filters"] + [F("cancelled", False)]}, "сделки 2024 года по видам")
+    assert p.scope == "split" and not p.filters_on("cancelled")
+    p = prepare({**plan, "filters": plan["filters"] + [F("cancelled", False)]}, "по видам без аннулированных")
+    assert p.scope == "all" and p.filters_on("cancelled")
+    p = prepare({**plan, "filters": plan["filters"] + [F("cancelled", True)]}, "сколько аннулированных по видам")
+    assert p.scope == "all" and p.filters_on("cancelled")
+    # record listings and scope-free measures are unchanged
+    assert prepare({"subject": "deals", "filters": [F("year", 2024), F("product", "Сахар")], "group_by": ["deal"],
+                    "limit": 5}, "сделки по сахару").scope == "valid"
+    assert prepare({"subject": "deals", "measures": [{"agg": "cancelled_share"}], "group_by": ["year"]},
+                   "по годам").scope == "all"

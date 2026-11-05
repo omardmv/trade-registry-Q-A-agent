@@ -380,16 +380,20 @@ def build_sql(plan: Plan, d: Dictionary, variants: VariantMatcher | None = None)
     if valid_filter and s.cancelled:
         having = f" HAVING COUNT(*) FILTER (WHERE NOT {s.cancelled}) > 0"
     select = g.select + measure_cols
+    # the split view (all deals and, separately, without annulled) orders and ranks by the without-annulled value
+    ranked_measures = [p for p in pairs if not (plan.scope == "split" and p[1].endswith("_all")
+                                                and any(q[2] is p[2] and q[1].endswith("_valid") for q in pairs))]
     if plan.limit is None:
         direction = "ASC" if plan.order == "asc" else "DESC"
-        first = measure_aliases[0]
+        first = ranked_measures[0][1]
         order = g.time_cols + [f"{first} {direction} NULLS LAST"] + [x for x in g.order_cols if x not in g.time_cols]
         sql = f"SELECT {', '.join(select)} {from_sql} GROUP BY {', '.join(g.group)}{having} ORDER BY {', '.join(order)}"
         return Built(sql, splits, notes, measure_aliases)
     notes.append(f"ranked_top_{plan.limit}")
     if plan.limit == 1:
         notes.append("ties_kept")
-    ranked_measures = pairs
+    if plan.scope == "split":
+        notes.append("ranked_valid")
     if len(plan.measures) == 2:
         splits.append("measure")
         parts = []

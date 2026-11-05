@@ -15,7 +15,14 @@ def resolver(db):
     return Resolver(db)
 
 
-def check(db, resolver, plan, sql, *names, question=""):
+# A grouped deal plan whose question names no status shows all deals and, separately, without annulled
+# (test_grouped_deals_show_both_views); the SQL shapes below are checked on the "without annulled" view.
+VALID_Q = "без аннулированных"
+
+
+def check(db, resolver, plan, sql, *names, question=None):
+    if question is None:
+        question = VALID_Q if plan.get("subject") == "deals" and plan.get("group_by") else ""
     res, built, _ = run_plan(db, resolver, plan, question)
     exp = db.query(sql, max_rows=10_000)
     got = cols(res, *names) if names else res.rows
@@ -132,7 +139,8 @@ def test_deals_compare_years_sum(db, resolver):
 def test_deals_monthly_trend(db, resolver):
     check(db, resolver, {"subject": "deals", "measures": [{"agg": "sum", "of": "tonnes"}],
                          "filters": [F("product", "Пшеница"), F("year", 2024)], "group_by": ["month"]},
-          f"SELECT year, month, SUM(volume_tonnes) FROM deals WHERE {W24} AND NOT is_cancelled GROUP BY 1, 2 ORDER BY 1, 2")
+          f"SELECT year, month, SUM(volume_tonnes) FROM deals WHERE {W24} AND NOT is_cancelled GROUP BY 1, 2 ORDER BY 1, 2",
+          question="по месяцам, без аннулированных")
 
 
 def test_deals_breakdown_by_family_products(db, resolver):
@@ -214,7 +222,7 @@ def test_deals_top_per_year(db, resolver):
                          "filters": [F("year", [2024, 2025], "between")], "group_by": ["year", "product"], "limit": 2},
           "SELECT year, product_canonical, s FROM (SELECT year, product_canonical, SUM(amount_uzs) s, ROW_NUMBER() OVER "
           "(PARTITION BY year ORDER BY SUM(amount_uzs) DESC, product_canonical) rn FROM deals WHERE year BETWEEN 2024 "
-          "AND 2025 AND NOT is_cancelled GROUP BY 1, 2) WHERE rn <= 2 ORDER BY 1, 3 DESC")
+          "AND 2025 AND NOT is_cancelled GROUP BY 1, 2) WHERE rn <= 2 ORDER BY 1, 3 DESC", question="по годам, без аннулированных")
 
 
 def test_deals_product_variant_expansion(db, resolver):
@@ -231,7 +239,7 @@ def test_deals_cancelled_share_by_year_with_valid_counts(db, resolver):
     check(db, resolver, {"subject": "deals", "measures": [{"agg": "cancelled_share"}, {"agg": "count"}],
                          "group_by": ["year"]},
           "SELECT year, ROUND(100.0 * COUNT(*) FILTER (WHERE is_cancelled) / COUNT(*), 2), COUNT(*) FILTER (WHERE NOT "
-          "is_cancelled) FROM deals GROUP BY 1 ORDER BY 1")
+          "is_cancelled) FROM deals GROUP BY 1 ORDER BY 1", question="по годам, без аннулированных")
 
 
 def test_deals_buyer_region_top(db, resolver):
@@ -438,3 +446,30 @@ def test_rates_compare_trend_breakdown(db, resolver):
           "GROUP BY 1, 2 ORDER BY 1, 2")
     check(db, resolver, {"subject": "usd_rates", "measures": [{"agg": "max", "of": "rate"}], "group_by": ["year"]},
           "SELECT year(rate_date), MAX(rate) FROM usd_rates GROUP BY 1 ORDER BY 1")
+
+
+def test_grouped_deals_show_both_views(db, resolver):
+    """A ranking / breakdown / trend whose question names no status: one column all deals, one without annulled;
+    a top-N ranks by the without-annulled value (fresh3 h010, h011, h028)."""
+    q = "в каких регионах больше всего сделок с пшеницей в 2024 году"
+    res, built = check(db, resolver, {"subject": "deals", "measures": [{"agg": "count"}],
+                                      "filters": [F("product", "Пшеница"), F("year", 2024)],
+                                      "group_by": ["region"], "limit": 3},
+                       f"SELECT region, COUNT(*), COUNT(*) FILTER (WHERE NOT is_cancelled) v FROM deals WHERE {W24} "
+                       "GROUP BY 1 ORDER BY v DESC, 1 LIMIT 3", question=q)
+    assert res.columns == ["region", "deals_all", "deals_valid"]
+    assert "status_split" in built.notes and "ranked_valid" in built.notes
+    check(db, resolver, {"subject": "deals", "measures": [{"agg": "count"}], "filters": [F("year", 2024)],
+                         "group_by": ["contract_form"]},
+          "SELECT contract_form, COUNT(*), COUNT(*) FILTER (WHERE NOT is_cancelled) v FROM deals WHERE year = 2024 "
+          "GROUP BY 1 ORDER BY v DESC, 1", question="Разбейте сделки 2024 года по видам")
+    check(db, resolver, {"subject": "deals", "measures": [{"agg": "sum", "of": "amount_uzs"}],
+                         "filters": [F("year", [2022, 2026], "between")], "group_by": ["year"]},
+          "SELECT year, SUM(amount_uzs), SUM(amount_uzs) FILTER (WHERE NOT is_cancelled) FROM deals "
+          "WHERE year BETWEEN 2022 AND 2026 GROUP BY 1 ORDER BY 1", question="как менялась сумма по годам")
+    # the top day: ranked by deals without annulled, both numbers shown
+    res, _ = check(db, resolver, {"subject": "deals", "measures": [{"agg": "count"}], "filters": [F("year", 2024)],
+                                  "group_by": ["day"], "limit": 1},
+                   "SELECT deal_date, COUNT(*), COUNT(*) FILTER (WHERE NOT is_cancelled) v FROM deals WHERE year = 2024 "
+                   "GROUP BY 1 QUALIFY RANK() OVER (ORDER BY v DESC) = 1 ORDER BY 1",
+                   question="В какое число 2024 года было больше всего сделок за день?")

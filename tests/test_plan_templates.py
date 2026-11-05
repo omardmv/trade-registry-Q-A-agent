@@ -231,3 +231,26 @@ def test_deal_card_names_the_brokers(db, resolver, lang, seller, buyer, code):
     check(text, res.rows)
     shown = explain_plan(p, D, built.notes, lang)
     assert seller in shown and buyer in shown
+
+
+@pytest.mark.parametrize("lang, valid, every", [("ru", "без аннулированных", "все сделки и отдельно без аннулированных"),
+                                                ("uz", "bekor qilinganlarsiz", "barcha bitimlar va alohida bekor qilinganlarsiz"),
+                                                ("uz-Cyrl", "бекор қилинганларсиз", "барча битимлар ва алоҳида бекор қилинганларсиз")])
+def test_grouped_deals_render_both_views(db, resolver, lang, valid, every):
+    """A breakdown / ranking whose question names no status prints both numbers per row; the explanation says so
+    and names the view the ranking uses."""
+    from app.plan.explain import explain_plan
+    for plan, q in (({"subject": "deals", "measures": [{"agg": "count"}], "filters": [F("year", 2024)],
+                      "group_by": ["contract_form"]}, "Разбейте сделки 2024 года по видам"),
+                    ({"subject": "deals", "measures": [{"agg": "sum", "of": "tonnes"}], "filters": [F("year", 2024)],
+                      "group_by": ["region"], "limit": 3}, "три региона с наибольшим объёмом в 2024")):
+        res, built, p = run_plan(db, resolver, plan, q)
+        text = plan_templates.render(p, D, res.columns, res.rows, lang)
+        assert text.count(f"({valid}: ") == len(res.rows), text
+        check(text, res.rows)
+        shown = explain_plan(p, D, built.notes, lang)
+        assert every in shown
+        if plan.get("limit"):
+            assert {"ru": "место в рейтинге — по сделкам без аннулированных",
+                    "uz": "reytingdagi o‘rin — bekor qilinganlarsiz bitimlar bo‘yicha",
+                    "uz-Cyrl": "рейтингдаги ўрин — бекор қилинганларсиз битимлар бўйича"}[lang] in shown, shown
