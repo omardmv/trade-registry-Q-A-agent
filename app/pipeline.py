@@ -15,6 +15,7 @@ from app.db import to_jsonable
 from app.plan.dictionary import load_dictionary
 from app.plan.explain import explain_plan
 from app.plan.model import Plan
+from app.plan.vocab import log_refusal
 from app.text import detect_lang
 
 log = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ class AskResult:
     splits: list[str] = field(default_factory=list)
     assumptions: list[str] = field(default_factory=list)
     explanation: str = ""
+    column_labels: list[str] = field(default_factory=list)  # readable column names in the question's language
     verified: bool = True
     unsupported: list[str] = field(default_factory=list)
     reason: str = ""
@@ -63,12 +65,14 @@ def _is_no_data(result, compiled: bool, measure_columns=None) -> bool:
 
 class Pipeline:
     def __init__(self, writer, llm, deadline_s: float = 75.0, llm_timeout_s: float = config.LLM_TIMEOUT_S,
-                 known_names: frozenset[str] | set[str] | None = None, alias_groups=None):
+                 known_names: frozenset[str] | set[str] | None = None, alias_groups=None, vocab=None):
         self.writer, self.llm = writer, llm
         self.known_names, self.alias_groups = known_names, alias_groups
         self.deadline_s, self.llm_timeout_s = deadline_s, llm_timeout_s
         # grammar planner: answers are rendered from the plan by code (app/answer/plan_templates.py)
         self.grammar = getattr(writer, "compile_tool", None) == "run_plan"
+        # closed vocabulary, stage 1 (grammar planner only): the writer's lexicon unless one is given
+        self.vocab = vocab if vocab is not None else (getattr(writer, "vocab", None) if self.grammar else None)
 
     def ask(self, question: str, previous: dict | None = None) -> AskResult:
         with track_providers() as used:
@@ -80,6 +84,9 @@ class Pipeline:
         t0 = time.monotonic()
         deadline = t0 + self.deadline_s
         lang = detect_lang(question)
+        if (refused := self._vocab_refusal(question, lang)) is not None:
+            refused.timings = {"writer_s": 0.0, "total_s": round(time.monotonic() - t0, 2)}
+            return refused
         try:
             wr = self.writer.run(question, lang, deadline - self.llm_timeout_s, previous)
         except Exception as e:  # never surface a stack trace as an answer
@@ -95,6 +102,22 @@ class Pipeline:
         res.timings = timings
         res.trace = wr.trace
         return res
+
+    def _vocab_refusal(self, question: str, lang: str) -> AskResult | None:
+        """Stage 1 of the closed vocabulary, before any LLM call: a word outside the lexicon that is not a word of
+        any entity name in the database -> no data about it."""
+        if self.vocab is None:
+            return None
+        try:
+            unknown = self.vocab.unknown(question)
+        except Exception:
+            log.exception("vocabulary check crashed")
+            return None
+        if not unknown:
+            return None
+        log_refusal("stage 1", question, unknown)
+        return AskResult(templates.no_data(lang, unknown[0].word), lang, False, "no_data",
+                         reason="not in the data: " + ", ".join(u.word for u in unknown))
 
     def _supported_assumptions(self, assumptions, question, shown, extra) -> list[str]:
         """Assumptions are model text: keep only those whose numbers/ids/dates/names the data supports."""
@@ -113,21 +136,23 @@ class Pipeline:
 
     def _answer(self, question: str, lang: str, wr: WriterResult, deadline: float) -> AskResult:
         if wr.status == "unanswerable":
-            return AskResult(templates.no_data(lang), lang, False, "no_data", reason=wr.reason)
+            return AskResult(templates.no_data(lang, wr.term or None), lang, False, "no_data", reason=wr.reason)
         if wr.status == "failed":
             if wr.reason == "timeout":
                 return AskResult(templates.timeout(lang), lang, False, "timeout", reason=wr.reason)
             return AskResult(templates.failed(lang), lang, False, "failed", reason=wr.reason)
 
         result = wr.result
+        labels = list(result.columns)
         if isinstance(wr.spec, Plan):
             explanation = explain_plan(wr.spec, load_dictionary(), wr.notes, lang)
+            labels = plan_templates.column_labels(wr.spec, load_dictionary(), result.columns, lang)
         else:
             explanation = explain(wr.spec, wr.notes, lang) if wr.spec is not None else ""
         base = dict(lang=lang, sql=wr.sql, path=wr.path, columns=result.columns,
                     rows=[[to_jsonable(c) for c in r] for r in result.rows[:MAX_RETURNED_ROWS]],
                     row_count=len(result.rows), truncated=result.truncated, splits=wr.splits,
-                    assumptions=wr.assumptions, explanation=explanation)
+                    assumptions=wr.assumptions, explanation=explanation, column_labels=labels)
         if _is_no_data(result, wr.spec is not None, wr.measure_columns):
             base["assumptions"] = []
             return AskResult(templates.no_data(lang), answered=False, source="no_data", **base)

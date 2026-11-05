@@ -188,6 +188,7 @@ class WriterResult:
     trace: list[dict] = field(default_factory=list)
     resolved_names: list[str] = field(default_factory=list)  # display names/values returned by resolve()
     measure_columns: list[str] = field(default_factory=list)  # grammar planner: output columns holding measures
+    term: str = ""          # unanswerable: the question word the data has nothing about (closed vocabulary)
 
 
 def _with_note(results: list[tuple[str, dict]], note: str) -> list[tuple[str, dict]]:

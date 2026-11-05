@@ -2,6 +2,8 @@
 
 Same loop, grounding, deadline and free-SQL fallback as the legacy Writer; the compile tool is run_plan(plan).
 """
+import re
+
 from app import config
 from app.agent.guard import _tok_match
 from app.agent.validators import grounding_status, missing_message
@@ -14,7 +16,11 @@ from app.plan.mentions import Resolution, mention_error
 from app.plan.model import PlanError, parse_plan
 from app.plan.prompt import TOOLS, build_system, load_examples
 from app.plan.validate import grounding_pairs, validate_plan
+from app.plan.vocab import Vocab, build_vocab, log_refusal
 from app.text import normalize_text
+
+_NAMED_GROUNDS = ("company", "broker", "product", "product_family", "product_variant", "region")
+_SQL_STRING = re.compile(r"'((?:[^']|'')*)'")
 
 
 def plan_args(args: dict) -> dict:
@@ -35,10 +41,42 @@ class GrammarWriter(Writer):
 
     def __init__(self, llm, db, resolver, max_tool_calls: int = 8, max_fixes: int = 2,
                  llm_timeout_s: float = config.LLM_TIMEOUT_S, catalog: dict[str, set[str]] | None = None,
-                 dictionary: Dictionary | None = None, examples: list[dict] | None = None):
+                 dictionary: Dictionary | None = None, examples: list[dict] | None = None,
+                 vocab: Vocab | None = None):
         super().__init__(llm, db, resolver, None, "", max_tool_calls, max_fixes, llm_timeout_s, catalog)
         self.dictionary = dictionary or load_dictionary()
         self.system = build_system(self.dictionary, load_examples() if examples is None else examples)
+        # closed vocabulary (stage 2 here; stage 1 runs in the pipeline before any LLM call)
+        self.vocab = vocab if vocab is not None else build_vocab(self.catalog, resolver)
+
+    def _plan_names(self, plan) -> list[str]:
+        """Names of the entities the plan uses: its filter values (incl. share numerators) by their ground."""
+        s = self.dictionary.subject(plan.subject)
+        out = []
+        for f in list(plan.filters) + [w for m in plan.measures for w in m.where]:
+            fd = s.fields.get(f.field)
+            if fd is None:
+                continue
+            values = f.value if isinstance(f.value, tuple) else (f.value,)
+            for v in values:
+                if fd.ground in _NAMED_GROUNDS:
+                    out += self.resolver.entity_names(fd.ground, str(v))
+                elif isinstance(v, str):
+                    out.append(v)
+        return out
+
+    def _vocab_refusal(self, question: str, names) -> WriterResult | None:
+        """Stage 2 of the closed vocabulary: a question word outside the lexicon must be a word of an entity the
+        query uses; otherwise the data has nothing about it (unanswerable, not a fix: the model must not relink
+        the word to a nearby fact)."""
+        if self.vocab is None:
+            return None
+        unknown = self.vocab.unknown_in_plan(question, names)
+        if not unknown:
+            return None
+        log_refusal("stage 2", question, unknown)
+        return WriterResult("unanswerable", reason="not in the data: " + ", ".join(u.word for u in unknown),
+                            term=unknown[0].word)
 
     def _compile(self, args, allowed, question, deadline, names=(), state=None) -> WriterResult | str:
         d = self.dictionary
@@ -46,6 +84,8 @@ class GrammarWriter(Writer):
             plan = validate_plan(parse_plan(plan_args(args)), d, self.catalog)
         except (PlanError, KeyError, TypeError) as e:
             return str(e)
+        if (refusal := self._vocab_refusal(question, self._plan_names(plan))) is not None:
+            return refusal
         raw_filters = frozenset(f.field for f in plan.filters)
         plan = apply_defaults(plan, d, question)
         if (err := consistency_error(plan, d, question)) is not None:
@@ -76,6 +116,15 @@ class GrammarWriter(Writer):
                             [str(a) for a in args.get("assumptions") or (args.get("plan") if isinstance(args.get("plan"), dict)
                                                                     else {}).get("assumptions") or []],
                             measure_columns=built.measure_columns)
+
+    def _sql(self, args, allowed, question, deadline, names=(), state=None) -> WriterResult | str:
+        sql = str(args.get("sql", ""))
+        used = [n for kind, value in allowed if value and str(value) in sql
+                for n in self.resolver.entity_names({"inn": "company"}.get(kind, kind), str(value))]
+        used += [m.replace("''", "'") for m in _SQL_STRING.findall(sql)]
+        if (refusal := self._vocab_refusal(question, used)) is not None:
+            return refusal
+        return super()._sql(args, allowed, question, deadline, names, state)
 
     def _tool(self, name, args, allowed, question, deadline, names=None, state=None) -> dict:
         if name == "resolve" and "kind" not in args and "object" in args:
