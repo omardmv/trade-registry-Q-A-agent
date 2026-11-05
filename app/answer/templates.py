@@ -1,5 +1,6 @@
 """Fixed texts and the row-based fallback answer (always verifiable by construction)."""
 from app.answer.numbers import format_cell
+from app.text import to_cyrillic
 
 NO_DATA = {
     "ru": "В данных нет ответа на этот вопрос.",
@@ -36,9 +37,26 @@ def _lang(lang: str) -> str:
     return lang if lang in NO_DATA else "ru"
 
 
-def no_data(lang: str) -> str:
+NO_TERM = {
+    "ru": "В данных нет сведений {prep} «{term}».",
+    "uz": "Ma’lumotlarda «{term}» haqida ma’lumot yo‘q.",
+}
+
+
+def no_data(lang: str, term: str | None = None) -> str:
+    """The no-data text; with a term (a word of the question the data has nothing about) it names the term."""
     lang = _lang(lang)
-    return f"{NO_DATA[lang]} {COVERAGE[lang]}"
+    if not term:
+        return f"{NO_DATA[lang]} {COVERAGE[lang]}"
+    if lang == "ru":
+        prep = "об" if term[:1].lower() in "аоуэиaouei" else "о"
+        head = NO_TERM["ru"].format(prep=prep, term=term)
+    else:
+        before, after = NO_TERM["uz"].split("{term}")
+        if lang == "uz-Cyrl":     # template words in Cyrillic, the term as the user wrote it
+            before, after = to_cyrillic(before), to_cyrillic(after)
+        head = f"{before}{term}{after}"
+    return f"{head} {COVERAGE[lang]}"
 
 
 def failed(lang: str) -> str:

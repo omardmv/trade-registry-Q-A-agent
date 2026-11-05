@@ -34,6 +34,10 @@ def to_cyrillic(text: str) -> str:
     while i < len(text):
         pair = text[i:i + 2]
         low = pair.lower()
+        if low == "yo" and text[i + 2:i + 3] in _APOSTROPHES and text[i + 2:i + 3]:   # yo‘q: й + ў, not ё
+            out.append("Й" if pair[0].isupper() else "й")
+            i += 1
+            continue
         if low in _LAT_TO_CYR_2:
             cyr = _LAT_TO_CYR_2[low]
             out.append(cyr.upper() if pair[0].isupper() else cyr)
@@ -68,8 +72,13 @@ def normalize_name(text: str) -> str:
 
 
 def detect_lang(text: str) -> Literal["ru", "uz", "uz-Cyrl"]:
-    cyr = sum(1 for ch in text if "Ѐ" <= ch <= "ӿ")
-    lat = sum(1 for ch in text if ch.isascii() and ch.isalpha())
+    """Russian / Uzbek Latin / Uzbek Cyrillic by the letters of the question's words. Capitalised Latin words
+    (company and brand names such as «Linom Energo» inside a Russian question) do not vote unless nothing else
+    is left."""
+    words = re.findall(r"[^\W\d_][\w‘’'ʼ`-]*", text)
+    voting = [w for w in words if not (w[0].isascii() and w[0].isupper())] or words
+    cyr = sum(1 for w in voting for ch in w if "Ѐ" <= ch <= "ӿ")
+    lat = sum(1 for w in voting for ch in w if ch.isascii() and ch.isalpha())
     if cyr > lat:
         low = text.lower()
         if any(ch in _UZ_CYRL_LETTERS for ch in low) or _UZ_CYRL_WORDS.search(low):
