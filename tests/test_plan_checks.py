@@ -260,3 +260,39 @@ def test_ranking_by_an_extreme_sorts_the_way_the_question_asks():
     assert prepare({**regions, "order": "desc"}, "2024-yilda eng kamida 10 ta bitim").order == "desc"
     assert prepare({"subject": "deals", "measures": [{"agg": "min", "of": "amount_uzs"}],
                     "filters": [F("year", 2024)]}, "самая дешёвая сделка").order == "desc"
+
+
+def test_share_that_is_100_or_0_percent_by_construction():
+    """h006: «2025-yilda tuzilgan bitimlarning necha foizi to‘lanmagani uchun bekor bo‘lgan?» was planned as scope
+    cancelled = true, numerator payment_late = true -> 100%. The equal-filter check missed it (different fields);
+    cancelled, payment_late and status «Аннулирован(Не оплачен)» are the same deals (fields.yaml status_values)."""
+    def share(scope, part):
+        return check({"subject": "deals", "measures": [{"agg": "share"}], "filters": [F("year", 2025)] + scope
+                      + [{**p, "numerator": True} for p in part]}, "2025")
+    late, ann = F("payment_late", True), F("cancelled", True)
+    for scope, part in (([ann], [late]), ([late], [ann]), ([F("status", "Аннулирован(Не оплачен)")], [late]),
+                        ([ann], [F("status", "Аннулирован(Не оплачен)")]),
+                        ([F("contract_form", "Спот")], [F("contract_form", ["Спот", "Форвард"], "in")])):
+        assert "100% by construction" in (share(scope, part) or ""), (scope, part)
+    for scope, part in (([F("cancelled", False)], [late]), ([F("contract_form", "Спот")], [F("contract_form", "Форвард")]),
+                        ([F("status", "Исполнен")], [ann])):
+        assert "0% by construction" in (share(scope, part) or ""), (scope, part)
+    assert "same deals" in share([ann], [late])
+    # real shares stay: the part inside a wider scope
+    for scope, part in (([], [ann]), ([], [late]), ([], [ann, late]), ([F("product", "Сахар")], [ann]),
+                        ([F("cancelled", False)], [F("contract_form", "Спот")]),
+                        ([F("status", ["Исполнен", "Аннулирован(Не оплачен)"], "in")], [ann]),
+                        ([F("contract_form", ["Спот", "Форвард"], "in")], [F("contract_form", "Спот")]),
+                        ([F("product", "Сахар")], [F("buyer_region", "Toshkent shahri")])):
+        assert share(scope, part) is None, (scope, part)
+
+
+def test_status_values_of_flags_hold_in_the_data(db):
+    """fields.yaml status_values: cancelled and payment_late are true exactly for the declared status values."""
+    s = D.subject("deals")
+    for name in ("cancelled", "payment_late"):
+        f = s.fields[name]
+        assert f.status_values
+        listed = ", ".join("'" + v + "'" for v in f.status_values)
+        bad = db.query(f"SELECT COUNT(*) FROM deals d WHERE ({f.sql}) IS DISTINCT FROM (d.status IN ({listed}))").rows
+        assert bad[0][0] == 0, name

@@ -159,6 +159,8 @@ def consistency_error(plan: Plan, d: Dictionary, question: str) -> str | None:
             if all(w in plan.filters for w in m.where):
                 return ("the share numerator equals the filtered scope, so the share is 100%: mark the part's "
                         "condition numerator:true and do not repeat it as a plain filter")
+            if (err := degenerate_share_error(s, plan, m)) is not None:
+                return err
             grouped = [w.field for w in m.where if w.field in plan.group_by]
             if grouped:
                 return (f"the share numerator filters {grouped[0]} while grouping by {grouped[0]}: every group is "
@@ -173,6 +175,78 @@ def consistency_error(plan: Plan, d: Dictionary, question: str) -> str | None:
             or not_in_data_error(question) or role_word_error(plan, d, question)
             or currency_error(plan, question) or side_error(plan, question)
             or counted_parties_error(plan, d, question) or elapsed_vs_term_error(plan, d, question))
+
+
+# ---- a share that is 0% or 100% by construction ----
+def _allowed(s: Subject, flt: Filter):
+    """(key, set of values the filter lets through, all values of the key or None) for a filter on a categorical
+    field, or None when the filter is not a plain value set (numbers, dates, ranges). A flag declared with
+    status_values (cancelled, payment_late) is a set of status values: key "status"."""
+    f = s.fields.get(flt.field)
+    if f is None or flt.op not in ("=", "in", "!="):
+        return None
+    vals = set(flt.value) if flt.op == "in" else {flt.value}
+    if f.type == "bool" and f.status_values and "status" in s.fields and s.fields["status"].values:
+        universe = frozenset(s.fields["status"].values)
+        true_set = frozenset(f.status_values)
+        if not all(isinstance(v, bool) for v in vals):
+            return None
+        out = frozenset().union(*(true_set if v else universe - true_set for v in vals))
+        return "status", (universe - out if flt.op == "!=" else out), universe
+    if f.type == "bool":
+        universe = frozenset({True, False})
+        out = frozenset(vals)
+        return f.name, (universe - out if flt.op == "!=" else out), universe
+    if f.type not in ("dimension",) or f.either:
+        return None
+    universe = frozenset(f.values) if f.values else None
+    if flt.op == "!=":
+        return (f.name, universe - frozenset(vals), universe) if universe is not None else None
+    return f.name, frozenset(vals), universe
+
+
+def _sets(s: Subject, filters) -> dict | None:
+    """key -> (allowed set, universe) intersected over the filters; None when a filter cannot be read as a set."""
+    out: dict = {}
+    for flt in filters:
+        a = _allowed(s, flt)
+        if a is None:
+            return None
+        key, allowed, universe = a
+        prev = out.get(key)
+        out[key] = (allowed if prev is None else prev[0] & allowed, universe)
+    return out
+
+
+def degenerate_share_error(s: Subject, plan: Plan, m) -> str | None:
+    """A share whose scope already decides the numerator is 100% (or 0%) whatever the data: «какой процент сделок
+    аннулирован из-за неоплаты» planned as scope cancelled = true, numerator payment_late = true (h006) is 100%,
+    because in the data a deal is annulled exactly when its payment is late (both are the status «Аннулирован(Не
+    оплачен)», fields.yaml status_values). The equal-filter check above misses it: the two filters are on
+    different fields. Here every filter on a categorical field is read as a set of values per key (a flag with
+    status_values as a set of statuses); the share is 100% when on every key of the numerator the scope's set lies
+    inside the numerator's set, and 0% when on some key the two sets do not meet."""
+    num = _sets(s, m.where)
+    if not num:
+        return None
+    scope = _sets(s, [f for f in plan.filters if _allowed(s, f) is not None]) or {}
+    for key, (n_set, _) in num.items():
+        if key in scope and not (scope[key][0] & n_set):
+            return _degenerate_msg(plan, m, "0%", key)
+    rows = {key: scope[key][0] if key in scope else universe for key, (_, universe) in num.items()}
+    if all(rows[key] is not None and rows[key] <= n_set for key, (n_set, _) in num.items()):
+        return _degenerate_msg(plan, m, "100%", next(iter(num)))
+    return None
+
+
+def _degenerate_msg(plan: Plan, m, pct: str, key: str) -> str:
+    part = ", ".join(f"{w.field} {w.op} {_show_value(w)}" for w in m.where)
+    scope = ", ".join(f"{f.field} {f.op} {_show_value(f)}" for f in plan.filters) or "no filter"
+    same = (" (in the data cancelled = true, payment_late = true and status «Аннулирован(Не оплачен)» are the same "
+            "deals)") if key == "status" else ""
+    return (f"the share is {pct} by construction: the scope ({scope}) already decides the numerator ({part}){same}. "
+            "Keep only the conditions that define the whole (period, product, party, ...) as plain filters and put "
+            "the part the question asks about in the numerator (numerator:true)")
 
 
 # ---- share of a named party: the party is the part, the product / period is the scope ----

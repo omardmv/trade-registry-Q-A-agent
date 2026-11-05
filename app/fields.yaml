@@ -18,6 +18,7 @@
 #   filter_sql  filter template for `=` ({v} is the literal), for fields that are not a single column
 #   range     [min, max] for grains / ints
 #   per_kg    (number field or named measure) a price in so'm per kg: the answer also shows it per tonne (× 1000)
+#   status_values  (bool) the flag is true exactly for these values of the subject's `status` field
 #   label     {ru, uz}
 # Named measures: SQL defined once. {f} is the scope FILTER clause (status view), {w} the same plus the
 # measure's own `where`. scope_free measures are computed over every row of the filtered scope (they need the
@@ -122,8 +123,13 @@ deals:
              label: {ru: состояние, uz: holat}}
     currency: {type: dimension, sql: d.currency, ground: enum, values: [UZS, USD],
                label: {ru: валюта контракта, uz: shartnoma valyutasi}}
-    cancelled: {type: bool, sql: d.is_cancelled, label: {ru: аннулирована, uz: bekor qilingan}}
-    payment_late: {type: bool, sql: d.payment_late, label: {ru: просрочка оплаты, uz: to‘lov kechikkan}}
+    # status_values: the flag is true exactly for these status values (a fact of the data, tests/test_plan_checks.py
+    # checks it on the database): a share whose scope and numerator both filter the status family is 0% / 100%
+    # by construction when the sets say so (app/plan/checks.py, degenerate_share_error)
+    cancelled: {type: bool, sql: d.is_cancelled, status_values: [Аннулирован(Не оплачен)],
+                label: {ru: аннулирована, uz: bekor qilingan}}
+    payment_late: {type: bool, sql: d.payment_late, status_values: [Аннулирован(Не оплачен)],
+                   label: {ru: просрочка оплаты, uz: to‘lov kechikkan}}
     tonnes: {type: number, sql: d.volume_tonnes, label: {ru: объём в тоннах, uz: hajm (tonna)}}
     volume: {type: number, sql: d.volume, per_unit: true, label: {ru: объём в единицах измерения, uz: hajm (birlikda)}}
     lots: {type: number, sql: d.quantity, label: {ru: куплено лотов, uz: sotib olingan lotlar}}

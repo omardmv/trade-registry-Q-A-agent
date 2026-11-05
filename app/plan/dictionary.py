@@ -46,6 +46,7 @@ class Field:
     with_year: bool = False
     side_of: str = ""                   # group-only: the side (seller / buyer) of this either-side field
     per_kg: bool = False                # a price in so'm per kg: answers also show it per tonne (× 1000)
+    status_values: tuple[str, ...] = () # bool: true exactly for these values of the `status` field
 
 
 @dataclass(frozen=True)
@@ -111,7 +112,8 @@ def _field(name: str, d: dict) -> Field:
                  columns=tuple(d.get("columns") or ()), joins=tuple(d.get("joins") or ()),
                  filter_sql=d.get("filter_sql", ""), filter_only=bool(d.get("filter_only")),
                  range=tuple(d["range"]) if d.get("range") else None, with_year=bool(d.get("with_year")),
-                 side_of=d.get("side_of", ""), per_kg=bool(d.get("per_kg")))
+                 side_of=d.get("side_of", ""), per_kg=bool(d.get("per_kg")),
+                 status_values=tuple(str(v) for v in d.get("status_values") or ()))
 
 
 def _subject(name: str, d: dict) -> Subject:
