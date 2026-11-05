@@ -187,9 +187,14 @@ class WriterResult:
     reason: str = ""
     trace: list[dict] = field(default_factory=list)
     resolved_names: list[str] = field(default_factory=list)  # display names/values returned by resolve()
+    measure_columns: list[str] = field(default_factory=list)  # grammar planner: output columns holding measures
 
 
 class Writer:
+    tools = TOOLS
+    compile_tool = "compile_query"
+    nudge = "Do not answer in text. Call compile_query, submit_sql or declare_unanswerable."
+
     def __init__(self, llm: LLM, db: Database, resolver: Resolver, examples: ExampleStore, schema_prompt: str,
                  max_tool_calls: int = 8, max_fixes: int = 2,
                  llm_timeout_s: float = config.LLM_TIMEOUT_S, catalog: dict[str, set[str]] | None = None):
@@ -243,7 +248,7 @@ class Writer:
         if deadline - time.monotonic() < self.llm_timeout_s:
             return failed("timeout")
         try:
-            chat = self.llm.start_chat(self.system, TOOLS)
+            chat = self.llm.start_chat(self.system, self.tools)
         except Exception as e:
             return failed(f"llm error: {safe_text(e)}")
         reply, err = send(chat.send_text, self._prompt(question, lang, previous))
@@ -254,8 +259,7 @@ class Writer:
                 if nudged:
                     return failed("model did not call a tool")
                 nudged = True
-                reply, err = send(chat.send_text,
-                                  "Do not answer in text. Call compile_query, submit_sql or declare_unanswerable.")
+                reply, err = send(chat.send_text, self.nudge)
                 continue
             results = []
             for tc in reply.tool_calls:
@@ -265,9 +269,9 @@ class Writer:
                     return WriterResult("unanswerable", reason=str(tc.args.get("reason", "")), trace=trace)
                 if calls > self.max_tool_calls:
                     return failed("tool budget exceeded")
-                if tc.name in ("compile_query", "submit_sql"):
+                if tc.name in (self.compile_tool, "submit_sql"):
                     outcome = (self._compile(tc.args, allowed, question, deadline, names, state)
-                               if tc.name == "compile_query"
+                               if tc.name == self.compile_tool
                                else self._sql(tc.args, allowed, question, deadline, names, state))
                     if isinstance(outcome, WriterResult):
                         outcome.trace, outcome.resolved_names = trace, names

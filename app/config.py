@@ -61,3 +61,5 @@ LLM_TIMEOUT_S = float(os.environ.get("UZEX_LLM_TIMEOUT_S", "15"))
 MAX_TOOL_CALLS = 8
 MAX_FIX_RETRIES = 2
 ROW_LIMIT = 1000
+# Planner: legacy (structured form, compile_query) or grammar (small general plan, run_plan; app/plan/)
+PLANNER = os.environ.get("PLANNER", "legacy").strip().lower() or "legacy"

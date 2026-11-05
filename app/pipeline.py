@@ -12,6 +12,9 @@ from app.answer.verifier import verify_answer
 from app.compiler.explain import explain
 from app.compiler.sql import MEASURE_SQL
 from app.db import to_jsonable
+from app.plan.dictionary import load_dictionary
+from app.plan.explain import explain_plan
+from app.plan.model import Plan
 from app.text import detect_lang
 
 log = logging.getLogger(__name__)
@@ -45,7 +48,7 @@ _MEASURE_COLUMNS = {alias for _, alias in MEASURE_SQL.values()}
 _MEASURE_COLUMNS |= {f"{a}{suffix}" for a in _MEASURE_COLUMNS for suffix in ("_all", "_valid")}
 
 
-def _is_no_data(result, compiled: bool) -> bool:
+def _is_no_data(result, compiled: bool, measure_columns=None) -> bool:
     """No rows, all cells NULL, or (compiled path) every measure cell NULL. Zero counts are answers."""
     if not result.rows:
         return True
@@ -53,7 +56,8 @@ def _is_no_data(result, compiled: bool) -> bool:
         return True
     if not compiled:
         return False
-    idx = [i for i, c in enumerate(result.columns) if c in _MEASURE_COLUMNS]
+    names = set(measure_columns) if measure_columns else _MEASURE_COLUMNS
+    idx = [i for i, c in enumerate(result.columns) if c in names]
     return bool(idx) and all(row[i] is None for row in result.rows for i in idx)
 
 
@@ -114,12 +118,15 @@ class Pipeline:
             return AskResult(templates.failed(lang), lang, False, "failed", reason=wr.reason)
 
         result = wr.result
-        explanation = explain(wr.spec, wr.notes, lang) if wr.spec is not None else ""
+        if isinstance(wr.spec, Plan):
+            explanation = explain_plan(wr.spec, load_dictionary(), wr.notes, lang)
+        else:
+            explanation = explain(wr.spec, wr.notes, lang) if wr.spec is not None else ""
         base = dict(lang=lang, sql=wr.sql, path=wr.path, columns=result.columns,
                     rows=[[to_jsonable(c) for c in r] for r in result.rows[:MAX_RETURNED_ROWS]],
                     row_count=len(result.rows), truncated=result.truncated, splits=wr.splits,
                     assumptions=wr.assumptions, explanation=explanation)
-        if _is_no_data(result, wr.spec is not None):
+        if _is_no_data(result, wr.spec is not None, wr.measure_columns):
             base["assumptions"] = []
             return AskResult(templates.no_data(lang), answered=False, source="no_data", **base)
 
@@ -168,7 +175,11 @@ def build_pipeline() -> Pipeline:
     llm = build_llm(config.LLM_PROVIDERS, {"gemini": config.GEMINI_API_KEY, "openai": config.OPENAI_API_KEY},
                     {"gemini": config.GEMINI_MODEL, "openai": config.OPENAI_MODEL}, config.LLM_TIMEOUT_S)
     resolver = Resolver(db)
-    writer = Writer(llm, db, resolver, ExampleStore.from_yaml(config.EXAMPLES_PATH),
-                    render_schema_prompt(load_semantic()), config.MAX_TOOL_CALLS, config.MAX_FIX_RETRIES,
-                    config.LLM_TIMEOUT_S)
+    if config.PLANNER == "grammar":
+        from app.agent.grammar_writer import GrammarWriter
+        writer = GrammarWriter(llm, db, resolver, config.MAX_TOOL_CALLS, config.MAX_FIX_RETRIES, config.LLM_TIMEOUT_S)
+    else:
+        writer = Writer(llm, db, resolver, ExampleStore.from_yaml(config.EXAMPLES_PATH),
+                        render_schema_prompt(load_semantic()), config.MAX_TOOL_CALLS, config.MAX_FIX_RETRIES,
+                        config.LLM_TIMEOUT_S)
     return Pipeline(writer, llm, config.DEADLINE_S, config.LLM_TIMEOUT_S, resolver.known_names(), resolver.alias_groups())
