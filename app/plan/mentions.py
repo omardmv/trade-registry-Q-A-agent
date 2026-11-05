@@ -110,7 +110,7 @@ def _target_ok(used: str, plan: Plan, raw_filters: set[str]) -> bool:
 
 
 def _fix(text: str) -> str:
-    return text + "; then call run_plan again (or declare_unanswerable if the plan cannot express it)"
+    return text + "; the plan itself may be right: fix only the mentions and call run_plan again"
 
 
 MAX_PROBLEMS = 5
@@ -131,6 +131,7 @@ def mention_error(plan: Plan, d: Dictionary, question: str, index, resolutions=(
     return _fix("mentions: " + " ".join(f"{i}) {p}." for i, p in enumerate(shown, 1)))
 
 
+_PERIOD_NAMES = {"year", "quarter", "month", "day", "deal_date", "registered_date", "rate_date"}
 _USED_ALIASES = {"filters": "filter", "measures": "measure", "groupby": "group_by", "group": "group_by",
                  "grouping": "group_by", "limits": "limit", "orders": "order", "sort": "order"}
 
@@ -143,7 +144,9 @@ def _relink(plan: Plan, raw_filters) -> Plan:
     for m in plan.mentions:
         kind, sep, arg = m.used_as.partition(":")
         kind = _USED_ALIASES.get(kind, kind)
-        if kind == "filter" and arg and arg not in filtered and arg in plan.group_by:
+        if plan.compare and kind in ("filter", "group_by") and arg in _PERIOD_NAMES and arg not in filtered:
+            kind, sep, arg = "compare", "", ""          # a period phrase of a compare plan sets the compare
+        elif kind == "filter" and arg and arg not in filtered and arg in plan.group_by:
             kind = "group_by"
         elif kind == "group_by" and arg and arg not in plan.group_by and arg in filtered:
             kind = "filter"

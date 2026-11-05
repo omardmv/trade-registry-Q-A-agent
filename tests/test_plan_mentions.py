@@ -209,3 +209,10 @@ def test_inflected_product_links_to_its_value(index):
             "mentions": [M("хлопка-сырца", "filter:product"), M("2025", "filter:year"), M("тонн", "measure:0")]}
     assert err(plan, "Сколько тонн хлопка-сырца продали в 2025?", index,
                resolutions=[Resolution("product", "Хлопок-сырец", frozenset({"Хлопок-сырец"}))]) is None
+
+
+def test_period_mention_of_a_compare_plan_sets_the_compare(index):
+    plan = {"subject": "deals", "measures": [{"agg": "count"}],
+            "compare": [{"year": 2025, "quarter": 1}, {"year": 2026, "quarter": 1}],
+            "mentions": [M("первом квартале 2025", "filter:year"), M("первом квартале 2026", "compare")]}
+    assert err(plan, "Сколько сделок в первом квартале 2025 и в первом квартале 2026?", index) is None

@@ -213,3 +213,8 @@ def test_numerator_flag_moves_filter_into_share():
 
 def test_zero_limit_means_no_limit():
     assert V({"subject": "deals", "measures": COUNT, "group_by": ["year"], "limit": 0}).limit is None
+
+
+def test_share_without_numerator_hints_cancelled_share():
+    e = err({"subject": "deals", "measures": [{"agg": "share"}], "filters": [F("year", 2025), F("cancelled", True)]})
+    assert "cancelled_share" in e

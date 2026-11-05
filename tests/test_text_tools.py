@@ -62,3 +62,9 @@ def test_history_replay(text_tools):
     msgs = calls(llm)[0]["messages"]
     assert [m["role"] for m in msgs] == ["system", "user", "assistant", "user", "user"]
     assert "<tool_call>" in msgs[2]["content"] and "<tool_response>" in msgs[3]["content"]
+
+
+def test_bare_json_call_without_tags(text_tools):
+    raw = '```json\n{"name": "run_plan", "arguments": {"subject": "deals"}}\n```'
+    reply = openai_llm([o_text(raw)]).start_chat("S", [TOOL]).send_text("q")
+    assert reply.tool_calls == [ToolCall("run_plan", {"subject": "deals"})] and reply.text == ""

@@ -274,7 +274,19 @@ def _check_compare(s: Subject, plan: Plan) -> None:
                         f"{hi_d.year} is covered only up to {_fmt(hi_d)}")
 
 
-def _measure(s: Subject, m: Measure, catalog: dict | None) -> Measure:
+def _share_hint(s: Subject, filters) -> str:
+    msg = "share needs the part whose share is computed: mark that filter numerator:true"
+    names = [f.field for f in filters]
+    if "cancelled" in names and "cancelled_share" in s.measures:
+        return (msg + "; for the share of annulled deals use {agg: cancelled_share} instead and drop the cancelled "
+                "filter")
+    others = [n for n in names if n not in ("year", "quarter", "month", "day", s.date_field)]
+    if others:
+        return msg + f", e.g. {{field: {others[0]}, value: ..., numerator: true}} (the rest stays the whole)"
+    return msg
+
+
+def _measure(s: Subject, m: Measure, catalog: dict | None, plan_filters=()) -> Measure:
     agg, of = m.agg, m.of
     if of in s.measures and agg not in s.measures:     # {"agg": "avg", "of": "price_per_kg"}
         agg, of = of, None
@@ -290,7 +302,7 @@ def _measure(s: Subject, m: Measure, catalog: dict | None) -> Measure:
         of = None                                       # "share of the count", however it is spelled
     if agg == "share":
         if not m.where:
-            raise PlanError("share needs the part whose share is computed: its filters with numerator:true")
+            raise PlanError(_share_hint(s, plan_filters))
         where = tuple(_filter(s, w, catalog, "share where") for w in m.where)
         if of is not None:
             f = _field(s, of, "share of")
@@ -323,7 +335,7 @@ def validate_plan(plan: Plan, d: Dictionary, catalog: dict | None = None) -> Pla
     """-> the plan with typed values; raises PlanError with a fix instruction."""
     s = d.subject(plan.subject)
     filters = tuple(_filter(s, f, catalog, "filters") for f in plan.filters)
-    measures = tuple(_measure(s, m, catalog) for m in plan.measures)
+    measures = tuple(_measure(s, m, catalog, plan.filters) for m in plan.measures)
     for g in plan.group_by:
         f = _field(s, g, "group_by")
         if f.type not in GROUPABLE or f.filter_only:

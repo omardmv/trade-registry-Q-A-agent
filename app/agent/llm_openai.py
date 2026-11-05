@@ -226,7 +226,16 @@ class TextToolChat(OpenAIChat):
                 if isinstance(args, str):
                     args = _repair_json(args)
                 calls.append(ToolCall(obj["name"], args if isinstance(args, dict) else {}))
-        visible = _TOOL_CALL_RE.sub("", text).strip() if calls else text
+        if not calls:                   # a bare (or fenced) {"name", "arguments"} object without the tags
+            obj = _repair_json(re.sub(r"^```(?:json)?|```$", "", text.strip()).strip())
+            if isinstance(obj, dict) and isinstance(obj.get("name"), str) and isinstance(obj.get("arguments"), dict):
+                calls.append(ToolCall(obj["name"], obj["arguments"]))
+                text_is_call = True
+            else:
+                text_is_call = False
+        else:
+            text_is_call = False
+        visible = "" if text_is_call else (_TOOL_CALL_RE.sub("", text).strip() if calls else text)
         if not visible.strip() and not calls:
             raise EmptyReplyError("OpenAI returned an empty reply")
         self._messages = [*candidate, {"role": "assistant", "content": text}]
