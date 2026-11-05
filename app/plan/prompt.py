@@ -101,6 +101,20 @@ _HIDDEN = {"companies.deals_as_buyer", "companies.deals_as_seller", "brokers.dea
            "brokers.deals_as_buyer_broker"}
 
 
+_RECORD_COLS_SHOWN = 3
+# record columns named first in the prompt (what lookups ask for); the rest is "…"
+_RECORD_COLS_FIRST = ("broker_code", "inn", "region", "name", "broker_name", "seller_inn", "buyer_inn", "amount_uzs",
+                      "status", "product", "deal_date", "registered_date", "base_price")
+
+
+def _record_cols(f) -> list[str]:
+    """Columns a record listing shows, the ones lookups ask for first (names next to ids, counters left out)."""
+    cols = [c.rsplit(" AS ", 1)[-1].strip() for c in f.columns]
+    cols = [c for c in cols if not (c.endswith(("_name", "_valid")) or c.startswith("deals_")) or c == "broker_name"]
+    first = [c for c in _RECORD_COLS_FIRST if c in cols]
+    return first + [c for c in cols if c not in first]
+
+
 def _subject_lines(s: Subject, seen: dict) -> list[str]:
     by: dict[str, list[str]] = {}
     for f in s.fields.values():
@@ -112,6 +126,9 @@ def _subject_lines(s: Subject, seen: dict) -> list[str]:
         if f.ground == "enum" and len(f.values) <= 3 and seen.get(f.name) != f.values:
             hint = "|".join(f.values)       # longer value lists: resolve(kind=catalog) or the validator's error
             seen.setdefault(f.name, f.values)
+        if f.type == "record" and f.ground in ("company", "broker"):     # «ИНН / STIR, регион» of a party
+            cols = _record_cols(f)
+            hint = "lists " + " ".join(cols[:_RECORD_COLS_SHOWN]) + (" …" if len(cols) > _RECORD_COLS_SHOWN else "")
         kind = "number (no sum)" if f.type == "number" and f.aggs != DEFAULT_AGGS["number"] else f.type
         by.setdefault(kind, []).append(f"{name}({hint})" if hint else name)
     rng = f"; {s.data_range[0]:%d.%m.%Y}–{s.data_range[1]:%d.%m.%Y}" if s.data_range else ""

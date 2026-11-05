@@ -23,6 +23,8 @@ from app.text import detect_lang, normalize_text
 
 _NAMED_GROUNDS = ("company", "broker", "product", "product_family", "product_variant", "region")
 _SQL_STRING = re.compile(r"'((?:[^']|'')*)'")
+_CROSS_KINDS = ("company", "broker", "product")
+_CROSS_MIN_SCORE = 90.0
 
 
 def plan_args(args: dict) -> dict:
@@ -159,6 +161,18 @@ class GrammarWriter(Writer):
         if name == "resolve" and str(args.get("kind")) == "catalog":
             return self._resolve_catalog(str(args.get("text", "")))
         out = super()._tool(name, args, allowed, question, deadline, names, state)
+        if name == "resolve" and not out.get("candidates") and str(args.get("kind")) in _CROSS_KINDS:
+            # «Tumizo Neft» looked up as a product: say which other kind the name is, instead of a dead end
+            other = self._other_kind(str(args.get("kind")), str(args.get("text", "")))
+            if other:
+                out = {**out, "note": other}
+        cands = out.get("candidates") or []
+        if name == "resolve" and str(args.get("kind")) in ("company", "broker") and len(cands) >= 2 \
+                and cands[0].get("score") == cands[1].get("score"):
+            # «Moto Group»: two registered companies with the same name; show both, do not refuse
+            same = [c.get("id") for c in cands if c.get("score") == cands[0].get("score")]
+            out = {**out, "note": f"{len(same)} entities match this name equally (namesakes: {', '.join(map(str, same))}): "
+                                  "use all of them (filter op in) and show each; do not refuse as ambiguous"}
         if name == "resolve" and state is not None:
             text = str(args.get("text", ""))
             values = {str(c.get("id")) for c in out.get("candidates", ())} | {str(c.get("name"))
@@ -167,6 +181,23 @@ class GrammarWriter(Writer):
                 values.add(text.strip())
             state.setdefault("resolved", []).append(Resolution(str(args.get("kind", "")), text, frozenset(values)))
         return out
+
+    def _other_kind(self, kind: str, text: str) -> str:
+        """A note naming the other kinds (company / broker / product) the text matches well, or ''."""
+        found = []
+        for k in _CROSS_KINDS:
+            if k == kind:
+                continue
+            try:
+                cands = [c for c in self.resolver.resolve(k, text) if c.score >= _CROSS_MIN_SCORE]
+            except Exception:
+                continue
+            if cands:
+                found.append(f"{k} ({', '.join(c.name for c in cands[:3])})")
+        if not found:
+            return ""
+        return (f"no {kind} matches «{text}»; it matches " + "; ".join(found) +
+                ": call resolve with that kind and use what it returns")
 
     def _resolve_catalog(self, text: str) -> dict:
         """Catalog / status values matching the text (inflection-tolerant), with the plan fields that take them.

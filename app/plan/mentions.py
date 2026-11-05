@@ -96,8 +96,25 @@ def _targets(plan: Plan, raw_filters: set[str]) -> list[str]:
     return out
 
 
-def _target_ok(used: str, plan: Plan, raw_filters: set[str]) -> bool:
+def record_columns(s: Subject, plan: Plan) -> set[str]:
+    """Output columns of a record listing (group_by a record, no measures), and the fields shown in them."""
+    out: set[str] = set()
+    if plan.measures:
+        return out
+    for g in plan.group_by:
+        f = s.fields.get(g)
+        if f is not None and f.type == "record":
+            out |= {c.rsplit(" AS ", 1)[-1].strip() for c in f.columns}
+    if out:
+        out |= {n for n, f in s.fields.items() if f.col in out or (f.display is not None and f.display.col in out)}
+    return out
+
+
+def _target_ok(used: str, plan: Plan, raw_filters: set[str], listed: set[str] = frozenset()) -> bool:
     kind, _, arg = used.partition(":")
+    if listed and kind in ("group_by", "measure") and (arg in listed or (kind == "measure" and
+                                                                                    (arg.isdigit() or not arg))):
+        return True     # a field shown by the record listing («кто купил», «ИНН», «на какую сумму»)
     if kind == "measure":
         if arg.isdigit():
             return int(arg) < len(plan.measures)
@@ -168,10 +185,11 @@ def _problems(plan: Plan, d: Dictionary, question: str, index, resolutions, name
             yield (f"mention «{m.text}» is not in the question: copy the phrase exactly as the question writes it")
         spans += [(a, b, m) for a, b in found]
     # b) each mention points to an element of the plan
+    listed = record_columns(s, plan)
     for m in plan.mentions:
         if m.used_as in ("filter:status", "filter:cancelled") and ALL_STATUSES_RE.search(m.text):
             continue        # «все статусы»: the status view (every state), not a filter
-        if m.used_as.partition(":")[0] not in TARGETS or not _target_ok(m.used_as, plan, raw_filters):
+        if m.used_as.partition(":")[0] not in TARGETS or not _target_ok(m.used_as, plan, raw_filters, listed):
             yield (f"mention «{m.text}» used_as {m.used_as!r} points to nothing in the plan; this plan has: "
                         f"{', '.join(_targets(plan, raw_filters))}")
 

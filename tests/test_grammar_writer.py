@@ -157,7 +157,7 @@ def test_compiled_query_error_is_fed_back(parts):
 
 def test_prompt_and_schema_size_under_budget():
     size = prompt_size(build_system(load_dictionary(), load_examples()))
-    assert size["total"] < 12_000, size
+    assert size["total"] < 12_100, size     # +100 for the INN / region columns of party records (fresh f026, f035)
 
 
 def test_examples_are_valid_plans_with_valid_mentions(db):
@@ -268,3 +268,42 @@ def test_resolve_accepts_object_as_kind(parts):
                                call("declare_unanswerable", reason="x")])
     writer.run("Pudexiz Plast?", "ru", deadline())
     assert tool_payload(llm, 0)["candidates"][0]["id"] == INN
+
+
+def test_empty_resolve_names_the_other_kind(parts):
+    """«Tumizo Neft» looked up as a product finds nothing: the tool says it is a company (fresh f032)."""
+    writer, llm = make(parts, [call("resolve", kind="product", text="Pudexiz Plast"),
+                               call("resolve", kind="product", text="qwzx nonexistent"),
+                               call("declare_unanswerable", reason="x")])
+    writer.run("Pudexiz Plast sotuvlari?", "uz", deadline())
+    first = tool_payload(llm, 0)
+    assert first["candidates"] == [] and "company" in first["note"] and "resolve" in first["note"]
+    assert "note" not in tool_payload(llm, 1)
+
+
+def test_prompt_lists_party_record_columns():
+    """«ИНН / STIR, регион, код» of a company or broker are columns of its record listing (fresh f026, f035)."""
+    from app.plan.dictionary import load_dictionary
+    from app.plan.prompt import build_system, load_examples
+    system = build_system(load_dictionary(), load_examples())
+    assert "broker*(lists broker_code inn region" in system and "company*(lists inn region" in system
+
+
+def test_namesakes_are_flagged_to_use_all(parts, monkeypatch):
+    """Two companies registered under one name (fresh f026 «Moto Group»): the tool says to use both."""
+    from app.resolve import Candidate
+    writer, llm = make(parts, [call("resolve", kind="company", text="Moto Group"),
+                               call("resolve", kind="company", text="Pudexiz Plast"),
+                               call("declare_unanswerable", reason="x")])
+    real = writer.resolver.resolve
+
+    def fake(kind, text, limit=10):
+        if text == "Moto Group":
+            return [Candidate("company", "903979966", "A", 100.0, {}), Candidate("company", "920531263", "B", 100.0, {}),
+                    Candidate("company", "952929454", "C", 90.0, {})]
+        return real(kind, text)
+    monkeypatch.setattr(writer.resolver, "resolve", fake)
+    writer.run("Moto Group INN?", "ru", deadline())
+    note = tool_payload(llm, 0)["note"]
+    assert "903979966" in note and "920531263" in note and "952929454" not in note and "op in" in note
+    assert "note" not in tool_payload(llm, 1)

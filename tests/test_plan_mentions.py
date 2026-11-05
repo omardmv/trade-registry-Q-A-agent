@@ -216,3 +216,19 @@ def test_period_mention_of_a_compare_plan_sets_the_compare(index):
             "compare": [{"year": 2025, "quarter": 1}, {"year": 2026, "quarter": 1}],
             "mentions": [M("первом квартале 2025", "filter:year"), M("первом квартале 2026", "compare")]}
     assert err(plan, "Сколько сделок в первом квартале 2025 и в первом квартале 2026?", index) is None
+
+
+def test_record_listing_accepts_mentions_of_its_columns(index):
+    """«кто продал», «кто купил», «на какую сумму» of a deal card are columns the deal listing shows (fresh f001);
+    a filter mention still needs a real filter."""
+    plan = {"subject": "deals", "filters": [F("deal", "455120")], "group_by": ["deal"],
+            "mentions": [M("455120", "filter:deal"), M("Сделка", "group_by:deal"), M("кто продал", "group_by:seller"),
+                         M("кто купил", "group_by:buyer"), M("на какую сумму", "measure:0")]}
+    q = "Сделка 455120: кто продал, кто купил и на какую сумму?"
+    assert err(plan, q, index) is None
+    bad = {**plan, "mentions": plan["mentions"] + [M("кто продал", "filter:seller")]}
+    assert "points to nothing" in err(bad, q, index)
+    # not a listing (a measure): group_by:seller still has to be in the plan
+    agg = {"subject": "deals", "measures": [{"agg": "sum", "of": "amount_uzs"}], "filters": [F("deal", "455120")],
+           "mentions": [M("455120", "filter:deal"), M("кто продал", "group_by:seller")]}
+    assert "points to nothing" in err(agg, q, index)
