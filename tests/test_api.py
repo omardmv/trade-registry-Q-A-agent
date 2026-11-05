@@ -1,8 +1,17 @@
 from datetime import date
 
+import pytest
 from fastapi.testclient import TestClient
 
+from app import api
 from app.api import app, get_pipeline
+
+
+@pytest.fixture(autouse=True)
+def empty_answer_cache():
+    api._CACHE.clear()
+    yield
+    api._CACHE.clear()
 from app.pipeline import AskResult
 
 
@@ -81,3 +90,13 @@ def test_internal_fields_not_exposed():
     body = client(Leaky()).post("/ask", json={"question": "Q?"}).json()
     assert "reason" not in body and "unsupported" not in body and "trace" not in body
     assert "secret" not in str(body) and body["answer"] == "В данных нет ответа."
+
+
+def test_repeated_question_is_answered_from_the_cache():
+    fake = FakePipeline()
+    c = client(fake)
+    first = c.post("/ask", json={"question": "Сколько  сделок?"}).json()
+    second = c.post("/ask", json={"question": "сколько сделок?"}).json()
+    assert len(fake.calls) == 1 and second["answer"] == first["answer"] and second["cached"] is True
+    c.post("/ask", json={"question": "сколько сделок?", "previous": {"question": "x", "sql": "SELECT 1"}})
+    assert len(fake.calls) == 2      # a follow-up with context is never served from the cache
