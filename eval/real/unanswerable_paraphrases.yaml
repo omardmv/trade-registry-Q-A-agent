@@ -1,0 +1,208 @@
+# No-answer questions for the closed-vocabulary check (written before the lexicon was finalised; the lexicon was
+# not edited to make them pass). Concepts are absent from eval/real/intents.yaml and from the data.
+#   kind: plain  - a question about one concept the data does not have
+#   kind: tricky - ordinary registry words (deals, dates, products, brokers) plus one unknown concept
+# Each item: id, kind, concept, questions {ru, uz_latn, uz_cyrl}.
+- id: u01
+  kind: plain
+  concept: yuan exchange rate
+  questions:
+    ru: Какой был курс китайского юаня в среднем за 2024 год?
+    uz_latn: 2024 yilda Xitoy yuanining o'rtacha kursi qancha bo'lgan?
+    uz_cyrl: 2024 йилда Хитой юанининг ўртача курси қанча бўлган?
+- id: u02
+  kind: plain
+  concept: weather
+  questions:
+    ru: Какая погода была в Ташкенте 5 мая 2025 года?
+    uz_latn: 2025 yil 5 may kuni Toshkentda ob-havo qanday edi?
+    uz_cyrl: 2025 йил 5 май куни Тошкентда об-ҳаво қандай эди?
+- id: u03
+  kind: plain
+  concept: inflation
+  questions:
+    ru: Какая была инфляция в Узбекистане в 2023 году?
+    uz_latn: 2023 yilda O'zbekistonda inflyatsiya darajasi qancha edi?
+    uz_cyrl: 2023 йилда Ўзбекистонда инфляция даражаси қанча эди?
+- id: u04
+  kind: plain
+  concept: delivery truck plate numbers
+  questions:
+    ru: Какие госномера у грузовиков, которые вывозили товар покупателям?
+    uz_latn: Xaridorlarga tovar olib ketgan yuk mashinalarining davlat raqamlari qanday?
+    uz_cyrl: Харидорларга товар олиб кетган юк машиналарининг давлат рақамлари қандай?
+- id: u05
+  kind: plain
+  concept: salary of the exchange chairman
+  questions:
+    ru: Сколько получает председатель правления биржи в месяц?
+    uz_latn: Birja boshqaruvi raisi oyiga qancha pul oladi?
+    uz_cyrl: Биржа бошқаруви раиси ойига қанча пул олади?
+- id: u06
+  kind: plain
+  concept: credit score of a company
+  questions:
+    ru: Какой кредитный скоринг у компании Linom Energo?
+    uz_latn: Linom Energo kompaniyasining kredit skoringi qanday?
+    uz_cyrl: Linom Energo компаниясининг кредит скоринги қандай?
+- id: u07
+  kind: plain
+  concept: tomorrow's price
+  questions:
+    ru: Сколько завтра будет стоить тонна цемента?
+    uz_latn: Ertaga bir tonna sement qancha turadi?
+    uz_cyrl: Эртага бир тонна цемент қанча туради?
+- id: u08
+  kind: plain
+  concept: bitcoin price
+  questions:
+    ru: Какой курс биткоина был 1 января 2025 года?
+    uz_latn: 2025 yil 1 yanvarda bitkoin narxi qancha edi?
+    uz_cyrl: 2025 йил 1 январда биткоин нархи қанча эди?
+- id: u09
+  kind: plain
+  concept: world Brent oil price
+  questions:
+    ru: Сколько стоил баррель нефти Brent в марте 2024 года?
+    uz_latn: 2024 yil mart oyida Brent neftining bir barreli qancha turgan?
+    uz_cyrl: 2024 йил март ойида Brent нефтининг бир баррели қанча турган?
+- id: u10
+  kind: plain
+  concept: dividends
+  questions:
+    ru: Какие дивиденды выплатила биржа акционерам за 2024 год?
+    uz_latn: Birja 2024 yil uchun aksiyadorlarga qancha dividend to'lagan?
+    uz_cyrl: Биржа 2024 йил учун акциядорларга қанча дивиденд тўлаган?
+- id: u11
+  kind: plain
+  concept: bank loans of a company
+  questions:
+    ru: Сколько банковских кредитов взяла компания Zoket Invest?
+    uz_latn: Zoket Invest kompaniyasi bankdan qancha kredit olgan?
+    uz_cyrl: Zoket Invest компанияси банкдан қанча кредит олган?
+- id: u12
+  kind: plain
+  concept: warehouse street address
+  questions:
+    ru: По какому адресу находится склад продавца цемента в Самарканде?
+    uz_latn: Samarqanddagi sement sotuvchisining ombori qaysi manzilda joylashgan?
+    uz_cyrl: Самарқанддаги цемент сотувчисининг омбори қайси манзилда жойлашган?
+- id: u13
+  kind: plain
+  concept: population of a region
+  questions:
+    ru: Какое население Ферганской области?
+    uz_latn: Farg'ona viloyatining aholisi qancha?
+    uz_cyrl: Фарғона вилоятининг аҳолиси қанча?
+- id: u14
+  kind: plain
+  concept: electricity tariff
+  questions:
+    ru: Какой тариф на электроэнергию для предприятий в 2025 году?
+    uz_latn: 2025 yilda korxonalar uchun elektr energiyasi tarifi qancha?
+    uz_cyrl: 2025 йилда корхоналар учун электр энергияси тарифи қанча?
+- id: u15
+  kind: plain
+  concept: lawsuits
+  questions:
+    ru: Сколько судебных исков подано против брокера BK007?
+    uz_latn: BK007 brokerga qarshi nechta sud da'vosi qo'zg'atilgan?
+    uz_cyrl: BK007 брокерга қарши нечта суд даъвоси қўзғатилган?
+- id: u16
+  kind: plain
+  concept: website
+  questions:
+    ru: Какой адрес сайта у брокерской конторы BK010?
+    uz_latn: BK010 broker idorasining veb-sayti manzili qanday?
+    uz_cyrl: BK010 брокер идорасининг веб-сайти манзили қандай?
+- id: u17
+  kind: plain
+  concept: customs duties
+  questions:
+    ru: Какая таможенная пошлина на ввоз цемента?
+    uz_latn: Sementni olib kirishda bojxona boji qancha?
+    uz_cyrl: Цементни олиб киришда божхона божи қанча?
+- id: u18
+  kind: plain
+  concept: CO2 emissions
+  questions:
+    ru: Сколько выбросов углекислого газа дают производители цемента?
+    uz_latn: Sement ishlab chiqaruvchilar qancha karbonat angidrid chiqaradi?
+    uz_cyrl: Цемент ишлаб чиқарувчилар қанча карбонат ангидрид чиқаради?
+- id: u19
+  kind: plain
+  concept: GDP
+  questions:
+    ru: Какой ВВП Узбекистана за 2024 год?
+    uz_latn: O'zbekistonning 2024 yilgi yalpi ichki mahsuloti qancha?
+    uz_cyrl: Ўзбекистоннинг 2024 йилги ялпи ички маҳсулоти қанча?
+- id: u20
+  kind: plain
+  concept: insurance
+  questions:
+    ru: Были ли застрахованы грузы по сделкам с пшеницей?
+    uz_latn: Bug'doy bitimlari bo'yicha yuklar sug'urta qilinganmi?
+    uz_cyrl: Буғдой битимлари бўйича юклар суғурта қилинганми?
+- id: u21
+  kind: plain
+  concept: advertising budget
+  questions:
+    ru: Сколько биржа потратила на рекламу в 2025 году?
+    uz_latn: Birja 2025 yilda reklamaga qancha mablag' sarflagan?
+    uz_cyrl: Биржа 2025 йилда рекламага қанча маблағ сарфлаган?
+- id: u22
+  kind: plain
+  concept: central bank refinancing rate
+  questions:
+    ru: Какая ставка рефинансирования Центробанка действовала в 2023 году?
+    uz_latn: 2023 yilda Markaziy bankning qayta moliyalash stavkasi qancha edi?
+    uz_cyrl: 2023 йилда Марказий банкнинг қайта молиялаш ставкаси қанча эди?
+- id: t01
+  kind: tricky
+  concept: yuan rate on a date
+  questions:
+    ru: курс юаня на 1 марта 2025
+    uz_latn: 2025 yil 1 mart kuni yuan kursi qancha edi
+    uz_cyrl: 2025 йил 1 март куни юан курси қанча эди
+- id: t02
+  kind: tricky
+  concept: silver deals
+  questions:
+    ru: Сколько сделок по серебру было в 2024 году?
+    uz_latn: 2024 yilda kumush bo'yicha nechta bitim bo'lgan?
+    uz_cyrl: 2024 йилда кумуш бўйича нечта битим бўлган?
+- id: t03
+  kind: tricky
+  concept: deal amount in bitcoin
+  questions:
+    ru: Какая сумма сделок в биткоинах за 2025 год?
+    uz_latn: 2025 yilda bitimlar summasi bitkoinda qancha?
+    uz_cyrl: 2025 йилда битимлар суммаси биткоинда қанча?
+- id: t04
+  kind: tricky
+  concept: price in tenge
+  questions:
+    ru: Средняя цена цемента в казахстанских тенге за 2024 год
+    uz_latn: 2024 yilda sementning o'rtacha narxi Qozog'iston tengesida qancha?
+    uz_cyrl: 2024 йилда цементнинг ўртача нархи Қозоғистон тенгесида қанча?
+- id: t05
+  kind: tricky
+  concept: discounts given to buyers
+  questions:
+    ru: Какую скидку получили покупатели пшеницы в 2024 году?
+    uz_latn: 2024 yilda bug'doy xaridorlari qancha chegirma olgan?
+    uz_cyrl: 2024 йилда буғдой харидорлари қанча чегирма олган?
+- id: t06
+  kind: tricky
+  concept: spoiled goods in a warehouse
+  questions:
+    ru: Сколько тонн сахара испортилось на складах в 2025 году?
+    uz_latn: 2025 yilda omborlarda necha tonna shakar buzilgan?
+    uz_cyrl: 2025 йилда омборларда неча тонна шакар бузилган?
+- id: t07
+  kind: tricky
+  concept: deals made through a mobile app
+  questions:
+    ru: Сколько сделок брокер BK005 заключил через мобильное приложение в 2025 году?
+    uz_latn: BK005 broker 2025 yilda mobil ilova orqali nechta bitim tuzgan?
+    uz_cyrl: BK005 брокер 2025 йилда мобил илова орқали нечта битим тузган?
