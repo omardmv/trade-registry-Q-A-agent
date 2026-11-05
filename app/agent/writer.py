@@ -361,10 +361,19 @@ class Writer:
             for value in [text, *products, *samples]:
                 if value not in names:
                     names.append(value)
-        return {"text": text, "matched_spellings": len(cands), "deals": sum(c.extra["deals"] for c in cands),
-                "products": products[:10], "sample_spellings": samples,
-                "note": f"put exactly this text into filters.product_variant_query: {text!r}; the compiler counts all "
-                        f"{len(cands)} spellings. If the matches are wrong, resolve a more specific text"}
+        out = {"text": text, "matched_spellings": len(cands), "deals": sum(c.extra["deals"] for c in cands),
+               "products": products[:10], "sample_spellings": samples,
+               "note": f"put exactly this text into filters.product_variant_query: {text!r}; the compiler counts all "
+                       f"{len(cands)} spellings. If the matches are wrong, resolve a more specific text"}
+        missed = self.resolver.same_grade_spellings(text)
+        if missed:
+            out["same_grade_missed_spellings"] = len(missed)
+            out["missed_samples"] = missed[:5]
+            out["note"] += (f". {len(missed)} more spellings of the same product with the same grade / mark name the "
+                            "product differently and are NOT matched; if the question means the grade whatever the "
+                            "product wording, resolve only the grade / mark part of the phrase (e.g. «ЦЕМ I 42,5 Н» "
+                            "instead of «Портландцемент ЦЕМ I 42,5 Н») and use that text")
+        return out
 
     def _tool(self, name, args, allowed, question, deadline, names=None, state=None) -> dict:
         if name == "resolve":

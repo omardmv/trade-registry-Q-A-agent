@@ -42,10 +42,21 @@ def _is_num(t: str) -> bool:
     return t.isdigit()
 
 
+_GLUED_RE = re.compile(r"[a-z]+|[0-9]+")
+
+
+def _is_mark(t: str) -> bool:
+    """Grade / mark token (digits, folded grade, short letter code such as "i", "n", "m", "k"): marks of a spelling
+    are compared as a set, words in order."""
+    return any(ch.isdigit() for ch in t) or ":" in t or len(t) <= 2
+
+
 def canonical_variant_tokens(text: str) -> list[str]:
     """normalize_text tokens with grade expressions folded into one token: "Сорт 1 сорт", "1-сорта",
     "первый сорт", "I сорт" -> "sort:1"; the same for класс -> "klass:N"."""
-    raw = [_GRADE_KEYS.get(t, t) for t in normalize_text(text).split()]
+    # glued letters and digits are separate tokens: "42,5Н" -> "42", "5", "n"; "М00К" -> "m", "00", "k"
+    split = [p for t in normalize_text(text).split() for p in _GLUED_RE.findall(t)]
+    raw = [_GRADE_KEYS.get(t, t) for t in split]
     toks = []
     for i, t in enumerate(raw):  # roman / word numerals count only next to сорт/класс
         near = (i > 0 and raw[i - 1] in ("sort", "klass")) or (i + 1 < len(raw) and raw[i + 1] in ("sort", "klass"))
@@ -70,8 +81,12 @@ def canonical_variant_tokens(text: str) -> list[str]:
 
 
 def _in_order(q: list[str], name: list[str]) -> bool:
+    """Words of q appear in name in the same order; grade / mark tokens of q only need to be present (a set)."""
+    marks = {t for t in q if _is_mark(t)}
+    if not marks <= set(name):
+        return False
     it = iter(name)
-    return all(any(t == x for x in it) for t in q)
+    return all(any(t == x for x in it) for t in q if not _is_mark(t))
 
 
 @dataclass
@@ -244,6 +259,28 @@ class Resolver:
             hits = [i for _, _, i in _fuzzy(" ".join(q_seq), keys, None) if digits <= self._variant_tokens[i]]
         hits.sort(key=lambda i: (len(self._variant_tokens[i] - q), -self._variants[i][2]))
         return hits, q
+
+    def same_grade_spellings(self, text: str) -> list[str]:
+        """Spellings of the same product(s) with the same grade / mark that the text misses because the product is
+        named differently ("Портландцемент ЦЕМ I 42,5 Н" vs "Цемент портландский ЦЕМ I 42,5Н"): the query's
+        product-name words are dropped and the rest (other words in order, marks as a set) is matched within the
+        products of the original hits. Empty when the text has no grade / mark or nothing is missed."""
+        hits, _ = self._variant_hits((text or "").strip())
+        q_seq = canonical_variant_tokens(text or "")
+        if not hits or not any(_is_mark(t) for t in q_seq):
+            return []
+        products = {self._variants[i][1] for i in hits}
+        vocab = set()
+        for raw, canonical, _, synonyms in self._product_rows:
+            if canonical in products:
+                for key in [raw, canonical, *synonyms.split(";")]:
+                    vocab |= {t for t in canonical_variant_tokens(key) if not _is_mark(t)}
+        rest = [t for t in q_seq if _is_mark(t) or t not in vocab]
+        if not any(_is_mark(t) for t in rest):
+            return []
+        have = set(hits)
+        return [self._variants[i][0] for i, seq in enumerate(self._variant_seqs)
+                if i not in have and self._variants[i][1] in products and _in_order(rest, seq)]
 
     def variant_names(self, text: str) -> list[str]:
         """Every raw spelling that resolve("product_variant", text) matches (the expansion of
